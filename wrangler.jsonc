@@ -1,0 +1,8 @@
+{
+  "name": "hexa-worker",
+  "compatibility_date": "2025-08-16",
+  "assets": {
+    "directory": "./dist"
+  },
+  "main": "src/worker.js"
+}
