@@ -18,7 +18,7 @@ export const AnimatedMouth: React.FC<AnimatedMouthProps> = ({
   color = '#064e3b',
   className = '',
 }) => {
-  const { expressionState, animationState } = useAnimationStore();
+  const { expressionState, animationState, speechIntensity, isSpeaking } = useAnimationStore();
   const [isBreathing, setIsBreathing] = useState(false);
   const [currentPath, setCurrentPath] = useState<string>(MOUTH_PATHS.HAPPY);
 
@@ -40,6 +40,20 @@ export const AnimatedMouth: React.FC<AnimatedMouthProps> = ({
         break;
     }
   }, [expressionState]);
+
+  // Modify mouth shape based on speech intensity
+  useEffect(() => {
+    if (isSpeaking && speechIntensity > 0) {
+      const openness = speechIntensity * 20; // Scale intensity to mouth openness
+      const dynamicPath = `M ${82 - openness/2} ${108 + openness} Q 100 ${128 + openness} ${118 + openness/2} ${108 + openness}`;
+      setCurrentPath(dynamicPath);
+    } else if (!isSpeaking) {
+      // Reset to expression-based path
+      setCurrentPath(MOUTH_PATHS[expressionState === 'excited' ? 'EXCITED' : 
+                                 expressionState === 'neutral' ? 'NEUTRAL' :
+                                 expressionState === 'curious' ? 'CURIOUS' : 'HAPPY']);
+    }
+  }, [speechIntensity, isSpeaking, expressionState]);
 
   // Breathing animation for idle state
   useEffect(() => {

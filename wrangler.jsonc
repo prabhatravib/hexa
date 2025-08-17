@@ -4,5 +4,24 @@
   "assets": {
     "directory": "./dist"
   },
-  "main": "src/worker.js"
+  "main": "src/worker-voice.ts",
+  "durable_objects": {
+    "bindings": [
+      {
+        "name": "VOICE_SESSION",
+        "class_name": "VoiceSession"
+      }
+    ]
+  },
+  "migrations": [
+    {
+      "tag": "v1",
+      "new_classes": [
+        "VoiceSession"
+      ]
+    }
+  ],
+  "vars": {
+    "OPENAI_REALTIME_MODEL": "YOUR_API_KEY_FROM_DASHBOARD"
+  }
 }

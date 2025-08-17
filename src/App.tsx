@@ -51,7 +51,11 @@ function App() {
       </div>
     );
   } else {
-    return generatedComponent;
+    return (
+      <>
+        {generatedComponent}
+      </>
+    );
   }
 }
 
