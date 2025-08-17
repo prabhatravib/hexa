@@ -138,7 +138,8 @@ export const useVoiceInteraction = (options: UseVoiceInteractionOptions = {}) =>
     setVoiceState,
     onError,
     startSpeaking,
-    stopSpeaking
+    stopSpeaking,
+    setSpeechIntensity: handleSpeechIntensity // pass the existing processor
   });
 
   const [isConnected, setIsConnected] = useState(false);
