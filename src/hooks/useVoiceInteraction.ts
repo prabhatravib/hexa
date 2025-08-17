@@ -140,155 +140,27 @@ export const useVoiceInteraction = (options: UseVoiceInteractionOptions = {}) =>
       
       // Create agent with proper configuration
       const agent = new RealtimeAgent({
-        name: 'Hexagon Voice Assistant',
-        instructions: 'You are Hexagon, a friendly and helpful AI assistant. You have a warm, conversational personality and are always eager to help. You can assist with various tasks, answer questions, and engage in natural conversation. Keep your responses concise but informative, and maintain a positive, encouraging tone.'
+        name: 'Hexa, an AI Assistant',
+        instructions: 'You are Hexa, a friendly and helpful AI assistant. You have a warm, conversational personality and are always eager to help. You can assist with various tasks, answer questions, and engage in natural conversation. Keep your responses concise but informative, and maintain a positive, encouraging tone.'
       });
 
       // Create session and connect
       const session = new RealtimeSession(agent);
       
-      // Try multiple connection approaches for WebRTC compatibility
-      let connected = false;
-      let lastError: any = null;
-      
-      // Method 1: Standard WebRTC with insecure API key
-      try {
-        console.log('🔧 Attempting Method 1: Standard WebRTC...');
+      // Use the working method: WebRTC with client secret
+      if (sessionData.clientSecret) {
+        console.log('🔧 Connecting with client secret...');
         const connectionOptions = {
-          apiKey: sessionData.apiKey,
+          apiKey: sessionData.clientSecret, // Use client secret instead of API key
           useInsecureApiKey: true,
           transport: 'webrtc' as const
         };
         
-        console.log('🔧 Connecting with options:', connectionOptions);
+        console.log('🔧 Connecting with client secret options:', connectionOptions);
         await session.connect(connectionOptions);
-        connected = true;
-        console.log('✅ Method 1 successful: Standard WebRTC');
-      } catch (error) {
-        console.log('⚠️ Method 1 failed:', error);
-        lastError = error;
-      }
-      
-      // Method 1.5: Try with client secret instead of API key
-      if (!connected && sessionData.clientSecret) {
-        try {
-          console.log('🔧 Attempting Method 1.5: WebRTC with client secret...');
-          const connectionOptions = {
-            apiKey: sessionData.clientSecret, // Use client secret instead
-            useInsecureApiKey: true,
-            transport: 'webrtc' as const
-          };
-          
-          console.log('🔧 Connecting with client secret options:', connectionOptions);
-          await session.connect(connectionOptions);
-          connected = true;
-          console.log('✅ Method 1.5 successful: WebRTC with client secret');
-        } catch (error) {
-          console.log('⚠️ Method 1.5 failed:', error);
-          lastError = error;
-        }
-      }
-      
-      // Method 2: WebRTC with explicit insecure configuration
-      if (!connected) {
-        try {
-          console.log('🔧 Attempting Method 2: Explicit insecure WebRTC...');
-          const connectionOptions = {
-            apiKey: sessionData.apiKey,
-            useInsecureApiKey: true,
-            transport: 'webrtc' as const,
-            webrtc: {
-              useInsecureApiKey: true,
-              forceInsecure: true
-            }
-          };
-          
-          console.log('🔧 Connecting with options:', connectionOptions);
-          await session.connect(connectionOptions);
-          connected = true;
-          console.log('✅ Method 2 successful: Explicit insecure WebRTC');
-        } catch (error) {
-          console.log('⚠️ Method 2 failed:', error);
-          lastError = error;
-        }
-      }
-      
-      // Method 3: Try with different transport options
-      if (!connected) {
-        try {
-          console.log('🔧 Attempting Method 3: Alternative WebRTC config...');
-          const connectionOptions = {
-            apiKey: sessionData.apiKey,
-            useInsecureApiKey: true,
-            transport: 'webrtc' as const,
-            // Try different WebRTC configuration
-            webrtc: {
-              useInsecureApiKey: true,
-              forceInsecure: true,
-              // Additional options that might help
-              allowInsecureConnections: true
-            }
-          };
-          
-          console.log('🔧 Connecting with options:', connectionOptions);
-          await session.connect(connectionOptions);
-          connected = true;
-          console.log('✅ Method 3 successful: Alternative WebRTC config');
-        } catch (error) {
-          console.log('⚠️ Method 3 failed:', error);
-          lastError = error;
-        }
-      }
-      
-      // Method 4: Try with session-based connection (using sessionId and clientSecret)
-      if (!connected && sessionData.sessionId && sessionData.clientSecret) {
-        try {
-          console.log('🔧 Attempting Method 4: Session-based WebRTC...');
-          const connectionOptions = {
-            apiKey: sessionData.clientSecret, // Use client secret as API key
-            sessionId: sessionData.sessionId,
-            transport: 'webrtc' as const,
-            useInsecureApiKey: true
-          };
-          
-          console.log('🔧 Connecting with session-based options:', connectionOptions);
-          await session.connect(connectionOptions);
-          connected = true;
-          console.log('✅ Method 4 successful: Session-based WebRTC');
-        } catch (error) {
-          console.log('⚠️ Method 4 failed:', error);
-          lastError = error;
-        }
-      }
-      
-      // Method 5: Try with minimal configuration (just API key and transport)
-      if (!connected) {
-        try {
-          console.log('🔧 Attempting Method 5: Minimal WebRTC config...');
-          const connectionOptions = {
-            apiKey: sessionData.apiKey,
-            transport: 'webrtc' as const
-            // Don't specify useInsecureApiKey, let the SDK handle it
-          };
-          
-          console.log('🔧 Connecting with minimal options:', connectionOptions);
-          await session.connect(connectionOptions);
-          connected = true;
-          console.log('✅ Method 5 successful: Minimal WebRTC config');
-        } catch (error) {
-          console.log('⚠️ Method 5 failed:', error);
-          lastError = error;
-        }
-      }
-      
-      if (!connected) {
-        console.error('❌ All WebRTC connection methods failed. Last error:', lastError);
-        console.error('❌ Error details:', {
-          message: lastError?.message,
-          stack: lastError?.stack,
-          name: lastError?.name
-        });
-        throw new Error(`All WebRTC connection methods failed. Last error: ${lastError?.message || lastError}`);
+        console.log('✅ WebRTC connection successful with client secret');
+      } else {
+        throw new Error('Client secret not available for WebRTC connection');
       }
       
       // Store the session reference
@@ -304,12 +176,12 @@ export const useVoiceInteraction = (options: UseVoiceInteractionOptions = {}) =>
     }
   }, [setVoiceState, onError]);
 
-  // Initialize OpenAI Agent from worker (gets API key)
+  // Initialize OpenAI Agent from worker (gets session info)
   const initializeOpenAIAgentFromWorker = useCallback(async () => {
     try {
       console.log('🔧 Initializing OpenAI Agent from worker...');
       
-      // Get the API key from the worker by sending a dummy message
+      // Get the session info from the worker by sending a connection ready message
       const response = await fetch('/voice/message', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -320,16 +192,15 @@ export const useVoiceInteraction = (options: UseVoiceInteractionOptions = {}) =>
         throw new Error(`HTTP ${response.status}`);
       }
       
-      // Now initialize the agent with a placeholder API key
-      // The actual API key will be provided when we get session_info
-      await initializeOpenAIAgent({ apiKey: 'placeholder' });
+      console.log('✅ Connection ready message sent, waiting for session info...');
+      // The agent will be initialized when we receive session_info via SSE
       
     } catch (error) {
       console.error('❌ Failed to initialize OpenAI Agent from worker:', error);
       setVoiceState('error');
       onError?.('Failed to initialize voice service');
     }
-  }, [initializeOpenAIAgent, setVoiceState, onError]);
+  }, [setVoiceState, onError]);
   
   // Start recording
   const startRecording = useCallback(async () => {
