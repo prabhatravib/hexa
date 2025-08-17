@@ -33,9 +33,10 @@ export const useVoiceInteraction = (options: UseVoiceInteractionOptions = {}) =>
   const [isRecording, setIsRecording] = useState(false);
   const [transcript, setTranscript] = useState('');
   const [response, setResponse] = useState('');
+  const [sessionInfo, setSessionInfo] = useState<any>(null);
   
   const wsRef = useRef<WebSocket | null>(null);
-  const openaiWsRef = useRef<WebSocket | null>(null);
+  const openaiAgentRef = useRef<any>(null);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const audioContextRef = useRef<AudioContext | null>(null);
   const audioQueueRef = useRef<ArrayBuffer[]>([]);
@@ -51,7 +52,10 @@ export const useVoiceInteraction = (options: UseVoiceInteractionOptions = {}) =>
         setIsConnected(true);
         setVoiceState('idle');
         console.log('Voice SSE connected successfully');
-        // OpenAI connection is now handled automatically by the Worker
+        
+        // Initialize OpenAI Agent immediately after SSE connection
+        // We'll get the API key from the worker
+        initializeOpenAIAgentFromWorker();
       };
       
       eventSource.onmessage = async (event) => {
@@ -69,10 +73,22 @@ export const useVoiceInteraction = (options: UseVoiceInteractionOptions = {}) =>
               console.log('Voice session ready:', data.sessionId);
               break;
               
-            case 'openai_message':
-              console.log('OpenAI message received:', data.data);
-              // Handle OpenAI messages (transcription, audio, etc.)
-              await handleOpenAIMessage(data.data);
+            case 'session_info':
+              console.log('Session info received, updating OpenAI Agent...');
+              setSessionInfo(data);
+              // Update the agent with new session info if needed
+              if (openaiAgentRef.current) {
+                console.log('✅ OpenAI Agent already initialized, session info updated');
+              } else {
+                // Initialize with real session info
+                await initializeOpenAIAgent(data);
+              }
+              break;
+              
+            case 'response_text':
+              console.log('Text response received:', data.text);
+              setResponse(data.text);
+              onResponse?.(data.text);
               break;
               
             case 'error':
@@ -107,137 +123,99 @@ export const useVoiceInteraction = (options: UseVoiceInteractionOptions = {}) =>
       onError?.('Failed to initialize voice service');
     }
   }, []);
+
+  // Initialize OpenAI Agent with WebRTC
+  const initializeOpenAIAgent = useCallback(async (sessionData: any) => {
+    try {
+      console.log('🔧 Initializing OpenAI Agent with WebRTC...');
+      
+      // Import OpenAI Agents Realtime SDK dynamically
+      const { RealtimeAgent, RealtimeSession } = await import('@openai/agents-realtime');
+      
+      // Create agent with proper configuration
+      const agent = new RealtimeAgent({
+        name: 'Hexagon Voice Assistant',
+        instructions: 'You are Hexagon, a friendly and helpful AI assistant. You have a warm, conversational personality and are always eager to help. You can assist with various tasks, answer questions, and engage in natural conversation. Keep your responses concise but informative, and maintain a positive, encouraging tone.'
+      });
+
+      // Create session and connect
+      const session = new RealtimeSession(agent);
+      await session.connect({ apiKey: sessionData.apiKey });
+      
+      // Store the session reference
+      openaiAgentRef.current = session;
+      
+      console.log('✅ OpenAI Agent initialized and connected with WebRTC');
+      setVoiceState('idle');
+      
+    } catch (error) {
+      console.error('❌ Failed to initialize OpenAI Agent:', error);
+      setVoiceState('error');
+      onError?.('Failed to initialize OpenAI Agent');
+    }
+  }, [setVoiceState, onError]);
+
+  // Initialize OpenAI Agent from worker (gets API key)
+  const initializeOpenAIAgentFromWorker = useCallback(async () => {
+    try {
+      console.log('🔧 Initializing OpenAI Agent from worker...');
+      
+      // Get the API key from the worker by sending a dummy message
+      const response = await fetch('/voice/message', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ type: 'connection_ready' })
+      });
+      
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status}`);
+      }
+      
+      // Now initialize the agent with a placeholder API key
+      // The actual API key will be provided when we get session_info
+      await initializeOpenAIAgent({ apiKey: 'placeholder' });
+      
+    } catch (error) {
+      console.error('❌ Failed to initialize OpenAI Agent from worker:', error);
+      setVoiceState('error');
+      onError?.('Failed to initialize voice service');
+    }
+  }, [initializeOpenAIAgent, setVoiceState, onError]);
   
   // Start recording
   const startRecording = useCallback(async () => {
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({ 
-        audio: {
-          channelCount: 1,
-          sampleRate: 24000,
-          echoCancellation: true,
-          noiseSuppression: true,
-          autoGainControl: true
-        } 
-      });
-      
-      // Try to use a supported format, fallback to default if needed
-      let mimeType = 'audio/webm;codecs=opus';
-      if (MediaRecorder.isTypeSupported('audio/webm;codecs=opus')) {
-        mimeType = 'audio/webm;codecs=opus';
-      } else if (MediaRecorder.isTypeSupported('audio/webm')) {
-        mimeType = 'audio/webm';
-      } else if (MediaRecorder.isTypeSupported('audio/mp4')) {
-        mimeType = 'audio/mp4';
-      } else {
-        mimeType = 'audio/webm'; // Default fallback
+      if (!openaiAgentRef.current) {
+        console.error('❌ OpenAI Agent not initialized');
+        return;
       }
+
+      console.log('🎤 Starting recording with OpenAI Agent...');
       
-      const mediaRecorder = new MediaRecorder(stream, {
-        mimeType: mimeType
-      });
-      
-      mediaRecorder.ondataavailable = async (event) => {
-        if (event.data.size > 0) {
-          console.log('🔧 Audio data available:', {
-            size: event.data.size,
-            type: event.data.type,
-            timestamp: new Date().toISOString()
-          });
-          
-          try {
-            // Convert audio to PCM16 format as required by OpenAI
-            const audioBuffer = await convertToPCM16(event.data);
-            const base64 = arrayBufferToBase64(audioBuffer);
-            
-            console.log('🔧 Sending PCM16 audio to server...', {
-              originalSize: event.data.size,
-              pcm16Size: audioBuffer.byteLength,
-              base64Length: base64.length
-            });
-            
-            // Send via HTTP POST
-            const response = await fetch('/voice/message', {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ type: 'audio', audio: base64 })
-            });
-            
-            if (!response.ok) {
-              throw new Error(`HTTP ${response.status}`);
-            }
-            
-            console.log('✅ Audio sent successfully');
-          } catch (error) {
-            console.error('❌ Failed to send audio:', error);
-            // Fallback to original format if PCM16 conversion fails
-            console.log('🔄 Attempting fallback with original audio format...');
-            const reader = new FileReader();
-            reader.onloadend = async () => {
-              const base64 = reader.result?.toString().split(',')[1];
-              if (base64) {
-                try {
-                  await fetch('/voice/message', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ type: 'audio', audio: base64 })
-                  });
-                  console.log('✅ Fallback audio sent successfully');
-                } catch (fallbackError) {
-                  console.error('❌ Fallback audio send also failed:', fallbackError);
-                }
-              }
-            };
-            reader.readAsDataURL(event.data);
-          }
-        }
-      };
-      
-      mediaRecorder.start(100); // Send chunks every 100ms
-      mediaRecorderRef.current = mediaRecorder;
+      // The RealtimeSession automatically handles audio input/output
+      // Just update the UI state
       setIsRecording(true);
       startListening();
-      
-      // Set up audio context for visualization
-      if (!audioContextRef.current) {
-        audioContextRef.current = new AudioContext();
-      }
-      
-      const source = audioContextRef.current.createMediaStreamSource(stream);
-      const analyser = audioContextRef.current.createAnalyser();
-      analyser.fftSize = 256;
-      source.connect(analyser);
-      
-      // Animate mouth based on audio intensity
-      const dataArray = new Uint8Array(analyser.frequencyBinCount);
-      const updateIntensity = () => {
-        if (!isRecording) return;
-        
-        analyser.getByteFrequencyData(dataArray);
-        const average = dataArray.reduce((a, b) => a + b) / dataArray.length;
-        setSpeechIntensity(average / 255);
-        
-        requestAnimationFrame(updateIntensity);
-      };
-      updateIntensity();
+      setVoiceState('listening');
       
     } catch (error) {
       console.error('Failed to start recording:', error);
       setVoiceState('error');
     }
-  }, [isRecording]);
-  
+  }, [startListening, setVoiceState]);
+   
   // Stop recording
-  const stopRecording = useCallback(() => {
-    if (mediaRecorderRef.current) {
-      mediaRecorderRef.current.stop();
-      mediaRecorderRef.current.stream.getTracks().forEach(track => track.stop());
-      mediaRecorderRef.current = null;
+  const stopRecording = useCallback(async () => {
+    try {
+      // The RealtimeSession automatically handles stopping
+      setIsRecording(false);
+      stopListening();
+      setSpeechIntensity(0);
+      setVoiceState('idle');
+    } catch (error) {
+      console.error('Failed to stop recording:', error);
     }
-    setIsRecording(false);
-    stopListening();
-    setSpeechIntensity(0);
-  }, []);
+  }, [stopListening, setVoiceState]);
   
   // Play audio queue
   const playAudioQueue = async () => {
@@ -290,7 +268,7 @@ export const useVoiceInteraction = (options: UseVoiceInteractionOptions = {}) =>
       playAudioQueue(); // Skip and continue
     }
   };
-  
+   
   // Send text message via HTTP POST
   const sendText = useCallback(async (text: string) => {
     try {
@@ -310,70 +288,7 @@ export const useVoiceInteraction = (options: UseVoiceInteractionOptions = {}) =>
       onError?.('Failed to send message');
     }
   }, [onError]);
-  
-    // Handle OpenAI messages received through SSE
-  const handleOpenAIMessage = useCallback(async (data: any) => {
-    try {
-      console.log('🔧 Processing OpenAI message:', data.type);
-      
-      switch (data.type) {
-        case 'input_audio_buffer.speech_started':
-          console.log('🎤 Speech started');
-          startListening();
-          break;
-          
-        case 'input_audio_buffer.speech_stopped':
-          console.log('🔇 Speech stopped');
-          stopListening();
-          break;
-          
-        case 'response.audio_transcript.delta':
-          console.log('📝 Transcription delta:', data.delta);
-          setTranscript(prev => prev + data.delta);
-          onTranscription?.(data.delta);
-          break;
-          
-        case 'response.audio_transcript.done':
-          console.log('✅ Transcription complete:', data.transcript);
-          setTranscript(data.transcript);
-          onTranscription?.(data.transcript);
-          break;
-          
-        case 'response.audio.delta':
-          console.log('🎵 Audio delta received');
-          // Queue audio for playback
-          const audioData = base64ToArrayBuffer(data.delta);
-          audioQueueRef.current.push(audioData);
-          if (!isPlayingRef.current) {
-            playAudioQueue();
-          }
-          break;
-          
-        case 'response.done':
-          console.log('✅ Response complete');
-          stopSpeaking();
-          break;
-          
-        case 'error':
-          console.error('❌ OpenAI error:', data.error);
-          setVoiceState('error');
-          onError?.(data.error?.message || 'OpenAI error occurred');
-          break;
-          
-        default:
-          console.log('📨 Unknown OpenAI message type:', data.type, data);
-      }
-    } catch (error) {
-      console.error('❌ Failed to handle OpenAI message:', error);
-    }
-  }, [startListening, stopListening, onTranscription, onError, setVoiceState, stopSpeaking]);
-
-  // This function is no longer needed since connection is handled automatically
-  // when SSE connects. Keeping for backward compatibility but not using it.
-  const establishOpenAIConnection = useCallback(async (sessionId: string, clientSecret: string, instructions: string) => {
-    console.log('🔧 Connection already established via SSE');
-  }, []);
-
+   
   // Switch agent
   const switchAgent = useCallback(async (agentId: string) => {
     try {
@@ -391,10 +306,13 @@ export const useVoiceInteraction = (options: UseVoiceInteractionOptions = {}) =>
       onError?.('Failed to switch agent');
     }
   }, [onError]);
-
+ 
   // Interrupt current response
   const interrupt = useCallback(async () => {
     try {
+      // The RealtimeSession handles interruption automatically
+      // Just clear the audio queue and update UI state
+      
       const response = await fetch('/voice/message', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -412,8 +330,9 @@ export const useVoiceInteraction = (options: UseVoiceInteractionOptions = {}) =>
     audioQueueRef.current = [];
     isPlayingRef.current = false;
     stopSpeaking();
-  }, [onError, stopSpeaking]);
-  
+    setVoiceState('idle');
+  }, [onError, stopSpeaking, setVoiceState]);
+   
   // Clean up
   useEffect(() => {
     if (autoStart) {
@@ -429,13 +348,14 @@ export const useVoiceInteraction = (options: UseVoiceInteractionOptions = {}) =>
           (wsRef.current as EventSource).close();
         }
       }
-      if (openaiWsRef.current) {
-        openaiWsRef.current.close();
+      if (openaiAgentRef.current) {
+        // Close the RealtimeSession
+        openaiAgentRef.current.close();
       }
       stopRecording();
     };
   }, []);
-  
+   
   return {
     isConnected,
     isRecording,
@@ -451,7 +371,10 @@ export const useVoiceInteraction = (options: UseVoiceInteractionOptions = {}) =>
           (wsRef.current as EventSource).close();
         }
       }
-      openaiWsRef.current?.close();
+      if (openaiAgentRef.current) {
+        // Close the RealtimeSession
+        openaiAgentRef.current.close();
+      }
     },
     startRecording,
     stopRecording,
@@ -462,7 +385,7 @@ export const useVoiceInteraction = (options: UseVoiceInteractionOptions = {}) =>
     clearResponse: () => setResponse('')
   };
 };
-
+ 
 // Helper function
 function base64ToArrayBuffer(base64: string): ArrayBuffer {
   const binaryString = atob(base64);
@@ -471,50 +394,4 @@ function base64ToArrayBuffer(base64: string): ArrayBuffer {
     bytes[i] = binaryString.charCodeAt(i);
   }
   return bytes.buffer;
-}
-
-// Convert audio blob to PCM16 format
-async function convertToPCM16(audioBlob: Blob): Promise<ArrayBuffer> {
-  try {
-    console.log('🔧 Converting audio to PCM16 format...');
-    const audioContext = new AudioContext();
-    const arrayBuffer = await audioBlob.arrayBuffer();
-    const audioBuffer = await audioContext.decodeAudioData(arrayBuffer);
-    
-    console.log('🔧 Audio decoded, converting to PCM16...', {
-      sampleRate: audioBuffer.sampleRate,
-      length: audioBuffer.length,
-      numberOfChannels: audioBuffer.numberOfChannels
-    });
-    
-    // Convert to PCM16
-    const length = audioBuffer.length;
-    const pcm16 = new Int16Array(length);
-    
-    for (let i = 0; i < length; i++) {
-      // Convert float32 to int16
-      const sample = Math.max(-1, Math.min(1, audioBuffer.getChannelData(0)[i]));
-      pcm16[i] = sample < 0 ? sample * 0x8000 : sample * 0x7FFF;
-    }
-    
-    console.log('✅ Audio converted to PCM16 successfully', {
-      pcm16Length: pcm16.length,
-      pcm16Size: pcm16.byteLength
-    });
-    
-    return pcm16.buffer;
-  } catch (error) {
-    console.error('❌ Failed to convert audio to PCM16:', error);
-    throw error;
-  }
-}
-
-// Convert ArrayBuffer to base64
-function arrayBufferToBase64(buffer: ArrayBuffer): string {
-  const bytes = new Uint8Array(buffer);
-  let binary = '';
-  for (let i = 0; i < bytes.byteLength; i++) {
-    binary += String.fromCharCode(bytes[i]);
-  }
-  return btoa(binary);
 }

@@ -1,3 +1,11 @@
+/// <reference types="@cloudflare/workers-types" />
+
+export interface Env {
+  OPENAI_API_KEY: string;
+  VOICE_SESSION: DurableObjectNamespace;
+  ASSETS: Fetcher;
+}
+
 export class MessageHandlers {
   private openaiConnection: any;
   private broadcastToClients: (message: any) => void;
@@ -38,14 +46,23 @@ export class MessageHandlers {
     }
     
     try {
-      console.log('🔧 Sending audio data to OpenAI...');
-      this.openaiConnection.send({
-        type: 'input_audio_buffer.append',
-        audio: audioData
+      console.log('🔧 Audio data received, sending session info to frontend for WebRTC connection...');
+      
+      // Instead of trying to process audio in the worker, send session info to frontend
+      // The frontend will handle the WebRTC connection directly
+      const sessionInfo = this.openaiConnection.getSessionInfo();
+      
+      this.broadcastToClients({
+        type: 'session_info',
+        sessionId: sessionInfo.sessionId,
+        clientSecret: sessionInfo.clientSecret,
+        apiKey: sessionInfo.apiKey,
+        audioData: audioData // Pass the audio data to frontend
       });
-      console.log('✅ Audio data sent successfully');
+      
+      console.log('✅ Session info sent to frontend for WebRTC connection');
     } catch (error) {
-      console.error('❌ Failed to send audio to OpenAI:', error);
+      console.error('❌ Failed to process audio:', error);
       this.broadcastToClients({
         type: 'error',
         error: { message: 'Failed to process audio. Please try again.' }
@@ -79,23 +96,19 @@ export class MessageHandlers {
       }
     }
     
-    // Send text message to OpenAI
-    this.openaiConnection.send({
-      type: 'conversation.item.create',
-      item: {
-        type: 'message',
-        role: 'user',
-        content: [{
-          type: 'text',
-          text: text
-        }]
-      }
-    });
-    
-    // Trigger response
-    this.openaiConnection.send({
-      type: 'response.create'
-    });
+    try {
+      // Send text message to OpenAI via HTTP
+      await this.openaiConnection.sendMessage({
+        type: 'text',
+        text: text
+      });
+    } catch (error) {
+      console.error('❌ Failed to send text message:', error);
+      this.broadcastToClients({
+        type: 'error',
+        error: { message: 'Failed to send text message. Please try again.' }
+      });
+    }
   }
 
   async handleControl(command: string, sessionId: string): Promise<void> {
@@ -111,14 +124,18 @@ export class MessageHandlers {
 
     switch (command) {
       case 'interrupt':
-        this.openaiConnection.send({
-          type: 'response.cancel'
+        // Send interrupt command to frontend for WebRTC handling
+        this.broadcastToClients({
+          type: 'control',
+          command: 'interrupt'
         });
         break;
         
       case 'clear':
-        this.openaiConnection.send({
-          type: 'input_audio_buffer.clear'
+        // Send clear command to frontend for WebRTC handling
+        this.broadcastToClients({
+          type: 'control',
+          command: 'clear'
         });
         break;
         

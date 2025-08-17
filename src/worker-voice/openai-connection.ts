@@ -2,6 +2,8 @@
 
 export interface Env {
   OPENAI_API_KEY: string;
+  VOICE_SESSION: DurableObjectNamespace;
+  ASSETS: Fetcher;
 }
 
 export class OpenAIConnection {
@@ -12,7 +14,6 @@ export class OpenAIConnection {
   private onClose: () => void;
   private sessionId: string | null = null;
   private clientSecret: string | null = null;
-  private openaiWs: WebSocket | null = null;
 
   constructor(
     env: Env, 
@@ -57,11 +58,10 @@ export class OpenAIConnection {
         clientSecretLength: this.clientSecret?.length || 0
       });
       
-      // Now establish the actual WebSocket connection to OpenAI
-      console.log('🔧 Establishing WebSocket connection...');
-      await this.establishWebSocketConnection();
-      
-      console.log('✅ OpenAI connection complete');
+      // For Cloudflare Workers, we'll use HTTP streaming instead of WebSocket
+      // The frontend will handle the WebRTC connection directly
+      console.log('✅ OpenAI session ready for frontend WebRTC connection');
+      this.onOpen();
       return true;
       
     } catch (error) {
@@ -78,8 +78,8 @@ export class OpenAIConnection {
     const requestBody = {
       model: 'gpt-4o-realtime-preview',
       voice: 'alloy',
-      input_audio_format: 'pcm16', // Fixed: OpenAI only supports pcm16, g711_ulaw, g711_alaw
-      output_audio_format: 'pcm16', // Fixed: OpenAI only supports pcm16, g711_ulaw, g711_alaw
+      input_audio_format: 'pcm16',
+      output_audio_format: 'pcm16',
       input_audio_transcription: { model: 'whisper-1' },
       turn_detection: {
         type: 'server_vad',
@@ -110,116 +110,56 @@ export class OpenAIConnection {
     return sessionData;
   }
 
-  private async establishWebSocketConnection(): Promise<void> {
-    if (!this.sessionId || !this.clientSecret) {
-      throw new Error('Session not created yet');
+  // Send message to OpenAI via HTTP (for non-audio messages)
+  async sendMessage(message: any): Promise<void> {
+    if (!this.sessionId) {
+      console.error('❌ No session available');
+      return;
     }
 
     try {
-      console.log('🔧 Establishing WebSocket connection to OpenAI...');
+      console.log('📤 Sending message to OpenAI via HTTP:', message.type);
       
-      const wsUrl = `wss://api.openai.com/v1/realtime/sessions/${this.sessionId}/stream?client_secret=${this.clientSecret}`;
-      console.log('🔗 WebSocket URL:', wsUrl);
-      
-      // Create WebSocket with proper error handling
-      this.openaiWs = new WebSocket(wsUrl);
-      console.log('🔧 WebSocket created, waiting for connection...');
-      
-      // Return a promise that resolves when connected or rejects on error
-      return new Promise((resolve, reject) => {
-        const timeout = setTimeout(() => {
-          reject(new Error('WebSocket connection timeout'));
-        }, 10000); // 10 second timeout
-        
-        this.openaiWs!.addEventListener('open', () => {
-          console.log('✅ OpenAI WebSocket connected successfully');
-          clearTimeout(timeout);
-          
-          // Send session configuration
-          this.openaiWs?.send(JSON.stringify({
-            type: 'session.update',
-            session: {
-              instructions: 'You are a helpful AI assistant.'
-            }
-          }));
-          
-          // Notify that we're connected
-          this.onOpen();
-          resolve();
+      // For text messages, we can use the chat completions API
+      if (message.type === 'text') {
+        const response = await fetch('https://api.openai.com/v1/chat/completions', {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${this.env.OPENAI_API_KEY}`,
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({
+            model: 'gpt-4o',
+            messages: [{ role: 'user', content: message.text }],
+            stream: false
+          })
         });
-        
-        this.openaiWs!.addEventListener('error', (error) => {
-          console.error('❌ OpenAI WebSocket error:', error);
-          clearTimeout(timeout);
-          reject(new Error('WebSocket connection failed'));
-        });
-        
-        this.openaiWs!.addEventListener('close', (event) => {
-          console.log('🔌 OpenAI WebSocket closed:', {
-            code: event.code,
-            reason: event.reason,
-            wasClean: event.wasClean
-          });
-          clearTimeout(timeout);
-          this.onClose();
-        });
-        
-        this.openaiWs!.addEventListener('message', (event) => {
-          try {
-            const data = JSON.parse(event.data as string);
-            console.log('OpenAI message received:', data);
-            
-            // Forward OpenAI messages to the frontend
-            this.onMessage(JSON.stringify({
-              type: 'openai_message',
-              data: data
-            }));
-          } catch (error) {
-            console.error('Failed to parse OpenAI message:', error);
-          }
-        });
-      });
-      
-    } catch (error) {
-      console.error('Failed to establish WebSocket connection:', error);
-      throw error;
-    }
-  }
 
-  // Send message to OpenAI WebSocket
-  send(message: any): void {
-    if (this.openaiWs && this.openaiWs.readyState === WebSocket.OPEN) {
-      try {
-        console.log('📤 Sending to OpenAI:', message.type);
-        this.openaiWs.send(JSON.stringify(message));
-      } catch (error) {
-        console.error('❌ Failed to send to OpenAI:', error);
-        this.onError({
-          message: 'Failed to send message to OpenAI',
-          details: error
-        });
+        if (response.ok) {
+          const result = await response.json() as any;
+          this.onMessage(JSON.stringify({
+            type: 'response_text',
+            text: result.choices?.[0]?.message?.content || 'No response'
+          }));
+        }
       }
-    } else {
-      console.warn('⚠️ OpenAI WebSocket not ready for sending');
+    } catch (error) {
+      console.error('❌ Failed to send message to OpenAI:', error);
       this.onError({
-        message: 'OpenAI connection not ready',
-        details: 'WebSocket state: ' + (this.openaiWs?.readyState || 'null')
+        message: 'Failed to send message to OpenAI',
+        details: error
       });
     }
   }
 
   isConnected(): boolean {
-    // We're connected if we have a session and WebSocket is open
-    return !!(this.sessionId && this.openaiWs && this.openaiWs.readyState === WebSocket.OPEN);
+    // We're connected if we have a session
+    return !!this.sessionId;
   }
 
   disconnect(): void {
     this.sessionId = null;
     this.clientSecret = null;
-    if (this.openaiWs) {
-      this.openaiWs.close();
-      this.openaiWs = null;
-    }
     this.onClose();
   }
 
@@ -227,6 +167,15 @@ export class OpenAIConnection {
     return {
       sessionId: this.sessionId,
       clientSecret: this.clientSecret
+    };
+  }
+
+  // Get session info for frontend WebRTC connection
+  getSessionInfo(): { sessionId: string | null; clientSecret: string | null; apiKey: string } {
+    return {
+      sessionId: this.sessionId,
+      clientSecret: this.clientSecret,
+      apiKey: this.env.OPENAI_API_KEY
     };
   }
 }
