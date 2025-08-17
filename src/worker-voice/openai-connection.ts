@@ -78,8 +78,8 @@ export class OpenAIConnection {
     const requestBody = {
       model: 'gpt-4o-realtime-preview',
       voice: 'alloy',
-      input_audio_format: 'webm', // Changed from pcm16 to webm for better compatibility
-      output_audio_format: 'webm', // Changed from pcm16 to webm for better compatibility
+      input_audio_format: 'pcm16', // Fixed: OpenAI only supports pcm16, g711_ulaw, g711_alaw
+      output_audio_format: 'pcm16', // Fixed: OpenAI only supports pcm16, g711_ulaw, g711_alaw
       input_audio_transcription: { model: 'whisper-1' },
       turn_detection: {
         type: 'server_vad',

@@ -139,31 +139,56 @@ export const useVoiceInteraction = (options: UseVoiceInteractionOptions = {}) =>
       
       mediaRecorder.ondataavailable = async (event) => {
         if (event.data.size > 0) {
+          console.log('🔧 Audio data available:', {
+            size: event.data.size,
+            type: event.data.type,
+            timestamp: new Date().toISOString()
+          });
+          
           try {
-            // Try to send the original audio format first
+            // Convert audio to PCM16 format as required by OpenAI
+            const audioBuffer = await convertToPCM16(event.data);
+            const base64 = arrayBufferToBase64(audioBuffer);
+            
+            console.log('🔧 Sending PCM16 audio to server...', {
+              originalSize: event.data.size,
+              pcm16Size: audioBuffer.byteLength,
+              base64Length: base64.length
+            });
+            
+            // Send via HTTP POST
+            const response = await fetch('/voice/message', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ type: 'audio', audio: base64 })
+            });
+            
+            if (!response.ok) {
+              throw new Error(`HTTP ${response.status}`);
+            }
+            
+            console.log('✅ Audio sent successfully');
+          } catch (error) {
+            console.error('❌ Failed to send audio:', error);
+            // Fallback to original format if PCM16 conversion fails
+            console.log('🔄 Attempting fallback with original audio format...');
             const reader = new FileReader();
             reader.onloadend = async () => {
               const base64 = reader.result?.toString().split(',')[1];
               if (base64) {
                 try {
-                  const response = await fetch('/voice/message', {
+                  await fetch('/voice/message', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ type: 'audio', audio: base64 })
                   });
-                  
-                  if (!response.ok) {
-                    throw new Error(`HTTP ${response.status}`);
-                  }
-                } catch (error) {
-                  console.error('Failed to send audio:', error);
+                  console.log('✅ Fallback audio sent successfully');
+                } catch (fallbackError) {
+                  console.error('❌ Fallback audio send also failed:', fallbackError);
                 }
               }
             };
             reader.readAsDataURL(event.data);
-            
-          } catch (error) {
-            console.error('Failed to process audio:', error);
           }
         }
       };
@@ -446,4 +471,50 @@ function base64ToArrayBuffer(base64: string): ArrayBuffer {
     bytes[i] = binaryString.charCodeAt(i);
   }
   return bytes.buffer;
+}
+
+// Convert audio blob to PCM16 format
+async function convertToPCM16(audioBlob: Blob): Promise<ArrayBuffer> {
+  try {
+    console.log('🔧 Converting audio to PCM16 format...');
+    const audioContext = new AudioContext();
+    const arrayBuffer = await audioBlob.arrayBuffer();
+    const audioBuffer = await audioContext.decodeAudioData(arrayBuffer);
+    
+    console.log('🔧 Audio decoded, converting to PCM16...', {
+      sampleRate: audioBuffer.sampleRate,
+      length: audioBuffer.length,
+      numberOfChannels: audioBuffer.numberOfChannels
+    });
+    
+    // Convert to PCM16
+    const length = audioBuffer.length;
+    const pcm16 = new Int16Array(length);
+    
+    for (let i = 0; i < length; i++) {
+      // Convert float32 to int16
+      const sample = Math.max(-1, Math.min(1, audioBuffer.getChannelData(0)[i]));
+      pcm16[i] = sample < 0 ? sample * 0x8000 : sample * 0x7FFF;
+    }
+    
+    console.log('✅ Audio converted to PCM16 successfully', {
+      pcm16Length: pcm16.length,
+      pcm16Size: pcm16.byteLength
+    });
+    
+    return pcm16.buffer;
+  } catch (error) {
+    console.error('❌ Failed to convert audio to PCM16:', error);
+    throw error;
+  }
+}
+
+// Convert ArrayBuffer to base64
+function arrayBufferToBase64(buffer: ArrayBuffer): string {
+  const bytes = new Uint8Array(buffer);
+  let binary = '';
+  for (let i = 0; i < bytes.byteLength; i++) {
+    binary += String.fromCharCode(bytes[i]);
+  }
+  return btoa(binary);
 }
