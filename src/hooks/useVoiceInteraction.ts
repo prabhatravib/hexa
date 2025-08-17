@@ -139,10 +139,11 @@ export const useVoiceInteraction = (options: UseVoiceInteractionOptions = {}) =>
       });
 
       // Create session and connect
-      const session = new RealtimeSession(agent, { transport: 'webrtc' });
+      const session = new RealtimeSession(agent);
       await session.connect({ 
-        apiKey: sessionData.apiKey
-      });
+        apiKey: sessionData.apiKey,
+        useInsecureApiKey: true // Required for WebRTC in browser environment
+      } as any);
       
       // Store the session reference
       openaiAgentRef.current = session;
