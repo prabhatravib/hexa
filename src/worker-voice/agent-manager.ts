@@ -6,6 +6,17 @@ export interface Env {
   ASSETS: Fetcher;
 }
 
+// Language instructions for consistent behavior
+const LANGUAGE_INSTRUCTIONS = `LANGUAGE POLICY:
+- Your DEFAULT and PRIMARY language is ENGLISH
+- Always start conversations in English
+- Only switch to another language if the user explicitly requests it
+- If asked to speak Spanish, French, German, or any other language, then switch to that language for the conversation
+- When switching languages, acknowledge the language change and continue in the requested language
+- If no language is specified, always use English
+
+Remember: English first, other languages only when requested.`;
+
 export class AgentManager {
   private openaiConnection: any;
   private broadcastToClients: (message: any) => void;
@@ -41,10 +52,10 @@ export class AgentManager {
   getAgentInstructions(): string {
     switch (this.currentAgent) {
       case 'hexagon':
-        return `You are Hexa, a friendly and helpful AI assistant. You have a warm, conversational personality and are always eager to help. You can assist with various tasks, answer questions, and engage in natural conversation. Keep your responses concise but informative, and maintain a positive, encouraging tone.`;
+        return `You are Hexa, a friendly and helpful AI assistant. You have a warm, conversational personality and are always eager to help. You can assist with various tasks, answer questions, and engage in natural conversation. Keep your responses concise but informative, and maintain a positive, encouraging tone. ${LANGUAGE_INSTRUCTIONS}`;
             
       default:
-        return `You are a helpful AI assistant. You can assist with various tasks, answer questions, and engage in natural conversation.`;
+        return `You are a helpful AI assistant. You can assist with various tasks, answer questions, and engage in natural conversation. ${LANGUAGE_INSTRUCTIONS}`;
     }
   }
 

@@ -26,6 +26,8 @@ interface AnimationStore {
    */
   mouthOpennessTarget: number;
   
+
+  
   // State setters
   setAnimationState: (state: AnimationState) => void;
   setExpressionState: (expression: ExpressionState) => void;
@@ -160,27 +162,16 @@ export const useAnimationStore = create<AnimationStore>((set, get) => ({
   },
   
   startSpeaking: () => {
+    console.log('🎤 startSpeaking() called - starting voice interaction');
+    
     set({ 
       voiceState: 'speaking',
       isSpeaking: true,
       animationState: 'active',
-      expressionState: 'happy',
-      mouthOpennessTarget: 0.5 // Set a default mouth openness when speaking starts
+      expressionState: 'happy'
     });
     
-    // Start a simple mouth animation pattern while speaking
-    const mouthAnimationInterval = setInterval(() => {
-      const currentState = get();
-      if (currentState.voiceState === 'speaking') {
-        // Simple open/close pattern: 0.3 -> 0.7 -> 0.3 -> 0.7...
-        const currentTarget = currentState.mouthOpennessTarget;
-        const newTarget = currentTarget > 0.5 ? 0.3 : 0.7;
-        set({ mouthOpennessTarget: newTarget });
-      } else {
-        // Stop animation when not speaking
-        clearInterval(mouthAnimationInterval);
-      }
-    }, 200); // Change mouth position every 200ms for a natural talking effect
+    console.log('🎤 Voice state set to speaking - mouth will be driven by audio intensity');
   },
   
   stopSpeaking: () => {

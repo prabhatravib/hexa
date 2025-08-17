@@ -3,6 +3,7 @@ import { useAnimationStore } from '@/store/animationStore';
 import { useVoiceAgentService } from './voiceAgentService';
 import { useVoiceConnectionService } from './voiceConnectionService';
 import { useVoiceControlService } from './voiceControlService';
+import { getSupportedLanguageCodes, DEFAULT_LANGUAGE } from '@/lib/languageConfig';
 
 interface UseVoiceInteractionOptions {
   wakeWord?: string;
@@ -10,6 +11,8 @@ interface UseVoiceInteractionOptions {
   onTranscription?: (text: string) => void;
   onResponse?: (text: string) => void;
   onError?: (error: string) => void;
+  defaultLanguage?: string;
+  supportedLanguages?: string[];
 }
 
 export const useVoiceInteraction = (options: UseVoiceInteractionOptions = {}) => {
@@ -18,7 +21,9 @@ export const useVoiceInteraction = (options: UseVoiceInteractionOptions = {}) =>
     autoStart = false,
     onTranscription,
     onResponse,
-    onError
+    onError,
+    defaultLanguage = DEFAULT_LANGUAGE,
+    supportedLanguages = getSupportedLanguageCodes()
   } = options;
 
   const {
@@ -131,7 +136,9 @@ export const useVoiceInteraction = (options: UseVoiceInteractionOptions = {}) =>
 
   const { initializeOpenAIAgent, initializeOpenAIAgentFromWorker } = useVoiceAgentService({
     setVoiceState,
-    onError
+    onError,
+    startSpeaking,
+    stopSpeaking
   });
 
   const [isConnected, setIsConnected] = useState(false);
@@ -139,6 +146,7 @@ export const useVoiceInteraction = (options: UseVoiceInteractionOptions = {}) =>
   const [transcript, setTranscript] = useState('');
   const [response, setResponse] = useState('');
   const [sessionInfo, setSessionInfo] = useState<any>(null);
+  const [currentLanguage, setCurrentLanguage] = useState(defaultLanguage);
   
   const wsRef = useRef<WebSocket | null>(null);
   const openaiAgentRef = useRef<any>(null);
@@ -278,6 +286,8 @@ export const useVoiceInteraction = (options: UseVoiceInteractionOptions = {}) =>
     isRecording,
     transcript,
     response,
+    currentLanguage,
+    supportedLanguages,
     connect,
     disconnect: () => {
       if (wsRef.current) {
@@ -298,6 +308,13 @@ export const useVoiceInteraction = (options: UseVoiceInteractionOptions = {}) =>
     sendText,
     switchAgent,
     interrupt,
+    switchLanguage: (language: string) => {
+      if (supportedLanguages.includes(language)) {
+        setCurrentLanguage(language);
+        // Send language change instruction to the AI
+        sendText(`Please switch to ${language === 'en' ? 'English' : language} for our conversation.`);
+      }
+    },
     clearTranscript: () => setTranscript(''),
     clearResponse: () => setResponse('')
   };

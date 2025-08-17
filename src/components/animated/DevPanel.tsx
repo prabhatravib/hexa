@@ -149,6 +149,28 @@ export const DevPanel: React.FC<DevPanelProps> = ({ isVisible = false }) => {
             Simulate Speaking
           </label>
         </div>
+        
+        {/* Test Speaking State */}
+        <div className="flex space-x-2">
+          <button
+            onClick={() => {
+              console.log('🧪 Test button: Starting speaking...');
+              useAnimationStore.getState().startSpeaking();
+            }}
+            className="px-2 py-1 text-xs bg-green-500 text-white rounded hover:bg-green-600"
+          >
+            Test Start Speaking
+          </button>
+          <button
+            onClick={() => {
+              console.log('🧪 Test button: Stopping speaking...');
+              useAnimationStore.getState().stopSpeaking();
+            }}
+            className="px-2 py-1 text-xs bg-red-500 text-white rounded hover:bg-red-600"
+          >
+            Test Stop Speaking
+          </button>
+        </div>
       </div>
       
       {/* Performance Stats */}

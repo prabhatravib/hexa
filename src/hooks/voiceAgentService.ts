@@ -1,13 +1,16 @@
 import { useCallback } from 'react';
+import { getLanguageInstructions } from '@/lib/languageConfig';
 
 type VoiceState = 'idle' | 'listening' | 'thinking' | 'speaking' | 'error';
 
 interface VoiceAgentServiceOptions {
   setVoiceState: (state: VoiceState) => void;
   onError?: (error: string) => void;
+  startSpeaking?: () => void;
+  stopSpeaking?: () => void;
 }
 
-export const useVoiceAgentService = ({ setVoiceState, onError }: VoiceAgentServiceOptions) => {
+export const useVoiceAgentService = ({ setVoiceState, onError, startSpeaking, stopSpeaking }: VoiceAgentServiceOptions) => {
   // Initialize OpenAI Agent with WebRTC
   const initializeOpenAIAgent = useCallback(async (sessionData: any) => {
     try {
@@ -25,23 +28,37 @@ export const useVoiceAgentService = ({ setVoiceState, onError }: VoiceAgentServi
       // Create agent with proper configuration
       const agent = new RealtimeAgent({
         name: 'Hexa, an AI Assistant',
-        instructions: 'You are Hexa, a friendly and helpful AI assistant. You have a warm, conversational personality and are always eager to help. You can assist with various tasks, answer questions, and engage in natural conversation. Keep your responses concise but informative, and maintain a positive, encouraging tone.'
+        instructions: `You are Hexa, a friendly and helpful AI assistant. You have a warm, conversational personality and are always eager to help. You can assist with various tasks, answer questions, and engage in natural conversation. Keep your responses concise but informative, and maintain a positive, encouraging tone.
+
+${getLanguageInstructions()}`
       });
 
       // Create session and connect
       const session = new RealtimeSession(agent);
       
-      // Set up simple audio event handlers for mouth animation
+      // Set up audio event handlers for mouth animation
       session.on('audio' as any, (audioChunk: any) => {
         // Voice is playing - trigger mouth animation
         console.log('🎵 Voice audio received - mouth should animate');
-        setVoiceState('speaking');
+        console.log('🎵 startSpeaking function available:', !!startSpeaking);
+        if (startSpeaking) {
+          console.log('🎵 Calling startSpeaking()...');
+          startSpeaking(); // This will set voiceState and start mouth animation
+          console.log('🎵 startSpeaking() called successfully');
+        } else {
+          console.log('🎵 startSpeaking not available, using fallback setVoiceState');
+          setVoiceState('speaking'); // Fallback if startSpeaking not provided
+        }
       });
       
       session.on('audio_done' as any, () => {
         // Voice stopped - stop mouth animation
         console.log('🔇 Voice audio done - mouth should stop animating');
-        setVoiceState('idle');
+        if (stopSpeaking) {
+          stopSpeaking(); // This will set voiceState and stop mouth animation
+        } else {
+          setVoiceState('idle'); // Fallback if stopSpeaking not provided
+        }
       });
       
       session.on('error' as any, (error: any) => {
@@ -77,7 +94,7 @@ export const useVoiceAgentService = ({ setVoiceState, onError }: VoiceAgentServi
       onError?.('Failed to initialize OpenAI Agent');
       return null;
     }
-  }, [setVoiceState, onError]);
+  }, [setVoiceState, onError, startSpeaking, stopSpeaking]);
 
   // Initialize OpenAI Agent from worker (gets session info)
   const initializeOpenAIAgentFromWorker = useCallback(async () => {
@@ -103,7 +120,7 @@ export const useVoiceAgentService = ({ setVoiceState, onError }: VoiceAgentServi
       setVoiceState('error');
       onError?.('Failed to initialize voice service');
     }
-  }, [setVoiceState, onError]);
+  }, [setVoiceState, onError, startSpeaking, stopSpeaking]);
 
   return {
     initializeOpenAIAgent,

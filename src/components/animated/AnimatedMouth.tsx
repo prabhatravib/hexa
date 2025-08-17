@@ -272,25 +272,21 @@ export const AnimatedMouth: React.FC<AnimatedMouthProps> = ({
     console.log(`🛤️ Final Path: ${finalPath.substring(0, 50)}...`);
   }
   
-  // Variants for expression-based animations - all use the same path to prevent duplication
+  // Variants for expression-based animations - only control scale/transition, not path
   const mouthVariants = {
     static: {
-      d: finalPath,
       transition: {
         duration: TIMING.EXPRESSION_TRANSITION / 1000,
         ease: EASING.SMOOTH,
       }
     },
     breathing: {
-      d: finalPath,
-      // Removed pulsing scale and movement to eliminate interior pulsing
       transition: {
         duration: TIMING.IDLE_PULSE_DURATION / 1000,
         ease: EASING.SMOOTH,
       }
     },
     smile: {
-      d: finalPath, // Use finalPath instead of hardcoded MOUTH_PATHS.HAPPY
       scale: 1.05,
       transition: {
         duration: 0.3,
