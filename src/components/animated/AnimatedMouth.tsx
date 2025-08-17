@@ -18,49 +18,65 @@ export const AnimatedMouth: React.FC<AnimatedMouthProps> = ({
   color = '#064e3b',
   className = '',
 }) => {
-  const { expressionState, animationState, speechIntensity, isSpeaking } = useAnimationStore();
+  const { 
+    expressionState, 
+    animationState, 
+    speechIntensity, 
+    isSpeaking,
+    // New enhanced mouth states
+    isMouthOpen,
+    mouthOpenness,
+    mouthAnimationSpeed,
+    mouthShape
+  } = useAnimationStore();
+  
   const [isBreathing, setIsBreathing] = useState(false);
   const [currentPath, setCurrentPath] = useState<string>(MOUTH_PATHS.HAPPY);
 
-  // Update mouth path based on expression
+  // Update mouth path based on expression and voice state
   useEffect(() => {
-    switch (expressionState) {
-      case 'excited':
-        setCurrentPath(MOUTH_PATHS.EXCITED);
-        break;
-      case 'neutral':
-        setCurrentPath(MOUTH_PATHS.NEUTRAL);
-        break;
-      case 'curious':
-        setCurrentPath(MOUTH_PATHS.CURIOUS);
-        break;
-      case 'happy':
-      default:
-        setCurrentPath(MOUTH_PATHS.HAPPY);
-        break;
+    // Priority: Voice state > Expression state
+    if (isSpeaking && mouthShape !== 'closed') {
+      // Use voice-driven mouth shape
+      switch (mouthShape) {
+        case 'wide_open':
+          setCurrentPath(MOUTH_PATHS.WIDE_OPEN);
+          break;
+        case 'open':
+          setCurrentPath(MOUTH_PATHS.OPEN);
+          break;
+        case 'slightly_open':
+          setCurrentPath(MOUTH_PATHS.SLIGHTLY_OPEN);
+          break;
+        default:
+          setCurrentPath(MOUTH_PATHS.HAPPY);
+      }
+    } else {
+      // Use expression-based mouth path
+      switch (expressionState) {
+        case 'excited':
+          setCurrentPath(MOUTH_PATHS.EXCITED);
+          break;
+        case 'neutral':
+          setCurrentPath(MOUTH_PATHS.NEUTRAL);
+          break;
+        case 'curious':
+          setCurrentPath(MOUTH_PATHS.CURIOUS);
+          break;
+        case 'happy':
+        default:
+          setCurrentPath(MOUTH_PATHS.HAPPY);
+          break;
+      }
     }
-  }, [expressionState]);
-
-  // Modify mouth shape based on speech intensity
-  useEffect(() => {
-    if (isSpeaking && speechIntensity > 0) {
-      const openness = speechIntensity * 20; // Scale intensity to mouth openness
-      const dynamicPath = `M ${82 - openness/2} ${108 + openness} Q 100 ${128 + openness} ${118 + openness/2} ${108 + openness}`;
-      setCurrentPath(dynamicPath);
-    } else if (!isSpeaking) {
-      // Reset to expression-based path
-      setCurrentPath(MOUTH_PATHS[expressionState === 'excited' ? 'EXCITED' : 
-                                 expressionState === 'neutral' ? 'NEUTRAL' :
-                                 expressionState === 'curious' ? 'CURIOUS' : 'HAPPY']);
-    }
-  }, [speechIntensity, isSpeaking, expressionState]);
+  }, [expressionState, isSpeaking, mouthShape]);
 
   // Breathing animation for idle state
   useEffect(() => {
-    setIsBreathing(animationState === 'idle');
-  }, [animationState]);
+    setIsBreathing(animationState === 'idle' && !isSpeaking);
+  }, [animationState, isSpeaking]);
 
-  // Variants for mouth animations
+  // Enhanced mouth variants with voice synchronization
   const mouthVariants = {
     static: {
       d: currentPath,
@@ -79,17 +95,14 @@ export const AnimatedMouth: React.FC<AnimatedMouthProps> = ({
         ease: EASING.SMOOTH,
       }
     },
-    talking: {
-      d: [
-        currentPath,
-        MOUTH_PATHS.SPEAKING,
-        MOUTH_PATHS.NEUTRAL,
-        currentPath,
-      ],
+    speaking: {
+      d: currentPath,
+      scale: [1, 1.01, 1],
       transition: {
-        duration: 0.2,
+        duration: 0.1 / mouthAnimationSpeed, // Dynamic speed based on speech intensity
         repeat: Infinity,
         repeatType: "loop" as const,
+        ease: EASING.SMOOTH,
       }
     },
     smile: {
@@ -104,15 +117,33 @@ export const AnimatedMouth: React.FC<AnimatedMouthProps> = ({
 
   // Helper to get current animation variant
   const getCurrentVariant = () => {
-    if (animationState === 'active') return 'smile';
+    if (animationState === 'active' && !isSpeaking) return 'smile';
+    if (isSpeaking) return 'speaking';
     if (isBreathing) return 'breathing';
     return 'static';
+  };
+
+  // Dynamic mouth animation during speech
+  const getDynamicMouthPath = () => {
+    if (!isSpeaking || mouthShape === 'closed') {
+      return currentPath;
+    }
+
+    // Create dynamic mouth path based on speech intensity
+    const baseY = 108;
+    const openness = mouthOpenness;
+    
+    // Calculate mouth openness dynamically
+    const opennessOffset = openness * 25; // Scale openness to visual movement
+    const widthOffset = openness * 15; // Mouth gets wider when more open
+    
+    return `M ${82 - widthOffset/2} ${baseY + opennessOffset} Q 100 ${128 + opennessOffset} ${118 + widthOffset/2} ${baseY + opennessOffset}`;
   };
 
   // Dimple effects for happy expressions
   const Dimples = () => (
     <AnimatePresence>
-      {(expressionState === 'happy' || expressionState === 'excited') && (
+      {(expressionState === 'happy' || expressionState === 'excited') && !isSpeaking && (
         <motion.g
           initial={{ opacity: 0, scale: 0 }}
           animate={{ opacity: 0.3, scale: 1 }}
@@ -141,7 +172,7 @@ export const AnimatedMouth: React.FC<AnimatedMouthProps> = ({
   // Subtle lip shine effect
   const LipShine = () => (
     <AnimatePresence>
-      {animationState === 'hover' && (
+      {animationState === 'hover' && !isSpeaking && (
         <motion.path
           d={currentPath}
           stroke="#a7f3d0"
@@ -194,11 +225,36 @@ export const AnimatedMouth: React.FC<AnimatedMouthProps> = ({
     </AnimatePresence>
   );
 
+  // Speech intensity indicator (subtle glow during speech)
+  const SpeechGlow = () => (
+    <AnimatePresence>
+      {isSpeaking && speechIntensity > 0.1 && (
+        <motion.path
+          d={getDynamicMouthPath()}
+          stroke="#10b981"
+          strokeWidth={strokeWidth + 2}
+          fill="none"
+          strokeLinecap="round"
+          initial={{ opacity: 0 }}
+          animate={{ 
+            opacity: [0, 0.3 * speechIntensity, 0],
+          }}
+          transition={{
+            duration: 0.1 / mouthAnimationSpeed,
+            repeat: Infinity,
+            repeatType: "loop",
+          }}
+          style={{ filter: 'blur(1px)' }}
+        />
+      )}
+    </AnimatePresence>
+  );
+
   return (
     <g className={className}>
       {/* Shadow/depth for mouth */}
       <motion.path
-        d={currentPath}
+        d={getDynamicMouthPath()}
         stroke="#000000"
         strokeWidth={strokeWidth + 1}
         fill="none"
@@ -212,7 +268,7 @@ export const AnimatedMouth: React.FC<AnimatedMouthProps> = ({
       
       {/* Main mouth path */}
       <motion.path
-        d={currentPath}
+        d={getDynamicMouthPath()}
         stroke={color}
         strokeWidth={strokeWidth}
         fill="none"
@@ -227,7 +283,7 @@ export const AnimatedMouth: React.FC<AnimatedMouthProps> = ({
       
       {/* Highlight for depth */}
       <motion.path
-        d={currentPath}
+        d={getDynamicMouthPath()}
         stroke="#10b981"
         strokeWidth={1.5}
         fill="none"
@@ -241,6 +297,9 @@ export const AnimatedMouth: React.FC<AnimatedMouthProps> = ({
         }}
       />
       
+      {/* Speech glow effect */}
+      <SpeechGlow />
+      
       {/* Additional effects */}
       <LipShine />
       <Dimples />
@@ -248,7 +307,7 @@ export const AnimatedMouth: React.FC<AnimatedMouthProps> = ({
       
       {/* Corner accent for smile */}
       <AnimatePresence>
-        {expressionState === 'excited' && (
+        {expressionState === 'excited' && !isSpeaking && (
           <motion.g
             initial={{ opacity: 0 }}
             animate={{ opacity: 0.6 }}

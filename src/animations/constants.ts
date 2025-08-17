@@ -82,6 +82,11 @@ export const MOUTH_PATHS = {
   CURIOUS: 'M 82 108 Q 100 125 118 108',
   THINKING: 'M 88 115 Q 100 118 112 115',
   SPEAKING: 'M 85 108 Q 100 125 115 108',
+  // Enhanced mouth shapes for voice synchronization
+  SLIGHTLY_OPEN: 'M 85 108 Q 100 125 115 108',
+  OPEN: 'M 82 108 Q 100 130 118 108',
+  WIDE_OPEN: 'M 80 108 Q 100 135 120 108',
+  CLOSED: 'M 85 115 L 115 115',
 };
 
 // Animation keyframes for complex animations

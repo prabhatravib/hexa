@@ -18,6 +18,12 @@ interface AnimationStore {
   isSpeaking: boolean;
   speechIntensity: number; // 0-1 for mouth animation
   
+  // Mouth-specific states for enhanced animation
+  isMouthOpen: boolean;
+  mouthOpenness: number; // 0-1, driven by speechIntensity
+  mouthAnimationSpeed: number; // for smooth transitions
+  mouthShape: 'closed' | 'slightly_open' | 'open' | 'wide_open';
+  
   // State setters
   setAnimationState: (state: AnimationState) => void;
   setExpressionState: (expression: ExpressionState) => void;
@@ -29,6 +35,14 @@ interface AnimationStore {
   setVoiceActive: (active: boolean) => void;
   setSpeaking: (speaking: boolean) => void;
   setSpeechIntensity: (intensity: number) => void;
+  
+  // Mouth control functions
+  setMouthOpenness: (openness: number) => void;
+  setMouthShape: (shape: 'closed' | 'slightly_open' | 'open' | 'wide_open') => void;
+  openMouth: () => void;
+  closeMouth: () => void;
+  updateMouthFromSpeech: (intensity: number) => void;
+  adjustMouthAnimationSpeed: (intensity: number) => void;
   
   // Animation triggers
   triggerBlink: () => void;
@@ -60,6 +74,12 @@ export const useAnimationStore = create<AnimationStore>((set, get) => ({
   isSpeaking: false,
   speechIntensity: 0,
   
+  // Mouth-specific states for enhanced animation
+  isMouthOpen: false,
+  mouthOpenness: 0,
+  mouthAnimationSpeed: 0.5, // Default speed
+  mouthShape: 'closed',
+  
   // State setters
   setAnimationState: (state) => set({ animationState: state }),
   setExpressionState: (expression) => set({ expressionState: expression }),
@@ -70,7 +90,54 @@ export const useAnimationStore = create<AnimationStore>((set, get) => ({
   setVoiceState: (state) => set({ voiceState: state }),
   setVoiceActive: (active) => set({ isVoiceActive: active }),
   setSpeaking: (speaking) => set({ isSpeaking: speaking }),
-  setSpeechIntensity: (intensity) => set({ speechIntensity: intensity }),
+  setSpeechIntensity: (intensity) => {
+    console.log('🎤 setSpeechIntensity called:', intensity, 'isSpeaking:', get().isSpeaking);
+    set({ speechIntensity: intensity });
+    // Automatically update mouth states when speech intensity changes
+    if (get().isSpeaking) {
+      console.log('🎤 Updating mouth states from speech intensity:', intensity);
+      get().updateMouthFromSpeech(intensity);
+      get().adjustMouthAnimationSpeed(intensity);
+    } else {
+      console.log('🎤 Not speaking, skipping mouth updates');
+    }
+  },
+  
+  // Mouth control functions
+  setMouthOpenness: (openness) => set({ mouthOpenness: openness }),
+  setMouthShape: (shape) => set({ mouthShape: shape }),
+  openMouth: () => set({ isMouthOpen: true }),
+  closeMouth: () => set({ isMouthOpen: false }),
+  updateMouthFromSpeech: (intensity) => {
+    const newOpenness = Math.min(1, Math.max(0, intensity));
+    
+    // Determine mouth shape based on intensity
+    let newShape: 'closed' | 'slightly_open' | 'open' | 'wide_open';
+    if (newOpenness > 0.7) {
+      newShape = 'wide_open';
+    } else if (newOpenness > 0.4) {
+      newShape = 'open';
+    } else if (newOpenness > 0.1) {
+      newShape = 'slightly_open';
+    } else {
+      newShape = 'closed';
+    }
+    
+    set({ 
+      mouthOpenness: newOpenness,
+      mouthShape: newShape,
+      isMouthOpen: newOpenness > 0.05
+    });
+  },
+  
+  adjustMouthAnimationSpeed: (intensity) => {
+    // Adjust animation speed based on speech intensity
+    // Higher intensity = faster animation for more responsive feel
+    const baseSpeed = 0.5;
+    const intensityMultiplier = 1 + (intensity * 0.5); // 0.5x to 1.5x speed
+    const newSpeed = Math.min(2, Math.max(0.1, baseSpeed * intensityMultiplier));
+    set({ mouthAnimationSpeed: newSpeed });
+  },
   
   // Animation triggers
   triggerBlink: () => {
@@ -121,7 +188,10 @@ export const useAnimationStore = create<AnimationStore>((set, get) => ({
       voiceState: 'speaking',
       isSpeaking: true,
       animationState: 'active',
-      expressionState: 'happy'
+      expressionState: 'happy',
+      isMouthOpen: true,
+      mouthOpenness: 0.3, // Start with slight openness
+      mouthShape: 'slightly_open'
     });
   },
   
@@ -132,7 +202,10 @@ export const useAnimationStore = create<AnimationStore>((set, get) => ({
       isVoiceActive: false,
       animationState: 'idle',
       expressionState: 'happy',
-      speechIntensity: 0
+      speechIntensity: 0,
+      isMouthOpen: false,
+      mouthOpenness: 0,
+      mouthShape: 'closed'
     });
   },
   

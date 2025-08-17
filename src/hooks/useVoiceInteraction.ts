@@ -35,7 +35,7 @@ export const useVoiceInteraction = (options: UseVoiceInteractionOptions = {}) =>
   const [response, setResponse] = useState('');
   const [sessionInfo, setSessionInfo] = useState<any>(null);
   
-  const wsRef = useRef<WebSocket | null>(null);
+  const wsRef = useRef<any>(null);
   const openaiAgentRef = useRef<any>(null);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const audioContextRef = useRef<AudioContext | null>(null);
@@ -44,7 +44,25 @@ export const useVoiceInteraction = (options: UseVoiceInteractionOptions = {}) =>
   
   // Connect using SSE for receiving messages
   const connect = useCallback(async () => {
+    // Prevent multiple connections
+    if (isConnected || wsRef.current) {
+      console.log('🔌 Already connected, skipping duplicate connection');
+      return;
+    }
+    
+    // Clean up any existing connections first
+    if (wsRef.current) {
+      console.log('🔌 Cleaning up existing connection...');
+      try {
+        wsRef.current.close();
+      } catch (error) {
+        console.log('🔌 Error closing existing connection:', error);
+      }
+      wsRef.current = null;
+    }
+    
     try {
+      console.log('🔌 Establishing new SSE connection...');
       // Use SSE for receiving messages (real-time updates)
       const eventSource = new EventSource(`${window.location.origin}/voice/sse`);
       
@@ -74,14 +92,29 @@ export const useVoiceInteraction = (options: UseVoiceInteractionOptions = {}) =>
               break;
               
             case 'session_info':
-              console.log('Session info received, updating OpenAI Agent...');
+              console.log('🎤 Session info received:', data);
+              console.log('🎤 Session details:', {
+                hasSessionId: !!data.sessionId,
+                hasClientSecret: !!data.clientSecret,
+                hasApiKey: !!data.apiKey,
+                clientSecretLength: data.clientSecret?.length || 0
+              });
               setSessionInfo(data);
-              // Update the agent with new session info if needed
-              if (openaiAgentRef.current) {
-                console.log('✅ OpenAI Agent already initialized, session info updated');
-              } else {
-                // Initialize with real session info
+              
+              // Check if we have the required data
+              if (!data.clientSecret) {
+                console.error('❌ No client secret in session info:', data);
+                setVoiceState('error');
+                onError?.('No client secret available for voice connection');
+                return;
+              }
+              
+              // Initialize the agent with the real session data
+              if (!openaiAgentRef.current) {
+                console.log('🎤 Initializing OpenAI Agent with session data...');
                 await initializeOpenAIAgent(data);
+              } else {
+                console.log('✅ OpenAI Agent already initialized, skipping duplicate initialization');
               }
               break;
               
@@ -114,8 +147,8 @@ export const useVoiceInteraction = (options: UseVoiceInteractionOptions = {}) =>
         onError?.('Voice service connection failed. Please check your internet connection.');
       };
       
-      // Store reference for cleanup
-      wsRef.current = eventSource as any; // Reuse wsRef for cleanup
+             // Store reference for cleanup
+       wsRef.current = eventSource;
       
     } catch (error) {
       console.error('Failed to connect:', error);
@@ -126,14 +159,30 @@ export const useVoiceInteraction = (options: UseVoiceInteractionOptions = {}) =>
 
   // Initialize OpenAI Agent with WebRTC
   const initializeOpenAIAgent = useCallback(async (sessionData: any) => {
+    // Prevent multiple initializations
+    if (openaiAgentRef.current) {
+      console.log('🔌 OpenAI Agent already initialized, skipping duplicate initialization');
+      return;
+    }
+    
     try {
       console.log('🔧 Initializing OpenAI Agent with WebRTC...');
       console.log('🔧 Session data received:', {
         hasApiKey: !!sessionData.apiKey,
         apiKeyPrefix: sessionData.apiKey?.substring(0, 10) + '...',
         sessionId: sessionData.sessionId,
-        hasClientSecret: !!sessionData.clientSecret
+        hasClientSecret: !!sessionData.clientSecret,
+        clientSecretLength: sessionData.clientSecret?.length || 0
       });
+      
+      // Validate session data
+      if (!sessionData.clientSecret) {
+        throw new Error('Client secret is missing from session data');
+      }
+      
+      if (!sessionData.sessionId) {
+        throw new Error('Session ID is missing from session data');
+      }
       
       // Import OpenAI Agents Realtime SDK dynamically
       const { RealtimeAgent, RealtimeSession } = await import('@openai/agents-realtime');
@@ -148,20 +197,16 @@ export const useVoiceInteraction = (options: UseVoiceInteractionOptions = {}) =>
       const session = new RealtimeSession(agent);
       
       // Connect using client secret (the working method)
-      if (sessionData.clientSecret) {
-        console.log('🔧 Connecting with client secret...');
-        const connectionOptions = {
-          apiKey: sessionData.clientSecret,
-          useInsecureApiKey: true,
-          transport: 'webrtc' as const
-        };
-        
-        console.log('🔧 Connecting with options:', connectionOptions);
-        await session.connect(connectionOptions);
-        console.log('✅ WebRTC connection successful with client secret');
-      } else {
-        throw new Error('No client secret available for WebRTC connection');
-      }
+      console.log('🔧 Connecting with client secret...');
+      const connectionOptions = {
+        apiKey: sessionData.clientSecret,
+        useInsecureApiKey: true,
+        transport: 'webrtc' as const
+      };
+      
+      console.log('🔧 Connecting with options:', connectionOptions);
+      await session.connect(connectionOptions);
+      console.log('✅ WebRTC connection successful with client secret');
       
       // Store the session reference
       openaiAgentRef.current = session;
@@ -172,7 +217,8 @@ export const useVoiceInteraction = (options: UseVoiceInteractionOptions = {}) =>
     } catch (error) {
       console.error('❌ Failed to initialize OpenAI Agent:', error);
       setVoiceState('error');
-      onError?.('Failed to initialize OpenAI Agent');
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+      onError?.(`Failed to initialize OpenAI Agent: ${errorMessage}`);
     }
   }, [setVoiceState, onError]);
 
@@ -192,16 +238,16 @@ export const useVoiceInteraction = (options: UseVoiceInteractionOptions = {}) =>
         throw new Error(`HTTP ${response.status}`);
       }
       
-      // Now initialize the agent with a placeholder API key
-      // The actual API key will be provided when we get session_info
-      await initializeOpenAIAgent({ apiKey: 'placeholder' });
+      console.log('🔧 Connection ready message sent, waiting for session info...');
+      // Don't initialize the agent yet - wait for session_info from SSE
+      // The agent will be initialized when we receive the actual session data
       
     } catch (error) {
       console.error('❌ Failed to initialize OpenAI Agent from worker:', error);
       setVoiceState('error');
       onError?.('Failed to initialize voice service');
     }
-  }, [initializeOpenAIAgent, setVoiceState, onError]);
+  }, [setVoiceState, onError]);
   
   // Start recording
   const startRecording = useCallback(async () => {
@@ -360,21 +406,25 @@ export const useVoiceInteraction = (options: UseVoiceInteractionOptions = {}) =>
       connect();
     }
     
-    return () => {
-      if (wsRef.current) {
-        // Handle both WebSocket and EventSource cleanup
-        if ('close' in wsRef.current) {
-          wsRef.current.close();
-        } else if ('close' in wsRef.current) {
-          (wsRef.current as EventSource).close();
-        }
-      }
-      if (openaiAgentRef.current) {
-        // Close the RealtimeSession
-        openaiAgentRef.current.close();
-      }
-      stopRecording();
-    };
+         return () => {
+       if (wsRef.current) {
+         try {
+           wsRef.current.close();
+         } catch (error) {
+           console.log('🔌 Error closing connection during cleanup:', error);
+         }
+         wsRef.current = null;
+       }
+       if (openaiAgentRef.current) {
+         try {
+           openaiAgentRef.current.close();
+         } catch (error) {
+           console.log('🔌 Error closing OpenAI agent during cleanup:', error);
+         }
+         openaiAgentRef.current = null;
+       }
+       stopRecording();
+     };
   }, []);
    
   return {
@@ -383,19 +433,27 @@ export const useVoiceInteraction = (options: UseVoiceInteractionOptions = {}) =>
     transcript,
     response,
     connect,
-    disconnect: () => {
-      if (wsRef.current) {
-        // Handle both WebSocket and EventSource cleanup
-        if ('close' in wsRef.current) {
-          wsRef.current.close();
-        } else if ('close' in wsRef.current) {
-          (wsRef.current as EventSource).close();
-        }
-      }
+         disconnect: () => {
+       console.log('🔌 Disconnecting voice service...');
+       if (wsRef.current) {
+         try {
+           wsRef.current.close();
+         } catch (error) {
+           console.log('🔌 Error closing SSE connection:', error);
+         }
+         wsRef.current = null;
+       }
       if (openaiAgentRef.current) {
-        // Close the RealtimeSession
-        openaiAgentRef.current.close();
+        try {
+          openaiAgentRef.current.close();
+        } catch (error) {
+          console.log('🔌 Error closing OpenAI agent:', error);
+        }
+        openaiAgentRef.current = null;
       }
+      setIsConnected(false);
+      setVoiceState('idle');
+      console.log('🔌 Voice service disconnected');
     },
     startRecording,
     stopRecording,
@@ -403,7 +461,32 @@ export const useVoiceInteraction = (options: UseVoiceInteractionOptions = {}) =>
     switchAgent,
     interrupt,
     clearTranscript: () => setTranscript(''),
-    clearResponse: () => setResponse('')
+    clearResponse: () => setResponse(''),
+    // Debug function to test voice connection
+    testVoiceConnection: () => {
+      console.log('🧪 Testing voice connection...');
+      console.log('🧪 Current state:', {
+        isConnected,
+        isRecording,
+        openaiAgent: !!openaiAgentRef.current,
+        sessionInfo
+      });
+      
+      // Try to trigger the connection flow
+      if (!isConnected) {
+        console.log('🧪 Not connected, trying to connect...');
+        connect();
+      } else if (!openaiAgentRef.current) {
+        console.log('🧪 Connected but no agent, sending connection_ready...');
+        fetch('/voice/message', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ type: 'connection_ready' })
+        });
+      } else {
+        console.log('🧪 Voice system appears to be working!');
+      }
+    }
   };
 };
  
