@@ -1,0 +1,6 @@
+---
+description: 
+globs: 
+alwaysApply: true
+---
+Do not do terminal testing unless you absolutely have to. Prefer testing in powershell, as that is native to the current setup

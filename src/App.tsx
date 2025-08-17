@@ -1,30 +1,11 @@
-import { useMemo } from 'react';
-import { Container, Theme } from './settings/types';
-import { HexagonIcon } from './components/generated/HexagonIcon';
-import { AnimatedHexagon } from './components/animated/AnimatedHexagon';
-import { VoiceControl } from './components/VoiceControl';
 import { useAnimationSequence } from './hooks/useAnimationState';
-
-let theme: Theme = 'light';
-// only use 'centered' container for standalone components, never for full page apps or websites.
-let container: Container = 'centered';
+import { AnimatedHexagon } from './components/animated/AnimatedHexagon';
 
 function App() {
   const { greet, thinking } = useAnimationSequence();
-  
-  function setTheme(theme: Theme) {
-    if (theme === 'dark') {
-      document.documentElement.classList.add('dark');
-    } else {
-      document.documentElement.classList.remove('dark');
-    }
-  }
 
-  setTheme(theme);
-
-  const generatedComponent = useMemo(() => {
-    // THIS IS WHERE THE TOP LEVEL GENRATED COMPONENT WILL BE RETURNED!
-    return (
+  return (
+    <div className="h-full w-full flex flex-col items-center justify-center">
       <div className="flex flex-col items-center gap-6">
         <AnimatedHexagon size={300} />
         <div className="flex gap-4">
@@ -41,24 +22,9 @@ function App() {
             Thinking
           </button>
         </div>
-        <VoiceControl />
       </div>
-    );
-  }, [greet, thinking]);
-
-  if (container === 'centered') {
-    return (
-      <div className="h-full w-full flex flex-col items-center justify-center">
-        {generatedComponent}
-      </div>
-    );
-  } else {
-    return (
-      <>
-        {generatedComponent}
-      </>
-    );
-  }
+    </div>
+  );
 }
 
 export default App;

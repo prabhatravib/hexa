@@ -54,7 +54,9 @@ export const useVoiceInteraction = (options: UseVoiceInteractionOptions = {}) =>
       
       ws.onmessage = async (event) => {
         try {
-          const data = JSON.parse(event.data);
+          console.log('Raw WebSocket message received:', event.data);
+          const data = JSON.parse(event.data as string);
+          console.log('Parsed WebSocket message:', data);
           
           switch (data.type) {
             case 'ready':
@@ -93,13 +95,19 @@ export const useVoiceInteraction = (options: UseVoiceInteractionOptions = {}) =>
               break;
               
             case 'error':
-              console.error('Voice error:', data.error);
+              console.error('Voice error received:', data);
+              console.error('Error details:', data.error);
               setVoiceState('error');
-              onError?.(data.error?.message || 'Unknown error');
+              onError?.(data.error?.message || data.error || 'Unknown error');
               break;
+              
+            default:
+              console.log('Unknown message type:', data.type, data);
           }
         } catch (parseError) {
-          console.error('Failed to parse WebSocket message:', parseError);
+          console.error('Failed to parse WebSocket message:', parseError, 'Raw data:', event.data);
+          setVoiceState('error');
+          onError?.('Failed to process voice message. Please try again.');
         }
       };
       
@@ -117,7 +125,8 @@ export const useVoiceInteraction = (options: UseVoiceInteractionOptions = {}) =>
         
         // If it's not a normal closure, show error
         if (event.code !== 1000) {
-          onError?.('Voice connection lost. Please try again.');
+          const errorMessage = event.reason || `Connection closed with code ${event.code}`;
+          onError?.(`Voice connection lost: ${errorMessage}`);
         }
       };
       
@@ -142,23 +151,44 @@ export const useVoiceInteraction = (options: UseVoiceInteractionOptions = {}) =>
         } 
       });
       
+      // Try to use a supported format, fallback to default if needed
+      let mimeType = 'audio/webm;codecs=opus';
+      if (MediaRecorder.isTypeSupported('audio/webm;codecs=pcm')) {
+        mimeType = 'audio/webm;codecs=pcm';
+      } else if (MediaRecorder.isTypeSupported('audio/wav')) {
+        mimeType = 'audio/wav';
+      }
+      
       const mediaRecorder = new MediaRecorder(stream, {
-        mimeType: 'audio/webm;codecs=opus'
+        mimeType: mimeType
       });
       
-      mediaRecorder.ondataavailable = (event) => {
+      mediaRecorder.ondataavailable = async (event) => {
         if (event.data.size > 0 && wsRef.current?.readyState === WebSocket.OPEN) {
-          const reader = new FileReader();
-          reader.onloadend = () => {
-            const base64 = reader.result?.toString().split(',')[1];
-            if (base64) {
-              wsRef.current?.send(JSON.stringify({
-                type: 'audio',
-                audio: base64
-              }));
-            }
-          };
-          reader.readAsDataURL(event.data);
+          try {
+            // Convert audio to PCM16 format
+            const audioBuffer = await convertToPCM16(event.data);
+            const base64 = arrayBufferToBase64(audioBuffer);
+            
+            wsRef.current?.send(JSON.stringify({
+              type: 'audio',
+              audio: base64
+            }));
+          } catch (error) {
+            console.error('Failed to convert audio:', error);
+            // Fallback to original format
+            const reader = new FileReader();
+            reader.onloadend = () => {
+              const base64 = reader.result?.toString().split(',')[1];
+              if (base64) {
+                wsRef.current?.send(JSON.stringify({
+                  type: 'audio',
+                  audio: base64
+                }));
+              }
+            };
+            reader.readAsDataURL(event.data);
+          }
         }
       };
       
@@ -271,6 +301,16 @@ export const useVoiceInteraction = (options: UseVoiceInteractionOptions = {}) =>
     }
   }, []);
   
+  // Switch agent
+  const switchAgent = useCallback((agentId: string) => {
+    if (wsRef.current?.readyState === WebSocket.OPEN) {
+      wsRef.current.send(JSON.stringify({
+        type: 'switch_agent',
+        agentId
+      }));
+    }
+  }, []);
+
   // Interrupt current response
   const interrupt = useCallback(() => {
     if (wsRef.current?.readyState === WebSocket.OPEN) {
@@ -308,6 +348,7 @@ export const useVoiceInteraction = (options: UseVoiceInteractionOptions = {}) =>
     startRecording,
     stopRecording,
     sendText,
+    switchAgent,
     interrupt,
     clearTranscript: () => setTranscript(''),
     clearResponse: () => setResponse('')
@@ -322,4 +363,33 @@ function base64ToArrayBuffer(base64: string): ArrayBuffer {
     bytes[i] = binaryString.charCodeAt(i);
   }
   return bytes.buffer;
+}
+
+// Convert audio blob to PCM16 format
+async function convertToPCM16(audioBlob: Blob): Promise<ArrayBuffer> {
+  const audioContext = new AudioContext();
+  const arrayBuffer = await audioBlob.arrayBuffer();
+  const audioBuffer = await audioContext.decodeAudioData(arrayBuffer);
+  
+  // Convert to PCM16
+  const length = audioBuffer.length;
+  const pcm16 = new Int16Array(length);
+  
+  for (let i = 0; i < length; i++) {
+    // Convert float32 to int16
+    const sample = Math.max(-1, Math.min(1, audioBuffer.getChannelData(0)[i]));
+    pcm16[i] = sample < 0 ? sample * 0x8000 : sample * 0x7FFF;
+  }
+  
+  return pcm16.buffer;
+}
+
+// Convert ArrayBuffer to base64
+function arrayBufferToBase64(buffer: ArrayBuffer): string {
+  const bytes = new Uint8Array(buffer);
+  let binary = '';
+  for (let i = 0; i < bytes.byteLength; i++) {
+    binary += String.fromCharCode(bytes[i]);
+  }
+  return btoa(binary);
 }

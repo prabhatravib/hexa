@@ -1,0 +1,18 @@
+---
+description: 
+globs: 
+alwaysApply: false
+---
+# .cursor/rules/accuracy_over_speed.mdc
+---
+description: Always prioritize correctness and robustness over execution speed or rapid replies
+alwaysApply: true            # this makes the rule type “Always”
+---
+
+Accuracy first
+
+- Think step-by-step and verify each assumption before proposing code or fixes.  
+- do not guess.  
+- If uncertain, ask clarifying questions instead of assuming/inventing details.  
+- Optimizations for runtime speed or brevity are welcome only **after** the solution is most likely determined  be correct.  
+

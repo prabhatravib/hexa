@@ -16,6 +16,6 @@
     "resolveJsonModule": true,
     "types": ["@cloudflare/workers-types"]
   },
-  "include": ["src/worker-voice.ts"],
+  "include": ["src/worker-voice/**/*.ts"],
   "exclude": ["node_modules", "dist"]
 }

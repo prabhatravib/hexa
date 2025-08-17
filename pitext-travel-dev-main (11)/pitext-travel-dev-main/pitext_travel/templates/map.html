@@ -1,0 +1,152 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>PiText – Travel (Voice Enabled)</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <link rel="icon" type="image/x-icon" href="/static/PiText_favicon.ico" />
+
+  <!---- core styles ---->
+  <link rel="stylesheet" href="/static/css/base.css" />
+  <link rel="stylesheet" href="/static/css/map.css" />
+  <link rel="stylesheet" href="/static/css/controls.css" />
+  <link rel="stylesheet" href="/static/css/panel.css" />
+  <link rel="stylesheet" href="/static/css/chat.css" />
+  <link rel="stylesheet" href="/static/css/vad.css" />
+  <link rel="stylesheet" href="/static/css/hexagon.css" />
+</head>
+
+<body>
+  <!-- SVG Definitions for Hexagon with Rounded Corners -->
+  <svg width="0" height="0" style="position:absolute">
+    <defs>
+      <!-- Rounded-corner hexagon in object-bounding-box coords (0-1) -->
+      <clipPath id="roundedHex" clipPathUnits="objectBoundingBox">
+        <!--  r controls corner roundness; keep it the same on all 6 nodes  -->
+        <path d="
+          M 0.50 0.00
+          L 0.85 0.18   Q 0.92 0.22 0.92 0.25
+          L 0.92 0.75   Q 0.92 0.78 0.85 0.82
+          L 0.50 1.00
+          L 0.15 0.82   Q 0.08 0.78 0.08 0.75
+          L 0.08 0.25   Q 0.08 0.22 0.15 0.18 Z" />
+      </clipPath>
+    </defs>
+  </svg>
+
+  <!---- map canvas ---->
+  <div id="map">
+    <div class="loading">
+      <p>🗺️ Ready to plan your trip?</p>
+      <p><small>Enter a city & days, then click <em>Launch Trip</em>.</small></p>
+    </div>
+  </div>
+
+  <!---- unified voice button with status (hidden by hexagon.css) ---->
+  <div id="voice-button" class="voice-button" title="Click to start voice chat">
+    <div class="voice-circle">
+      <svg viewBox="0 0 24 24" width="24" height="24">
+        <path d="M12 2a4 4 0 0 1 4 4v6a4 4 0 1 1-8 0V6a4 4 0 0 1 4-4z"/>
+        <path d="M19 10a7 7 0 0 1-14 0"/>
+        <path d="M12 19v4M8 23h8"/>
+      </svg>
+    </div>
+    <span class="status-text">Initializing…</span>
+  </div>
+
+  <!---- side-chat ---->
+  <aside id="chat-panel" class="chat-panel" aria-live="polite">
+    <button id="chat-minimize-btn" class="chat-minimize-btn" title="Minimize chat">−</button>
+  </aside>
+
+  <!---- Day controls (separate and always visible) ---->
+  <div id="day-controls"></div>
+
+  <!---- Hidden panel (not used with hexagon interface) ---->
+  <div id="panel" style="display: none;">
+    <button id="minimize-btn" title="Minimize/Expand">−</button>
+    <div id="inner-panel">
+      <form id="trip-form">
+        <input id="city"  type="text"     placeholder="Enter city name" value="Paris" required />
+        <input id="days"  type="number"   min="1" max="14" value="3"     required />
+        <button type="submit">Start Planning</button>
+      </form>
+    </div>
+  </div>
+
+  <div id="map-overlay"></div>
+
+  <!--────────────────────────  JS SECTION  ────────────────────────-->
+
+  <!-- 0️⃣  Socket.IO loader -->
+  <script src="/static/js/utils/socketio-loader.js"></script>
+  
+  <!-- Fallback Socket.IO (loads if CDN fails) -->
+  <script>
+    // Fallback Socket.IO loading if the main loader fails
+    setTimeout(() => {
+      if (typeof io === 'undefined' && !window.SocketIOLoader.loaded) {
+        console.log('[IO] Main loader failed, trying fallback CDN...');
+        const fallbackScript = document.createElement('script');
+        fallbackScript.src = 'https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.7.4/socket.io.min.js';
+        fallbackScript.async = true;
+        fallbackScript.onload = () => {
+          console.log('[IO] Fallback Socket.IO loaded successfully');
+          window.SocketIOLoader.loaded = true;
+          window.SocketIOLoader.loading = false;
+        };
+        fallbackScript.onerror = () => {
+          console.error('[IO] Fallback Socket.IO also failed');
+        };
+        document.head.appendChild(fallbackScript);
+      }
+    }, 3000); // Wait 3 seconds before trying fallback
+  </script>
+
+  <!-- 1️⃣  Core utilities -->
+  <script src="/static/js/utils/helpers.js"></script>
+  <script src="/static/js/utils/constants.js"></script>
+
+  <!-- 2️⃣  API + UI layers -->
+  <script src="/static/js/api/config.js"></script>
+  <script src="/static/js/api/client.js"></script>
+  <script src="/static/js/ui/overlays.js"></script>
+  <script src="/static/js/ui/panel.js"></script>
+  <script src="/static/js/ui/form.js"></script>
+
+  <!-- 3️⃣  Voice Components (load before UI that depends on them) -->
+  <script src="/static/js/realtime/audio_capture.js"></script>
+  <script src="/static/js/realtime/audio_player.js"></script>
+  <script src="/static/js/realtime/voice_state_machine.js"></script>
+  <script src="/static/js/realtime/websocket_client.js"></script>
+  <script src="/static/js/realtime/websocket_event_setup.js"></script>
+  <script src="/static/js/realtime/setup.js"></script>
+  <script src="/static/js/realtime/controller.js"></script>
+
+  <!-- 4️⃣  Voice UI (depends on voice components) -->
+  <script src="/static/js/ui/voice_ui.js"></script>
+  <script src="/static/js/ui/hexagon-interface.js"></script>
+
+  <!-- 5️⃣  Google Maps + map helpers -->
+  <script src="https://maps.googleapis.com/maps/api/js?key=GOOGLE_MAPS_API_KEY&libraries=geometry&v=beta" async defer></script>
+  <script src="/static/js/map/google-maps.js"></script>
+  <script src="/static/js/map/day_controls_core.js"></script>
+  <script src="/static/js/map/controls.js"></script>
+  <script src="/static/js/map/markers.js"></script>
+  <script src="/static/js/map/routes.js"></script>
+  <script src="/static/js/map/module-loader.js"></script>
+  <script async src="https://unpkg.com/@googlemaps/markerclusterer/dist/index.min.js"></script>
+
+  <!-- Add this after google-maps.js -->
+  <script src="/static/js/app/google-maps-init.js"></script>
+
+  <!-- 6️⃣  Chat and Application Core -->
+  <script src="/static/js/chat.js"></script>
+  <script src="/static/js/app/main.js"></script>
+  <script src="/static/js/app/initializer.js"></script>
+  <script src="/static/js/app/coordinator.js"></script>
+
+  <!-- 7️⃣  Voice initialization (runs after everything is loaded) -->
+  <script src="/static/js/ui/voice-initializer.js"></script>
+</body>
+</html>

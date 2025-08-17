@@ -1,0 +1,14 @@
+---
+description: 
+globs: 
+alwaysApply: true
+---
+---
+description: Prevent automatic test execution
+alwaysApply: true
+---
+
+- Do **not** generate or run terminal tests unless the user types “run tests now”.
+- Prefer static analysis and inline reasoning to validate code.
+- If tests truly are essential, ask for explicit confirmation and show the exact command first.
+

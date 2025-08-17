@@ -1,0 +1,18 @@
+---
+description: 
+globs: 
+alwaysApply: true
+---
+# .cursor/rules/avoid_unnecessary_mock_tests.mdc
+---
+description: Avoid mock tests unless they are clearly necessary and feasible
+alwaysApply: true
+---
+
+Avoid unnecessary mocks
+
+- Do not propose or generate mock tests unless a direct test of the real code is impractical.  
+- Favour real unit or integration tests that hit actual implementations.  
+- Introduce a mock only when an external dependency blocks testing and mocking is the simplest safe workaround.  
+- If the environment, tooling, or schedule cannot support mocks, skip them and document the untested areas instead.  
+

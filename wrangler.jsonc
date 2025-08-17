@@ -4,7 +4,7 @@
   "assets": {
     "directory": "./dist"
   },
-  "main": "src/worker-voice.ts",
+  "main": "src/worker-voice/index.ts",
   "durable_objects": {
     "bindings": [
       {
@@ -13,11 +13,19 @@
       }
     ]
   },
-  "env": {
-    "OPENAI_REALTIME_MODEL": "your-openai-api-key-here"
-  },
+
+  "migrations": [
+    {
+      "tag": "v1",
+      "new_classes": [
+        "VoiceSession"
+      ]
+    }
+  ],
+
+
   "build": {
-    "command": "npm run build:worker",
+    "command": "yarn build:worker",
     "watch_dir": "src"
   }
 }
