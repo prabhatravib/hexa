@@ -128,11 +128,16 @@ ${getLanguageInstructions()}`
           }
         }, 1000); // Wait 1 second after connection
         
-        // Set up audio analysis after connection
+        // Set up audio analysis and playback state handling
         audioEl.addEventListener('playing', () => {
-          console.log('🎵 Audio playing - starting lip-sync analysis');
+          console.log('🎵 Audio playing - starting lip-sync analysis and calling startSpeaking');
           
-          // Start lip-sync loop on the remote stream
+          // First, call startSpeaking to set the voice state
+          if (startSpeaking) {
+            startSpeaking();
+          }
+          
+          // Then start the lip-sync analysis
           const stream = audioEl.srcObject as MediaStream;
           if (!stream) {
             console.warn('⚠️ No MediaStream available for analysis');
@@ -155,21 +160,18 @@ ${getLanguageInstructions()}`
             const intensity = Math.max(0, Math.min(1, Math.pow(avg / 255, 0.7)));
             
             if (setSpeechIntensity) {
+              console.log(`🎤 Calling setSpeechIntensity with intensity: ${intensity.toFixed(3)}`);
               setSpeechIntensity(intensity);
               if (process.env.NODE_ENV === 'development') {
                 console.log(`🎤 Speech intensity: ${intensity.toFixed(3)}`);
               }
+            } else {
+              console.warn('⚠️ setSpeechIntensity function not provided to voice agent service');
             }
             
             requestAnimationFrame(tick);
           };
           tick();
-        });
-        
-        // Map playback state to mouth gate
-        audioEl.addEventListener('playing', () => {
-          console.log('🎵 Audio started playing - calling startSpeaking');
-          if (startSpeaking) startSpeaking();
         });
         
         ['pause', 'ended', 'emptied'].forEach(ev => {

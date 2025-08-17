@@ -127,12 +127,17 @@ export const useVoiceInteraction = (options: UseVoiceInteractionOptions = {}) =>
     // Update legacy speech intensity for backward compatibility
     setSpeechIntensity(rawIntensity);
     
-    // Only process mouth targets when there's actual voice data (speaking state)
-    if (voiceState === 'speaking') {
+    // Process mouth targets when there's actual voice data
+    // The WebRTC session will call this during audio playback
+    if (rawIntensity > 0.01) { // Only update if there's actual audio
       const processedIntensity = processSpeechIntensity(rawIntensity);
       updateMouthTarget(processedIntensity);
+      
+      if (process.env.NODE_ENV === 'development') {
+        console.log(`🎤 handleSpeechIntensity: raw=${rawIntensity.toFixed(3)}, processed=${processedIntensity.toFixed(3)}`);
+      }
     }
-  }, [voiceState, setSpeechIntensity, processSpeechIntensity, updateMouthTarget]);
+  }, [setSpeechIntensity, processSpeechIntensity, updateMouthTarget]);
 
   const { initializeOpenAIAgent, initializeOpenAIAgentFromWorker } = useVoiceAgentService({
     setVoiceState,
