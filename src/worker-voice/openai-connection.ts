@@ -85,7 +85,10 @@ export class OpenAIConnection {
         voice: 'alloy',
         input_audio_format: 'pcm16',
         output_audio_format: 'pcm16',
-        input_audio_transcription: { model: 'whisper-1' },
+        input_audio_transcription: { 
+          model: 'whisper-1',
+          language: 'en'
+        },
         turn_detection: {
           type: 'server_vad',
           threshold: 0.5,
@@ -94,7 +97,7 @@ export class OpenAIConnection {
         }
       };
       
-      console.log('🔧 Method 1: Trying standard Realtime API...');
+      console.log('🔧 Method 1: Trying standard Realtime API with English language enforcement...');
       const response = await fetch('https://api.openai.com/v1/realtime/sessions', {
         method: 'POST',
         headers: {
@@ -120,7 +123,11 @@ export class OpenAIConnection {
     try {
       console.log('🔧 Method 2: Trying minimal parameters...');
       const requestBody = {
-        model: 'gpt-4o-realtime-preview'
+        model: 'gpt-4o-realtime-preview',
+        input_audio_transcription: { 
+          model: 'whisper-1',
+          language: 'en'
+        }
       };
       
       const response = await fetch('https://api.openai.com/v1/realtime/sessions', {
@@ -197,7 +204,10 @@ export class OpenAIConnection {
           },
           body: JSON.stringify({
             model: 'gpt-4o',
-            messages: [{ role: 'user', content: message.text }],
+            messages: [
+              { role: 'system', content: 'You are Hexa, a friendly AI assistant. Your default language is English, but you can respond in other languages if the user requests it or speaks to you in another language.' },
+              { role: 'user', content: message.text }
+            ],
             stream: false
           })
         });

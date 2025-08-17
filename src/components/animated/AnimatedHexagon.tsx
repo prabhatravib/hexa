@@ -32,7 +32,7 @@ export const AnimatedHexagon: React.FC<AnimatedHexagonProps> = ({
   const { timeSinceLastActivity } = useAnimationState();
   const { greet, thinking } = useAnimationSequence();
 
-  // Voice interaction hook
+  // Voice interaction hook - restored with proper functionality
   const {
     isConnected,
     isRecording,
@@ -41,7 +41,7 @@ export const AnimatedHexagon: React.FC<AnimatedHexagonProps> = ({
     startRecording,
     stopRecording,
   } = useVoiceInteraction({
-    autoStart: true,
+    autoStart: false,
     onTranscription: (text) => {
       // Handle transcription if needed
     }
@@ -49,7 +49,12 @@ export const AnimatedHexagon: React.FC<AnimatedHexagonProps> = ({
 
   useEffect(() => {
     startIdleAnimation();
-    return () => stopIdleAnimation();
+    return () => {
+      stopIdleAnimation();
+      // Clean up any remaining timers
+      const { cleanup } = useAnimationStore.getState();
+      cleanup();
+    };
   }, []);
 
   const hexagonPoints = "100,20 180,60 180,140 100,180 20,140 20,60";
@@ -200,7 +205,7 @@ export const AnimatedHexagon: React.FC<AnimatedHexagonProps> = ({
       <motion.div 
         className="inline-block cursor-pointer w-full h-full relative"
         variants={containerVariants}
-        animate={animationState}
+        animate={animationState || 'idle'}
         initial="idle"
         onMouseEnter={handleMouseEnter}
         onMouseLeave={handleMouseLeave}
@@ -244,18 +249,18 @@ export const AnimatedHexagon: React.FC<AnimatedHexagonProps> = ({
             r="95" 
             fill="url(#centerHighlight)"
             variants={glowVariants}
-            animate={animationState}
-            className={voiceState === 'listening' ? 'animate-pulse' : ''}
+            animate={animationState || 'idle'}
+            className={(voiceState || 'idle') === 'listening' ? 'animate-pulse' : ''}
           />
           
           {/* Main hexagon */}
           <motion.polygon 
             points={hexagonPoints} 
             fill="url(#hexagonGradient)" 
-            stroke={voiceState === 'listening' ? '#10b981' : '#059669'}
-            strokeWidth={voiceState === 'listening' ? '2.5' : '1.5'}
+            stroke={(voiceState || 'idle') === 'listening' ? '#10b981' : '#059669'}
+            strokeWidth={(voiceState || 'idle') === 'listening' ? '2.5' : '1.5'}
             filter="url(#glow)"
-            className={voiceState === 'listening' ? 'animate-pulse' : ''}
+            className={(voiceState || 'idle') === 'listening' ? 'animate-pulse' : ''}
           />
           
           {/* Animated breathing effect rings */}
@@ -329,6 +334,7 @@ export const AnimatedHexagon: React.FC<AnimatedHexagonProps> = ({
                 : MOUTH_PATHS.HAPPY
             }}
             transition={{ duration: TIMING.EXPRESSION_TRANSITION / 1000 }}
+            initial={{ d: MOUTH_PATHS.HAPPY }}
           />
         </svg>
 
@@ -347,7 +353,7 @@ export const AnimatedHexagon: React.FC<AnimatedHexagonProps> = ({
 
       {/* Voice active pulse ring around the entire hexagon */}
       <AnimatePresence>
-        {isVoiceActive && (
+        {(isVoiceActive || false) && (
           <motion.div
             className="absolute inset-0 border-2 border-green-500 rounded-full"
             initial={{ scale: 1, opacity: 0.7 }}

@@ -12,6 +12,9 @@ interface AnimationStore {
   isBlinking: boolean;
   isPulsing: boolean;
   
+  // Internal timer references
+  _blinkTimer?: NodeJS.Timeout;
+  
   // Voice interaction states
   voiceState: VoiceState;
   isVoiceActive: boolean;
@@ -45,6 +48,9 @@ interface AnimationStore {
   handleMouseEnter: () => void;
   handleMouseLeave: () => void;
   handleClick: () => void;
+  
+  // Cleanup
+  cleanup: () => void;
 }
 
 export const useAnimationStore = create<AnimationStore>((set, get) => ({
@@ -53,6 +59,9 @@ export const useAnimationStore = create<AnimationStore>((set, get) => ({
   expressionState: 'happy',
   isBlinking: false,
   isPulsing: true,
+  
+  // Internal timer references
+  _blinkTimer: undefined,
   
   // Voice interaction states
   voiceState: 'idle',
@@ -83,12 +92,18 @@ export const useAnimationStore = create<AnimationStore>((set, get) => ({
     // Set up blink interval with random timing
     const scheduleBlink = () => {
       const delay = getRandomBlinkDelay();
-      setTimeout(() => {
+      const timer = setTimeout(() => {
         if (Math.random() < 0.3) { // 30% chance to blink
           get().triggerBlink();
         }
-        scheduleBlink(); // Schedule next blink
+        // Only schedule next blink if still in idle state
+        if (get().animationState === 'idle' && get().isPulsing) {
+          scheduleBlink();
+        }
       }, delay);
+      
+      // Store timer reference for cleanup
+      get()._blinkTimer = timer;
     };
     
     scheduleBlink();
@@ -96,7 +111,12 @@ export const useAnimationStore = create<AnimationStore>((set, get) => ({
   
   stopIdleAnimation: () => {
     set({ isPulsing: false });
-    // Note: The new blink scheduling is self-contained and doesn't need cleanup
+    // Clean up blink timer if it exists
+    const currentState = get();
+    if (currentState._blinkTimer) {
+      clearTimeout(currentState._blinkTimer);
+      set({ _blinkTimer: undefined });
+    }
   },
   
   // Voice interaction handlers
@@ -151,5 +171,14 @@ export const useAnimationStore = create<AnimationStore>((set, get) => ({
     setTimeout(() => {
       set({ animationState: 'idle', expressionState: 'happy' });
     }, TIMING.CLICK_BOUNCE_DURATION);
+  },
+  
+  // Cleanup function
+  cleanup: () => {
+    const currentState = get();
+    if (currentState._blinkTimer) {
+      clearTimeout(currentState._blinkTimer);
+      set({ _blinkTimer: undefined });
+    }
   },
 }));
