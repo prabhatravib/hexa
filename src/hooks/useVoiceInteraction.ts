@@ -139,8 +139,10 @@ export const useVoiceInteraction = (options: UseVoiceInteractionOptions = {}) =>
       });
 
       // Create session and connect
-      const session = new RealtimeSession(agent);
-      await session.connect({ apiKey: sessionData.apiKey });
+      const session = new RealtimeSession(agent, { transport: 'webrtc' });
+      await session.connect({ 
+        apiKey: sessionData.apiKey
+      });
       
       // Store the session reference
       openaiAgentRef.current = session;
