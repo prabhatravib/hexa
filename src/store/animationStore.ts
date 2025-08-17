@@ -18,6 +18,14 @@ interface AnimationStore {
   isSpeaking: boolean;
   speechIntensity: number; // 0-1 for mouth animation
   
+  /**
+   * Target mouth openness value for animation.
+   * Range: 0 (closed) to 1 (fully open).
+   * This is a target value only - components must animate locally to reach this target.
+   * The store does not handle animation loops or continuous updates.
+   */
+  mouthOpennessTarget: number;
+  
   // State setters
   setAnimationState: (state: AnimationState) => void;
   setExpressionState: (expression: ExpressionState) => void;
@@ -29,6 +37,18 @@ interface AnimationStore {
   setVoiceActive: (active: boolean) => void;
   setSpeaking: (speaking: boolean) => void;
   setSpeechIntensity: (intensity: number) => void;
+  
+  /**
+   * Sets the target mouth openness value.
+   * @param value - Target openness value (0-1). Will be clamped to valid range.
+   * @throws In development: logs warning for invalid values (NaN, <0, >1)
+   */
+  setMouthTarget: (value: number) => void;
+  
+  /**
+   * Resets mouth openness target to closed position (0).
+   */
+  resetMouth: () => void;
   
   // Animation triggers
   triggerBlink: () => void;
@@ -52,13 +72,16 @@ export const useAnimationStore = create<AnimationStore>((set, get) => ({
   animationState: 'idle',
   expressionState: 'happy',
   isBlinking: false,
-  isPulsing: true,
+  isPulsing: false, // Disabled continuous pulsing to remove interior effect
   
   // Voice interaction states
   voiceState: 'idle',
   isVoiceActive: false,
   isSpeaking: false,
   speechIntensity: 0,
+  
+  // Mouth animation target
+  mouthOpennessTarget: 0,
   
   // State setters
   setAnimationState: (state) => set({ animationState: state }),
@@ -72,6 +95,26 @@ export const useAnimationStore = create<AnimationStore>((set, get) => ({
   setSpeaking: (speaking) => set({ isSpeaking: speaking }),
   setSpeechIntensity: (intensity) => set({ speechIntensity: intensity }),
   
+  // Mouth target setters
+  setMouthTarget: (value) => {
+    // Development warnings for invalid values
+    if (process.env.NODE_ENV === 'development') {
+      if (isNaN(value)) {
+        console.warn('setMouthTarget called with NaN value:', value);
+        return;
+      }
+      if (value < 0 || value > 1) {
+        console.warn('setMouthTarget called with value outside 0-1 range:', value);
+      }
+    }
+    
+    // Clamp value to valid range and set target
+    const clampedValue = Math.max(0, Math.min(1, value));
+    set({ mouthOpennessTarget: clampedValue });
+  },
+  
+  resetMouth: () => set({ mouthOpennessTarget: 0 }),
+  
   // Animation triggers
   triggerBlink: () => {
     set({ isBlinking: true });
@@ -79,7 +122,7 @@ export const useAnimationStore = create<AnimationStore>((set, get) => ({
   },
   
   startIdleAnimation: () => {
-    set({ animationState: 'idle', isPulsing: true });
+    set({ animationState: 'idle', isPulsing: false }); // Disabled pulsing to remove interior effect
     // Set up blink interval with random timing
     const scheduleBlink = () => {
       const delay = getRandomBlinkDelay();
@@ -121,8 +164,23 @@ export const useAnimationStore = create<AnimationStore>((set, get) => ({
       voiceState: 'speaking',
       isSpeaking: true,
       animationState: 'active',
-      expressionState: 'happy'
+      expressionState: 'happy',
+      mouthOpennessTarget: 0.5 // Set a default mouth openness when speaking starts
     });
+    
+    // Start a simple mouth animation pattern while speaking
+    const mouthAnimationInterval = setInterval(() => {
+      const currentState = get();
+      if (currentState.voiceState === 'speaking') {
+        // Simple open/close pattern: 0.3 -> 0.7 -> 0.3 -> 0.7...
+        const currentTarget = currentState.mouthOpennessTarget;
+        const newTarget = currentTarget > 0.5 ? 0.3 : 0.7;
+        set({ mouthOpennessTarget: newTarget });
+      } else {
+        // Stop animation when not speaking
+        clearInterval(mouthAnimationInterval);
+      }
+    }, 200); // Change mouth position every 200ms for a natural talking effect
   },
   
   stopSpeaking: () => {
@@ -132,7 +190,8 @@ export const useAnimationStore = create<AnimationStore>((set, get) => ({
       isVoiceActive: false,
       animationState: 'idle',
       expressionState: 'happy',
-      speechIntensity: 0
+      speechIntensity: 0,
+      mouthOpennessTarget: 0 // Reset mouth to closed position
     });
   },
   

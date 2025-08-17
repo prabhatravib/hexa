@@ -63,7 +63,7 @@ export const useVoiceControlService = ({
     }
   }, [stopListening, setVoiceState, setSpeechIntensity]);
   
-  // Play audio queue
+  // Enhanced audio playback with real-time speech intensity analysis
   const playAudioQueue = async () => {
     if (audioQueueRef.current.length === 0) {
       isPlayingRef.current = false;
@@ -85,20 +85,31 @@ export const useVoiceControlService = ({
       const source = audioContextRef.current.createBufferSource();
       source.buffer = audioBuffer;
       
-      // Create analyser for mouth animation
+      // Create analyser for mouth animation with higher resolution
       const analyser = audioContextRef.current.createAnalyser();
-      analyser.fftSize = 256;
+      analyser.fftSize = 512; // Higher resolution for better analysis
+      analyser.smoothingTimeConstant = 0.3; // Smoother transitions
       source.connect(analyser);
       analyser.connect(audioContextRef.current.destination);
       
-      // Animate mouth during playback
+      // Enhanced speech intensity analysis for mouth animation
       const dataArray = new Uint8Array(analyser.frequencyBinCount);
       const updateIntensity = () => {
         if (!isPlayingRef.current) return;
         
         analyser.getByteFrequencyData(dataArray);
-        const average = dataArray.reduce((a, b) => a + b) / dataArray.length;
-        setSpeechIntensity(average / 255);
+        
+        // Calculate speech intensity with better frequency weighting
+        // Focus on speech frequencies (85Hz - 255Hz) for more accurate mouth movement
+        const speechFrequencies = dataArray.slice(2, 8); // Roughly 85-255Hz range
+        const speechAverage = speechFrequencies.reduce((a, b) => a + b) / speechFrequencies.length;
+        
+        // Apply perceptual weighting and normalize
+        const intensity = Math.pow(speechAverage / 255, 0.7); // Perceptual curve
+        const normalizedIntensity = Math.max(0, Math.min(1, intensity));
+        
+        // Update speech intensity for mouth animation
+        setSpeechIntensity(normalizedIntensity);
         
         requestAnimationFrame(updateIntensity);
       };
@@ -114,6 +125,60 @@ export const useVoiceControlService = ({
       playAudioQueue(); // Skip and continue
     }
   };
+
+  // New function to handle OpenAI audio streaming with real-time analysis
+  const handleOpenAIAudioStream = useCallback(async (audioChunk: ArrayBuffer) => {
+    if (!audioContextRef.current) {
+      audioContextRef.current = new AudioContext();
+    }
+
+    try {
+      // Decode the audio chunk
+      const audioBuffer = await audioContextRef.current.decodeAudioData(audioChunk);
+      
+      // Create a source for analysis
+      const source = audioContextRef.current.createBufferSource();
+      source.buffer = audioBuffer;
+      
+      // Create analyser for real-time speech intensity
+      const analyser = audioContextRef.current.createAnalyser();
+      analyser.fftSize = 512;
+      analyser.smoothingTimeConstant = 0.2; // Faster response for real-time
+      
+      source.connect(analyser);
+      analyser.connect(audioContextRef.current.destination);
+      
+      // Real-time speech intensity analysis
+      const dataArray = new Uint8Array(analyser.frequencyBinCount);
+      const updateIntensity = () => {
+        analyser.getByteFrequencyData(dataArray);
+        
+        // Focus on speech frequencies and calculate intensity
+        const speechFrequencies = dataArray.slice(2, 8);
+        const speechAverage = speechFrequencies.reduce((a, b) => a + b) / speechFrequencies.length;
+        
+        // Apply perceptual weighting and normalize
+        const intensity = Math.pow(speechAverage / 255, 0.7);
+        const normalizedIntensity = Math.max(0, Math.min(1, intensity));
+        
+        // Update speech intensity for mouth animation
+        setSpeechIntensity(normalizedIntensity);
+      };
+      
+      // Update intensity during playback
+      const updateInterval = setInterval(updateIntensity, 16); // ~60fps
+      
+      source.onended = () => {
+        clearInterval(updateInterval);
+        setSpeechIntensity(0); // Reset when audio ends
+      };
+      
+      source.start();
+      
+    } catch (error) {
+      console.error('Failed to process OpenAI audio chunk:', error);
+    }
+  }, [audioContextRef, setSpeechIntensity]);
    
   // Send text message via HTTP POST
   const sendText = useCallback(async (text: string) => {
@@ -190,6 +255,7 @@ export const useVoiceControlService = ({
     startRecording,
     stopRecording,
     playAudioQueue,
+    handleOpenAIAudioStream, // Export the new function
     sendText,
     switchAgent,
     interrupt

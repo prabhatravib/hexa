@@ -26,11 +26,108 @@ export const useVoiceInteraction = (options: UseVoiceInteractionOptions = {}) =>
     setVoiceActive,
     setSpeaking,
     setSpeechIntensity,
+    setMouthTarget,
+    resetMouth,
+    voiceState,
     startListening,
     stopListening,
     startSpeaking,
     stopSpeaking
   } = useAnimationStore();
+
+  // Speech intensity smoothing and mouth target management
+  const emaAccumulatorRef = useRef(0); // EMA accumulator for speech intensity
+  const lastUpdateTimeRef = useRef(0); // Last store update time for throttling
+  const lastTargetRef = useRef(0); // Last target value for change-based throttling
+  
+  // Performance instrumentation
+  const performanceRef = useRef({
+    writeCount: 0,
+    lastWriteTime: Date.now(),
+    maxDelta: 0,
+    lastTarget: 0
+  });
+  
+  // Speech intensity processing with EMA smoothing and perceptual shaping
+  const processSpeechIntensity = useCallback((rawIntensity: number) => {
+    const alpha = 0.3; // EMA smoothing factor
+    const clampedIntensity = Math.max(0, Math.min(1, rawIntensity));
+    
+    // Apply EMA smoothing: new = α * current + (1-α) * previous
+    emaAccumulatorRef.current = alpha * clampedIntensity + (1 - alpha) * emaAccumulatorRef.current;
+    
+    // Apply perceptual shaping curve: x^0.65 to widen midrange openness
+    const shapedIntensity = Math.pow(emaAccumulatorRef.current, 0.65);
+    
+    return shapedIntensity;
+  }, []);
+
+  // Throttled mouth target update (max 30 Hz or when change > 0.02)
+  const updateMouthTarget = useCallback((target: number) => {
+    const now = Date.now();
+    const timeSinceLastUpdate = now - lastUpdateTimeRef.current;
+    const targetChange = Math.abs(target - lastTargetRef.current);
+    
+    // Update if 33ms have passed (30 Hz) OR if change is significant (>0.02)
+    if (timeSinceLastUpdate >= 33 || targetChange > 0.02) {
+      setMouthTarget(target);
+      lastUpdateTimeRef.current = now;
+      lastTargetRef.current = target;
+      
+      // Performance instrumentation
+      performanceRef.current.writeCount++;
+      performanceRef.current.lastWriteTime = now;
+      
+      // Track max delta between target and current
+      const delta = Math.abs(target - performanceRef.current.lastTarget);
+      if (delta > performanceRef.current.maxDelta) {
+        performanceRef.current.maxDelta = delta;
+      }
+      performanceRef.current.lastTarget = target;
+      
+      if (process.env.NODE_ENV === 'development') {
+        console.log(`🎯 Mouth target updated: ${target.toFixed(3)} (${timeSinceLastUpdate}ms since last update)`);
+        
+        // Log performance stats every 10 writes
+        if (performanceRef.current.writeCount % 10 === 0) {
+          const timeSinceStart = now - performanceRef.current.lastWriteTime;
+          const writesPerSecond = (performanceRef.current.writeCount / timeSinceStart) * 1000;
+          console.log(`📊 Performance: ${writesPerSecond.toFixed(1)} writes/sec, Max delta: ${performanceRef.current.maxDelta.toFixed(3)}`);
+        }
+      }
+    }
+  }, [setMouthTarget]);
+
+  // Handle voice state changes for mouth target management
+  useEffect(() => {
+    if (voiceState === 'speaking') {
+      // When speaking starts, ensure EMA accumulator is ready
+      if (emaAccumulatorRef.current === 0) {
+        emaAccumulatorRef.current = 0.1; // Small initial value to avoid jump
+      }
+    } else {
+      // When not speaking, reset mouth and clear EMA state
+      resetMouth();
+      emaAccumulatorRef.current = 0;
+      lastTargetRef.current = 0;
+      
+      if (process.env.NODE_ENV === 'development') {
+        console.log('🔄 Voice state changed, resetting mouth and EMA state');
+      }
+    }
+  }, [voiceState, resetMouth]);
+
+  // Enhanced speech intensity handler with mouth target updates
+  const handleSpeechIntensity = useCallback((rawIntensity: number) => {
+    // Update legacy speech intensity for backward compatibility
+    setSpeechIntensity(rawIntensity);
+    
+    // Only process mouth targets when there's actual voice data (speaking state)
+    if (voiceState === 'speaking') {
+      const processedIntensity = processSpeechIntensity(rawIntensity);
+      updateMouthTarget(processedIntensity);
+    }
+  }, [voiceState, setSpeechIntensity, processSpeechIntensity, updateMouthTarget]);
 
   const { initializeOpenAIAgent, initializeOpenAIAgentFromWorker } = useVoiceAgentService({
     setVoiceState,
@@ -75,7 +172,7 @@ export const useVoiceInteraction = (options: UseVoiceInteractionOptions = {}) =>
     stopListening,
     startSpeaking,
     stopSpeaking,
-    setSpeechIntensity,
+    setSpeechIntensity: handleSpeechIntensity, // Use enhanced handler
     openaiAgentRef,
     audioContextRef,
     audioQueueRef,

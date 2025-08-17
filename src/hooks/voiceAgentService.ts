@@ -31,6 +31,25 @@ export const useVoiceAgentService = ({ setVoiceState, onError }: VoiceAgentServi
       // Create session and connect
       const session = new RealtimeSession(agent);
       
+      // Set up simple audio event handlers for mouth animation
+      session.on('audio' as any, (audioChunk: any) => {
+        // Voice is playing - trigger mouth animation
+        console.log('🎵 Voice audio received - mouth should animate');
+        setVoiceState('speaking');
+      });
+      
+      session.on('audio_done' as any, () => {
+        // Voice stopped - stop mouth animation
+        console.log('🔇 Voice audio done - mouth should stop animating');
+        setVoiceState('idle');
+      });
+      
+      session.on('error' as any, (error: any) => {
+        console.error('❌ OpenAI session error:', error);
+        setVoiceState('error');
+        onError?.(error.message || 'OpenAI session error');
+      });
+      
       // Use the working method: WebRTC with client secret
       if (sessionData.clientSecret) {
         console.log('🔧 Connecting with client secret...');

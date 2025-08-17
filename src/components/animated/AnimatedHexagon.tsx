@@ -1,9 +1,11 @@
-import React, { useEffect } from 'react';
+import React, { useEffect, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useAnimationStore } from '@/store/animationStore';
 import { useAnimationState, useAnimationSequence } from '@/hooks/useAnimationState';
 import { useVoiceInteraction } from '@/hooks/useVoiceInteraction';
-import { TIMING, EASING, SCALE, ROTATION, OPACITY, MOUTH_PATHS, KEYFRAMES } from '@/animations/constants';
+import { AnimatedMouth } from './AnimatedMouth';
+import { DevPanel } from './DevPanel';
+import { TIMING, EASING, SCALE, ROTATION, OPACITY, KEYFRAMES } from '@/animations/constants';
 import { Mic, MicOff, Volume2, AlertCircle, Loader2 } from 'lucide-react';
 
 interface AnimatedHexagonProps {
@@ -45,6 +47,15 @@ export const AnimatedHexagon: React.FC<AnimatedHexagonProps> = ({
     onTranscription: (text) => {
       // Handle transcription if needed
     }
+  });
+
+  // Dev panel visibility (can be controlled by query param or environment)
+  const [showDevPanel, setShowDevPanel] = useState(() => {
+    if (typeof window !== 'undefined') {
+      const urlParams = new URLSearchParams(window.location.search);
+      return urlParams.get('dev') === 'true' || process.env.NODE_ENV === 'development';
+    }
+    return false;
   });
 
   useEffect(() => {
@@ -162,6 +173,9 @@ export const AnimatedHexagon: React.FC<AnimatedHexagonProps> = ({
 
   return (
     <div className={`relative inline-block ${className}`} style={{ width: size, height: size }}>
+      {/* Dev Panel */}
+      <DevPanel isVisible={showDevPanel} />
+      
       {/* Transcript display above hexagon */}
       <AnimatePresence>
         {transcript && (
@@ -314,21 +328,13 @@ export const AnimatedHexagon: React.FC<AnimatedHexagonProps> = ({
             />
           </motion.g>
           
-          {/* Animated smile */}
-          <motion.path 
-            d={MOUTH_PATHS.HAPPY} 
-            stroke="#064e3b" 
-            strokeWidth="4" 
-            fill="none" 
-            strokeLinecap="round"
-            animate={{
-              d: animationState === 'hover' 
-                ? MOUTH_PATHS.CURIOUS
-                : animationState === 'active'
-                ? MOUTH_PATHS.EXCITED
-                : MOUTH_PATHS.HAPPY
-            }}
-            transition={{ duration: TIMING.EXPRESSION_TRANSITION / 1000 }}
+          {/* Animated Mouth - integrated with proper z-order and sizing */}
+          <AnimatedMouth
+            position={{ x: 100, y: 118 }}
+            width={40}
+            strokeWidth={4}
+            color="#064e3b"
+            className="z-10"
           />
         </svg>
 
@@ -362,6 +368,15 @@ export const AnimatedHexagon: React.FC<AnimatedHexagonProps> = ({
           />
         )}
       </AnimatePresence>
+      
+      {/* Dev panel toggle button */}
+      <button
+        onClick={() => setShowDevPanel(!showDevPanel)}
+        className="absolute bottom-2 left-2 w-6 h-6 bg-gray-600 text-white rounded text-xs hover:bg-gray-700"
+        title="Toggle Dev Panel"
+      >
+        {showDevPanel ? '×' : '⚙'}
+      </button>
     </div>
   );
 };
