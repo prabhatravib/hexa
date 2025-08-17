@@ -13,15 +13,11 @@
       }
     ]
   },
-  "migrations": [
-    {
-      "tag": "v1",
-      "new_classes": [
-        "VoiceSession"
-      ]
-    }
-  ],
-  "vars": {
-    "OPENAI_REALTIME_MODEL": "YOUR_API_KEY_FROM_DASHBOARD"
+  "env": {
+    "OPENAI_REALTIME_MODEL": "your-openai-api-key-here"
+  },
+  "build": {
+    "command": "npm run build:worker",
+    "watch_dir": "src"
   }
 }

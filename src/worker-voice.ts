@@ -1,28 +1,7 @@
+/// <reference types="@cloudflare/workers-types" />
+
 // Cloudflare Worker type definitions
 declare global {
-  interface DurableObjectNamespace {
-    idFromName(name: string): DurableObjectId;
-    get(id: DurableObjectId): DurableObjectStub;
-  }
-  
-  interface DurableObjectId {
-    toString(): string;
-  }
-  
-  interface DurableObjectStub {
-    fetch(request: Request): Promise<Response>;
-  }
-  
-  interface Fetcher {
-    fetch(request: Request): Promise<Response>;
-  }
-  
-  class WebSocketPair {
-    constructor();
-    0: WebSocket;
-    1: WebSocket;
-  }
-  
   interface WebSocket {
     accept(): void;
   }
@@ -283,8 +262,7 @@ export default {
     if (url.pathname.startsWith('/voice/ws')) {
       const durableObjectId = env.VOICE_SESSION.idFromName('global');
       const durableObject = env.VOICE_SESSION.get(durableObjectId);
-      const voiceSession = new VoiceSession(env);
-      return voiceSession.fetch(request);
+      return durableObject.fetch(request);
     }
     
     // Serve static assets

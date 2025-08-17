@@ -2,6 +2,7 @@ import { useMemo } from 'react';
 import { Container, Theme } from './settings/types';
 import { HexagonIcon } from './components/generated/HexagonIcon';
 import { AnimatedHexagon } from './components/animated/AnimatedHexagon';
+import { VoiceControl } from './components/VoiceControl';
 import { useAnimationSequence } from './hooks/useAnimationState';
 
 let theme: Theme = 'light';
@@ -40,6 +41,7 @@ function App() {
             Thinking
           </button>
         </div>
+        <VoiceControl />
       </div>
     );
   }, [greet, thinking]);

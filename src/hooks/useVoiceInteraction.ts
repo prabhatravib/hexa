@@ -49,69 +49,83 @@ export const useVoiceInteraction = (options: UseVoiceInteractionOptions = {}) =>
       ws.onopen = () => {
         setIsConnected(true);
         setVoiceState('idle');
+        console.log('Voice WebSocket connected successfully');
       };
       
       ws.onmessage = async (event) => {
-        const data = JSON.parse(event.data);
-        
-        switch (data.type) {
-          case 'ready':
-            console.log('Voice session ready:', data.sessionId);
-            break;
-            
-          case 'speech_started':
-            startListening();
-            break;
-            
-          case 'speech_stopped':
-            stopListening();
-            break;
-            
-          case 'transcription':
-            setTranscript(data.text);
-            onTranscription?.(data.text);
-            break;
-            
-          case 'response_text_delta':
-            setResponse(prev => prev + data.text);
-            break;
-            
-          case 'audio_delta':
-            // Queue audio for playback
-            const audioData = base64ToArrayBuffer(data.audio);
-            audioQueueRef.current.push(audioData);
-            if (!isPlayingRef.current) {
-              playAudioQueue();
-            }
-            break;
-            
-          case 'audio_done':
-            // Response complete
-            stopSpeaking();
-            break;
-            
-          case 'error':
-            console.error('Voice error:', data.error);
-            setVoiceState('error');
-            onError?.(data.error?.message || 'Unknown error');
-            break;
+        try {
+          const data = JSON.parse(event.data);
+          
+          switch (data.type) {
+            case 'ready':
+              console.log('Voice session ready:', data.sessionId);
+              break;
+              
+            case 'speech_started':
+              startListening();
+              break;
+              
+            case 'speech_stopped':
+              stopListening();
+              break;
+              
+            case 'transcription':
+              setTranscript(data.text);
+              onTranscription?.(data.text);
+              break;
+              
+            case 'response_text_delta':
+              setResponse(prev => prev + data.text);
+              break;
+              
+            case 'audio_delta':
+              // Queue audio for playback
+              const audioData = base64ToArrayBuffer(data.audio);
+              audioQueueRef.current.push(audioData);
+              if (!isPlayingRef.current) {
+                playAudioQueue();
+              }
+              break;
+              
+            case 'audio_done':
+              // Response complete
+              stopSpeaking();
+              break;
+              
+            case 'error':
+              console.error('Voice error:', data.error);
+              setVoiceState('error');
+              onError?.(data.error?.message || 'Unknown error');
+              break;
+          }
+        } catch (parseError) {
+          console.error('Failed to parse WebSocket message:', parseError);
         }
       };
       
       ws.onerror = (error) => {
         console.error('WebSocket error:', error);
         setVoiceState('error');
+        // Show user-friendly error message
+        onError?.('Voice service connection failed. Please check your internet connection.');
       };
       
-      ws.onclose = () => {
+      ws.onclose = (event) => {
+        console.log('WebSocket closed:', event.code, event.reason);
         setIsConnected(false);
         setVoiceState('idle');
+        
+        // If it's not a normal closure, show error
+        if (event.code !== 1000) {
+          onError?.('Voice connection lost. Please try again.');
+        }
       };
       
       wsRef.current = ws;
     } catch (error) {
       console.error('Failed to connect:', error);
       setVoiceState('error');
+      onError?.('Failed to initialize voice service');
     }
   }, []);
   
