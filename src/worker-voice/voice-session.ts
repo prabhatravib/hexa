@@ -153,6 +153,11 @@ export class VoiceSession {
           // Send session info to frontend for OpenAI Agent initialization
           if (this.openaiConnection.isConnected()) {
             const sessionInfo = this.openaiConnection.getSessionInfo();
+            console.log('🔧 Sending session info to frontend:', {
+              hasSessionId: !!sessionInfo.sessionId,
+              hasClientSecret: !!sessionInfo.clientSecret,
+              hasApiKey: !!sessionInfo.apiKey
+            });
             this.broadcastToClients({
               type: 'session_info',
               sessionId: sessionInfo.sessionId,
@@ -164,6 +169,11 @@ export class VoiceSession {
             try {
               await this.openaiConnection.connect();
               const sessionInfo = this.openaiConnection.getSessionInfo();
+              console.log('🔧 Sending session info to frontend after connection:', {
+                hasSessionId: !!sessionInfo.sessionId,
+                hasClientSecret: !!sessionInfo.clientSecret,
+                hasApiKey: !!sessionInfo.apiKey
+              });
               this.broadcastToClients({
                 type: 'session_info',
                 sessionId: sessionInfo.sessionId,

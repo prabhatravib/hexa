@@ -468,7 +468,7 @@
     debug "^4.4.0"
     openai "^5.10.1"
 
-"@openai/agents-realtime@0.0.17":
+"@openai/agents-realtime@^0.0.17", "@openai/agents-realtime@0.0.17":
   version "0.0.17"
   resolved "https://registry.npmjs.org/@openai/agents-realtime/-/agents-realtime-0.0.17.tgz"
   integrity sha512-9yxe93XKuy/pMhFMSrqAu0GlB3mpHh6J9ZGv6PdVpgQyc8uTmujJakMTsYBlogWHJNmGlWIRgf0+x8jIVoTv4A==
