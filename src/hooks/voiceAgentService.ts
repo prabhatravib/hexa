@@ -41,20 +41,29 @@ ${getLanguageInstructions()}`
       // Create session and connect
       const session = new RealtimeSession(agent);
       
-      // Set up audio event handlers for mouth animation and speech intensity analysis
-      session.on('audio' as any, (audioChunk: any) => {
-        // Voice is playing - trigger mouth animation
-        console.log('🎵 Voice audio received - mouth should animate');
-        console.log('🎵 startSpeaking function available:', !!startSpeaking);
-        if (startSpeaking) {
-          console.log('🎵 Calling startSpeaking()...');
-          startSpeaking(); // This will set voiceState and start mouth animation
-          console.log('🎵 startSpeaking() called successfully');
-        } else {
-          console.log('🎵 startSpeaking not available, using fallback setVoiceState');
-          setVoiceState('speaking'); // Fallback if startSpeaking not provided
+              // Debug: Log all session events to understand what's available
+        const originalEmit = (session as any).emit;
+        if (originalEmit) {
+          (session as any).emit = function(event: string, ...args: any[]) {
+            console.log(`🔍 Session event: ${event}`, args);
+            return originalEmit.call(this, event, ...args);
+          };
         }
-      });
+        
+        // Set up audio event handlers for mouth animation and speech intensity analysis
+        session.on('audio' as any, (audioChunk: any) => {
+          // Voice is playing - trigger mouth animation
+          console.log('🎵 Voice audio received - mouth should animate');
+          console.log('🎵 startSpeaking function available:', !!startSpeaking);
+          if (startSpeaking) {
+            console.log('🎵 Calling startSpeaking()...');
+            startSpeaking(); // This will set voiceState and start mouth animation
+            console.log('🎵 startSpeaking() called successfully');
+          } else {
+            console.log('🎵 startSpeaking not available, using fallback setVoiceState');
+            setVoiceState('speaking'); // Fallback if startSpeaking not provided
+          }
+        });
       
       session.on('audio_done' as any, () => {
         // Voice stopped - stop mouth animation
@@ -84,6 +93,40 @@ ${getLanguageInstructions()}`
         console.log('🔧 Connecting with client secret options:', connectionOptions);
         await session.connect(connectionOptions);
         console.log('✅ WebRTC connection successful with client secret');
+        
+        // Set up remote track handling to get the actual audio stream
+        session.on('remote_track' as any, (event: any) => {
+          console.log('🎵 Remote track received:', event);
+          
+          if (event.track && event.track.kind === 'audio') {
+            console.log('🎵 Audio track received, attaching to audio element');
+            
+            // Create a new MediaStream with the audio track
+            const stream = new MediaStream([event.track]);
+            audioEl.srcObject = stream;
+            
+            // Start playing to trigger the playing event
+            audioEl.play().catch((error: any) => {
+              console.warn('⚠️ Failed to autoplay audio:', error);
+            });
+          }
+        });
+        
+        // Alternative: Check if session already has a stream after connection
+        // Some implementations might set the stream directly
+        setTimeout(() => {
+          if (!audioEl.srcObject) {
+            console.log('🔍 Checking for existing session stream...');
+            // Try to get stream from session if available
+            if ((session as any).stream) {
+              console.log('🎵 Found session stream, attaching to audio element');
+              audioEl.srcObject = (session as any).stream;
+              audioEl.play().catch((error: any) => {
+                console.warn('⚠️ Failed to autoplay audio:', error);
+              });
+            }
+          }
+        }, 1000); // Wait 1 second after connection
         
         // Set up audio analysis after connection
         audioEl.addEventListener('playing', () => {

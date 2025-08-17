@@ -74,6 +74,17 @@ export const useVoiceConnectionService = ({
               onResponse?.(data.text);
               break;
               
+            case 'audio_delta':
+              console.log('Audio delta received - voice is playing');
+              // The WebRTC session will handle the actual audio stream
+              // This is just a notification that audio is playing
+              break;
+              
+            case 'audio_done':
+              console.log('Audio done received - voice stopped');
+              // The WebRTC session will handle stopping the audio
+              break;
+              
             case 'error':
               console.error('Voice error received:', data);
               console.error('Error details:', data.error);
