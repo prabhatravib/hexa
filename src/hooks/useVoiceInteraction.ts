@@ -35,63 +35,44 @@ export const useVoiceInteraction = (options: UseVoiceInteractionOptions = {}) =>
   const [response, setResponse] = useState('');
   
   const wsRef = useRef<WebSocket | null>(null);
+  const openaiWsRef = useRef<WebSocket | null>(null);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const audioContextRef = useRef<AudioContext | null>(null);
   const audioQueueRef = useRef<ArrayBuffer[]>([]);
   const isPlayingRef = useRef(false);
   
-  // Connect to WebSocket
+  // Connect using SSE for receiving messages
   const connect = useCallback(async () => {
     try {
-      const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-      const ws = new WebSocket(`${protocol}//${window.location.host}/voice/ws`);
+      // Use SSE for receiving messages (real-time updates)
+      const eventSource = new EventSource(`${window.location.origin}/voice/sse`);
       
-      ws.onopen = () => {
+      eventSource.onopen = () => {
         setIsConnected(true);
         setVoiceState('idle');
-        console.log('Voice WebSocket connected successfully');
+        console.log('Voice SSE connected successfully');
+        // OpenAI connection is now handled automatically by the Worker
       };
       
-      ws.onmessage = async (event) => {
+      eventSource.onmessage = async (event) => {
         try {
-          console.log('Raw WebSocket message received:', event.data);
-          const data = JSON.parse(event.data as string);
-          console.log('Parsed WebSocket message:', data);
+          console.log('Raw SSE message received:', event.data);
+          const data = JSON.parse(event.data);
+          console.log('Parsed SSE message:', data);
           
           switch (data.type) {
+            case 'connected':
+              console.log('SSE connection established');
+              break;
+              
             case 'ready':
               console.log('Voice session ready:', data.sessionId);
               break;
               
-            case 'speech_started':
-              startListening();
-              break;
-              
-            case 'speech_stopped':
-              stopListening();
-              break;
-              
-            case 'transcription':
-              setTranscript(data.text);
-              onTranscription?.(data.text);
-              break;
-              
-            case 'response_text_delta':
-              setResponse(prev => prev + data.text);
-              break;
-              
-            case 'audio_delta':
-              // Queue audio for playback
-              const audioData = base64ToArrayBuffer(data.audio);
-              audioQueueRef.current.push(audioData);
-              if (!isPlayingRef.current) {
-                playAudioQueue();
-              }
-              break;
-              
-            case 'audio_done':
-              // Response complete
-              stopSpeaking();
+            case 'openai_message':
+              console.log('OpenAI message received:', data.data);
+              // Handle OpenAI messages (transcription, audio, etc.)
+              await handleOpenAIMessage(data.data);
               break;
               
             case 'error':
@@ -105,32 +86,21 @@ export const useVoiceInteraction = (options: UseVoiceInteractionOptions = {}) =>
               console.log('Unknown message type:', data.type, data);
           }
         } catch (parseError) {
-          console.error('Failed to parse WebSocket message:', parseError, 'Raw data:', event.data);
+          console.error('Failed to parse SSE message:', parseError, 'Raw data:', event.data);
           setVoiceState('error');
           onError?.('Failed to process voice message. Please try again.');
         }
       };
       
-      ws.onerror = (error) => {
-        console.error('WebSocket error:', error);
+      eventSource.onerror = (error) => {
+        console.error('SSE error:', error);
         setVoiceState('error');
-        // Show user-friendly error message
         onError?.('Voice service connection failed. Please check your internet connection.');
       };
       
-      ws.onclose = (event) => {
-        console.log('WebSocket closed:', event.code, event.reason);
-        setIsConnected(false);
-        setVoiceState('idle');
-        
-        // If it's not a normal closure, show error
-        if (event.code !== 1000) {
-          const errorMessage = event.reason || `Connection closed with code ${event.code}`;
-          onError?.(`Voice connection lost: ${errorMessage}`);
-        }
-      };
+      // Store reference for cleanup
+      wsRef.current = eventSource as any; // Reuse wsRef for cleanup
       
-      wsRef.current = ws;
     } catch (error) {
       console.error('Failed to connect:', error);
       setVoiceState('error');
@@ -153,10 +123,14 @@ export const useVoiceInteraction = (options: UseVoiceInteractionOptions = {}) =>
       
       // Try to use a supported format, fallback to default if needed
       let mimeType = 'audio/webm;codecs=opus';
-      if (MediaRecorder.isTypeSupported('audio/webm;codecs=pcm')) {
-        mimeType = 'audio/webm;codecs=pcm';
-      } else if (MediaRecorder.isTypeSupported('audio/wav')) {
-        mimeType = 'audio/wav';
+      if (MediaRecorder.isTypeSupported('audio/webm;codecs=opus')) {
+        mimeType = 'audio/webm;codecs=opus';
+      } else if (MediaRecorder.isTypeSupported('audio/webm')) {
+        mimeType = 'audio/webm';
+      } else if (MediaRecorder.isTypeSupported('audio/mp4')) {
+        mimeType = 'audio/mp4';
+      } else {
+        mimeType = 'audio/webm'; // Default fallback
       }
       
       const mediaRecorder = new MediaRecorder(stream, {
@@ -164,30 +138,32 @@ export const useVoiceInteraction = (options: UseVoiceInteractionOptions = {}) =>
       });
       
       mediaRecorder.ondataavailable = async (event) => {
-        if (event.data.size > 0 && wsRef.current?.readyState === WebSocket.OPEN) {
+        if (event.data.size > 0) {
           try {
-            // Convert audio to PCM16 format
-            const audioBuffer = await convertToPCM16(event.data);
-            const base64 = arrayBufferToBase64(audioBuffer);
-            
-            wsRef.current?.send(JSON.stringify({
-              type: 'audio',
-              audio: base64
-            }));
-          } catch (error) {
-            console.error('Failed to convert audio:', error);
-            // Fallback to original format
+            // Try to send the original audio format first
             const reader = new FileReader();
-            reader.onloadend = () => {
+            reader.onloadend = async () => {
               const base64 = reader.result?.toString().split(',')[1];
               if (base64) {
-                wsRef.current?.send(JSON.stringify({
-                  type: 'audio',
-                  audio: base64
-                }));
+                try {
+                  const response = await fetch('/voice/message', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ type: 'audio', audio: base64 })
+                  });
+                  
+                  if (!response.ok) {
+                    throw new Error(`HTTP ${response.status}`);
+                  }
+                } catch (error) {
+                  console.error('Failed to send audio:', error);
+                }
               }
             };
             reader.readAsDataURL(event.data);
+            
+          } catch (error) {
+            console.error('Failed to process audio:', error);
           }
         }
       };
@@ -290,39 +266,128 @@ export const useVoiceInteraction = (options: UseVoiceInteractionOptions = {}) =>
     }
   };
   
-  // Send text message
-  const sendText = useCallback((text: string) => {
-    if (wsRef.current?.readyState === WebSocket.OPEN) {
-      wsRef.current.send(JSON.stringify({
-        type: 'text',
-        text
-      }));
+  // Send text message via HTTP POST
+  const sendText = useCallback(async (text: string) => {
+    try {
+      const response = await fetch('/voice/message', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ type: 'text', text })
+      });
+      
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status}`);
+      }
+      
       setTranscript(text);
+    } catch (error) {
+      console.error('Failed to send text:', error);
+      onError?.('Failed to send message');
     }
-  }, []);
+  }, [onError]);
   
-  // Switch agent
-  const switchAgent = useCallback((agentId: string) => {
-    if (wsRef.current?.readyState === WebSocket.OPEN) {
-      wsRef.current.send(JSON.stringify({
-        type: 'switch_agent',
-        agentId
-      }));
+    // Handle OpenAI messages received through SSE
+  const handleOpenAIMessage = useCallback(async (data: any) => {
+    try {
+      console.log('🔧 Processing OpenAI message:', data.type);
+      
+      switch (data.type) {
+        case 'input_audio_buffer.speech_started':
+          console.log('🎤 Speech started');
+          startListening();
+          break;
+          
+        case 'input_audio_buffer.speech_stopped':
+          console.log('🔇 Speech stopped');
+          stopListening();
+          break;
+          
+        case 'response.audio_transcript.delta':
+          console.log('📝 Transcription delta:', data.delta);
+          setTranscript(prev => prev + data.delta);
+          onTranscription?.(data.delta);
+          break;
+          
+        case 'response.audio_transcript.done':
+          console.log('✅ Transcription complete:', data.transcript);
+          setTranscript(data.transcript);
+          onTranscription?.(data.transcript);
+          break;
+          
+        case 'response.audio.delta':
+          console.log('🎵 Audio delta received');
+          // Queue audio for playback
+          const audioData = base64ToArrayBuffer(data.delta);
+          audioQueueRef.current.push(audioData);
+          if (!isPlayingRef.current) {
+            playAudioQueue();
+          }
+          break;
+          
+        case 'response.done':
+          console.log('✅ Response complete');
+          stopSpeaking();
+          break;
+          
+        case 'error':
+          console.error('❌ OpenAI error:', data.error);
+          setVoiceState('error');
+          onError?.(data.error?.message || 'OpenAI error occurred');
+          break;
+          
+        default:
+          console.log('📨 Unknown OpenAI message type:', data.type, data);
+      }
+    } catch (error) {
+      console.error('❌ Failed to handle OpenAI message:', error);
     }
+  }, [startListening, stopListening, onTranscription, onError, setVoiceState, stopSpeaking]);
+
+  // This function is no longer needed since connection is handled automatically
+  // when SSE connects. Keeping for backward compatibility but not using it.
+  const establishOpenAIConnection = useCallback(async (sessionId: string, clientSecret: string, instructions: string) => {
+    console.log('🔧 Connection already established via SSE');
   }, []);
 
-  // Interrupt current response
-  const interrupt = useCallback(() => {
-    if (wsRef.current?.readyState === WebSocket.OPEN) {
-      wsRef.current.send(JSON.stringify({
-        type: 'control',
-        command: 'interrupt'
-      }));
+  // Switch agent
+  const switchAgent = useCallback(async (agentId: string) => {
+    try {
+      const response = await fetch('/voice/message', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ type: 'switch_agent', agentId })
+      });
+      
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status}`);
+      }
+    } catch (error) {
+      console.error('Failed to switch agent:', error);
+      onError?.('Failed to switch agent');
     }
+  }, [onError]);
+
+  // Interrupt current response
+  const interrupt = useCallback(async () => {
+    try {
+      const response = await fetch('/voice/message', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ type: 'control', command: 'interrupt' })
+      });
+      
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status}`);
+      }
+    } catch (error) {
+      console.error('Failed to interrupt:', error);
+      onError?.('Failed to interrupt response');
+    }
+    
     audioQueueRef.current = [];
     isPlayingRef.current = false;
     stopSpeaking();
-  }, []);
+  }, [onError, stopSpeaking]);
   
   // Clean up
   useEffect(() => {
@@ -332,7 +397,15 @@ export const useVoiceInteraction = (options: UseVoiceInteractionOptions = {}) =>
     
     return () => {
       if (wsRef.current) {
-        wsRef.current.close();
+        // Handle both WebSocket and EventSource cleanup
+        if ('close' in wsRef.current) {
+          wsRef.current.close();
+        } else if ('close' in wsRef.current) {
+          (wsRef.current as EventSource).close();
+        }
+      }
+      if (openaiWsRef.current) {
+        openaiWsRef.current.close();
       }
       stopRecording();
     };
@@ -344,7 +417,17 @@ export const useVoiceInteraction = (options: UseVoiceInteractionOptions = {}) =>
     transcript,
     response,
     connect,
-    disconnect: () => wsRef.current?.close(),
+    disconnect: () => {
+      if (wsRef.current) {
+        // Handle both WebSocket and EventSource cleanup
+        if ('close' in wsRef.current) {
+          wsRef.current.close();
+        } else if ('close' in wsRef.current) {
+          (wsRef.current as EventSource).close();
+        }
+      }
+      openaiWsRef.current?.close();
+    },
     startRecording,
     stopRecording,
     sendText,
@@ -363,33 +446,4 @@ function base64ToArrayBuffer(base64: string): ArrayBuffer {
     bytes[i] = binaryString.charCodeAt(i);
   }
   return bytes.buffer;
-}
-
-// Convert audio blob to PCM16 format
-async function convertToPCM16(audioBlob: Blob): Promise<ArrayBuffer> {
-  const audioContext = new AudioContext();
-  const arrayBuffer = await audioBlob.arrayBuffer();
-  const audioBuffer = await audioContext.decodeAudioData(arrayBuffer);
-  
-  // Convert to PCM16
-  const length = audioBuffer.length;
-  const pcm16 = new Int16Array(length);
-  
-  for (let i = 0; i < length; i++) {
-    // Convert float32 to int16
-    const sample = Math.max(-1, Math.min(1, audioBuffer.getChannelData(0)[i]));
-    pcm16[i] = sample < 0 ? sample * 0x8000 : sample * 0x7FFF;
-  }
-  
-  return pcm16.buffer;
-}
-
-// Convert ArrayBuffer to base64
-function arrayBufferToBase64(buffer: ArrayBuffer): string {
-  const bytes = new Uint8Array(buffer);
-  let binary = '';
-  for (let i = 0; i < bytes.byteLength; i++) {
-    binary += String.fromCharCode(bytes[i]);
-  }
-  return btoa(binary);
 }

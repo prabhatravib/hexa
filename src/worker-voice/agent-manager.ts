@@ -8,6 +8,10 @@ export class AgentManager {
     this.broadcastToClients = broadcastToClients;
   }
 
+  setOpenAIConnection(openaiConnection: any): void {
+    this.openaiConnection = openaiConnection;
+  }
+
   getAgentInstructions(): string {
     switch (this.currentAgentId) {
       case 'customer-support':
@@ -24,13 +28,15 @@ export class AgentManager {
     this.currentAgentId = agentId;
     
     // Update the session with new agent instructions
-    if (this.openaiConnection.isConnected()) {
+    if (this.openaiConnection && this.openaiConnection.isConnected()) {
       this.openaiConnection.send({
         type: 'session.update',
         session: {
           instructions: this.getAgentInstructions()
         }
       });
+    } else {
+      console.warn('⚠️ OpenAI connection not available for agent switch');
     }
     
     // Notify clients of agent switch

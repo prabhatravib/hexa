@@ -7,20 +7,76 @@ export class MessageHandlers {
     this.broadcastToClients = broadcastToClients;
   }
 
+  setOpenAIConnection(openaiConnection: any): void {
+    this.openaiConnection = openaiConnection;
+  }
+
   async handleAudioInput(audioData: string, sessionId: string): Promise<void> {
+    // Check if OpenAI connection is available
+    if (!this.openaiConnection) {
+      console.error('❌ OpenAI connection not available');
+      this.broadcastToClients({
+        type: 'error',
+        error: { message: 'Voice service not ready. Please wait a moment and try again.' }
+      });
+      return;
+    }
+
+    // Check if connected, if not try to connect
     if (!this.openaiConnection.isConnected()) {
-      await this.openaiConnection.connect();
+      console.log('🔧 OpenAI not connected, attempting to connect...');
+      try {
+        await this.openaiConnection.connect();
+      } catch (error) {
+        console.error('❌ Failed to connect to OpenAI:', error);
+        this.broadcastToClients({
+          type: 'error',
+          error: { message: 'Failed to connect to voice service. Please try again.' }
+        });
+        return;
+      }
     }
     
-    this.openaiConnection.send({
-      type: 'input_audio_buffer.append',
-      audio: audioData
-    });
+    try {
+      console.log('🔧 Sending audio data to OpenAI...');
+      this.openaiConnection.send({
+        type: 'input_audio_buffer.append',
+        audio: audioData
+      });
+      console.log('✅ Audio data sent successfully');
+    } catch (error) {
+      console.error('❌ Failed to send audio to OpenAI:', error);
+      this.broadcastToClients({
+        type: 'error',
+        error: { message: 'Failed to process audio. Please try again.' }
+      });
+    }
   }
 
   async handleTextInput(text: string, sessionId: string): Promise<void> {
+    // Check if OpenAI connection is available
+    if (!this.openaiConnection) {
+      console.error('❌ OpenAI connection not available');
+      this.broadcastToClients({
+        type: 'error',
+        error: { message: 'Voice service not ready. Please wait a moment and try again.' }
+      });
+      return;
+    }
+
+    // Check if connected, if not try to connect
     if (!this.openaiConnection.isConnected()) {
-      await this.openaiConnection.connect();
+      console.log('🔧 OpenAI not connected, attempting to connect...');
+      try {
+        await this.openaiConnection.connect();
+      } catch (error) {
+        console.error('❌ Failed to connect to OpenAI:', error);
+        this.broadcastToClients({
+          type: 'error',
+          error: { message: 'Failed to connect to voice service. Please try again.' }
+        });
+        return;
+      }
     }
     
     // Send text message to OpenAI
@@ -43,6 +99,16 @@ export class MessageHandlers {
   }
 
   async handleControl(command: string, sessionId: string): Promise<void> {
+    // Check if OpenAI connection is available
+    if (!this.openaiConnection) {
+      console.error('❌ OpenAI connection not available');
+      this.broadcastToClients({
+        type: 'error',
+        error: { message: 'Voice service not ready. Please wait a moment and try again.' }
+      });
+      return;
+    }
+
     switch (command) {
       case 'interrupt':
         this.openaiConnection.send({

@@ -18,6 +18,14 @@ export default {
       return durableObject.fetch(request);
     }
     
+    // Handle SSE and HTTP message endpoints
+    if (url.pathname === '/voice/sse' || url.pathname === '/voice/message' || url.pathname === '/voice/test') {
+      const durableObjectId = env.VOICE_SESSION.idFromName('global');
+      const durableObject = env.VOICE_SESSION.get(durableObjectId);
+      
+      return durableObject.fetch(request);
+    }
+    
     // Serve static assets
     try {
       const asset = await env.ASSETS.fetch(request);

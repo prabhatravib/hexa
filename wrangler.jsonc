@@ -23,9 +23,14 @@
     }
   ],
 
-
   "build": {
     "command": "yarn build:worker",
     "watch_dir": "src"
+  },
+
+  "observability": {
+    "logs": {
+      "enabled": true
+    }
   }
 }
