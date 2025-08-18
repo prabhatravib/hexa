@@ -127,21 +127,24 @@ export const useVoiceInteraction = (options: UseVoiceInteractionOptions = {}) =>
     console.log('🎯 Starting fallback flap animation');
     
     let frameCount = 0;
-    const maxFrames = 1800; // Stop after 30 seconds (at 60fps)
+    const maxFrames = 1800; // Back to 30 seconds max (at 60fps) since we're not checking audio element
     
     const loop = () => {
       frameCount++;
       
-      // Check current state from store directly
+      // Check current state from store directly - this is the authoritative source
       const currentState = useAnimationStore.getState().voiceState;
       
-      // Stop conditions
+      // Stop conditions - ONLY check voice state and frame count
       if (currentState !== 'speaking' || frameCount > maxFrames) {
         console.log(`🎯 Stopping fallback flap: state=${currentState}, frames=${frameCount}`);
         fallbackFlapRafRef.current = null;
         setMouthTarget(0);
         resetMouth();
-        if (frameCount > maxFrames) {
+        
+        // Force stop speaking only if we hit max frames
+        if (frameCount > maxFrames && currentState === 'speaking') {
+          console.log('🔇 Forcing stop speaking due to timeout');
           useAnimationStore.getState().stopSpeaking();
         }
         return;

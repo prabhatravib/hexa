@@ -227,6 +227,9 @@ export const AnimatedMouth: React.FC<AnimatedMouthProps> = ({
       }
     }
   }, [mouthOpennessTarget, currentOpenness]);
+
+  // Note: Audio monitoring removed - we now trust the voice state from the store
+  // The voice state is the authoritative source of truth for when OpenAI is speaking
   
   // Debug motion values
   useEffect(() => {

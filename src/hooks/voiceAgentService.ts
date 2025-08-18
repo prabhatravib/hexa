@@ -441,6 +441,9 @@ ${getLanguageInstructions()}`
             clearTimeout(audioDurationTimeout);
             audioDurationTimeout = null;
           }
+          
+          // Also reset the current speaking flag
+          isCurrentlySpeaking = false;
         });
 
         audioEl.addEventListener('pause', () => {
@@ -470,6 +473,17 @@ ${getLanguageInstructions()}`
             setVoiceState('idle');
           }
           
+          (window as any).__currentVoiceState = 'idle';
+        });
+
+        // Add error handler to stop animation on audio errors
+        audioEl.addEventListener('error', (e) => {
+          console.log('❌ Audio error - stopping speech and mouth animation', e);
+          audioPlaying = false;
+          analysisStarted = false;
+          isCurrentlySpeaking = false;
+          if (setSpeechIntensity) setSpeechIntensity(0);
+          if (stopSpeaking) stopSpeaking();
           (window as any).__currentVoiceState = 'idle';
         });
       } else {

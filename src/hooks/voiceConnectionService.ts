@@ -1,4 +1,5 @@
 import { useCallback, useRef } from 'react';
+import { useAnimationStore } from '../store/animationStore';
 
 type VoiceState = 'idle' | 'listening' | 'thinking' | 'speaking' | 'error';
 
@@ -112,10 +113,22 @@ export const useVoiceConnectionService = ({
             case 'audio_done':
             case 'agent_end':
               console.log('Audio done received - voice stopped');
+              // Force immediate stop
               setSpeechIntensity?.(0);
-              stopSpeaking?.();
-              setVoiceState('idle');
               stopSyntheticFlap();
+              
+              // Use a small delay to ensure audio element has finished
+              setTimeout(() => {
+                stopSpeaking?.();
+                setVoiceState('idle');
+                
+                // Double-check and force stop if still speaking
+                const currentVoiceState = (window as any).__currentVoiceState;
+                if (currentVoiceState === 'speaking') {
+                  console.log('⚠️ Force stopping speaking state after audio_done');
+                  useAnimationStore.getState().stopSpeaking();
+                }
+              }, 100);
               break;
               
             case 'error':
