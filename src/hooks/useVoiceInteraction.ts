@@ -129,7 +129,7 @@ export const useVoiceInteraction = (options: UseVoiceInteractionOptions = {}) =>
     
     // Process mouth targets when there's actual voice data
     // The WebRTC session will call this during audio playback
-    if (rawIntensity > 0.01) { // Only update if there's actual audio
+    if (rawIntensity > 0.001) { // Only update if there's actual audio
       const processedIntensity = processSpeechIntensity(rawIntensity);
       updateMouthTarget(processedIntensity);
       

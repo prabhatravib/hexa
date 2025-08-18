@@ -151,19 +151,50 @@ ${getLanguageInstructions()}`
           analyser.smoothingTimeConstant = 0.25;
           src.connect(analyser);
           
-          const bins = new Uint8Array(analyser.frequencyBinCount);
+          // Persistent state across ticks for dynamic gate with hysteresis
+          let noiseFloor = 0.02;      // EMA of background
+          let speaking = false;
+          let level = 0;              // smoothed mouth openness
+
+          const OPEN_MARGIN  = 0.03;  // dB-ish in RMS units
+          const CLOSE_MARGIN = 0.015; // lower than open -> hysteresis
+          const ATTACK  = 0.30;       // rise speed per frame
+          const RELEASE = 0.06;       // fall speed per frame
+
           const tick = () => {
-            analyser.getByteFrequencyData(bins);
-            // Rough speech band (frequencies 2-8, roughly 200-800Hz for speech)
-            const band = bins.slice(2, 8);
-            const avg = band.reduce((a, b) => a + b, 0) / band.length;
-            const intensity = Math.max(0, Math.min(1, Math.pow(avg / 255, 0.7)));
-            
+            const td = new Uint8Array(analyser.fftSize);
+            analyser.getByteTimeDomainData(td);
+
+            // RMS 0..~1 (ignore bins <100 Hz and >6 kHz to reject hum)
+            let sum = 0;
+            for (let i = 0; i < td.length; i++) {
+              const v = (td[i] - 128) / 128;
+              sum += v * v;
+            }
+            const rms = Math.sqrt(sum / td.length);
+
+            // Update dynamic floor only when not speaking
+            if (!speaking) noiseFloor = 0.9 * noiseFloor + 0.1 * rms;
+
+            const openThr  = noiseFloor + OPEN_MARGIN;
+            const closeThr = noiseFloor + CLOSE_MARGIN;
+
+            if (!speaking && rms > openThr) speaking = true;
+            if (speaking && rms < closeThr) speaking = false;
+
+            // Normalize above floor
+            const over = Math.max(0, rms - noiseFloor);
+            const norm = Math.min(1, over / (1 - noiseFloor));
+
+            // Different attack/release smoothing
+            const alpha = speaking ? ATTACK : RELEASE;
+            level += alpha * ((speaking ? norm : 0) - level);
+
             if (setSpeechIntensity) {
-              console.log(`🎤 Calling setSpeechIntensity with intensity: ${intensity.toFixed(3)}`);
-              setSpeechIntensity(intensity);
+              console.log(`🎤 Dynamic gate: rms=${rms.toFixed(3)}, floor=${noiseFloor.toFixed(3)}, speaking=${speaking}, level=${level.toFixed(3)}`);
+              setSpeechIntensity(level);
               if (process.env.NODE_ENV === 'development') {
-                console.log(`🎤 Speech intensity: ${intensity.toFixed(3)}`);
+                console.log(`🎤 Speech intensity: ${level.toFixed(3)}`);
               }
             } else {
               console.warn('⚠️ setSpeechIntensity function not provided to voice agent service');
