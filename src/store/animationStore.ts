@@ -92,7 +92,11 @@ export const useAnimationStore = create<AnimationStore>((set, get) => ({
   setPulsing: (pulsing) => set({ isPulsing: pulsing }),
   
   // Voice state setters
-  setVoiceState: (state) => set({ voiceState: state }),
+  setVoiceState: (state) => {
+    set({ voiceState: state });
+    // Also update global state for debugging
+    (window as any).__currentVoiceState = state;
+  },
   setVoiceActive: (active) => set({ isVoiceActive: active }),
   setSpeaking: (speaking) => set({ isSpeaking: speaking }),
   setSpeechIntensity: (intensity) => set({ speechIntensity: intensity }),
@@ -171,6 +175,9 @@ export const useAnimationStore = create<AnimationStore>((set, get) => ({
       expressionState: 'happy'
     });
     
+    // Expose current voice state globally for debugging
+    (window as any).__currentVoiceState = 'speaking';
+    
     console.log('🎤 Voice state set to speaking - mouth will be driven by audio intensity');
   },
   
@@ -184,6 +191,11 @@ export const useAnimationStore = create<AnimationStore>((set, get) => ({
       speechIntensity: 0,
       mouthOpennessTarget: 0 // Reset mouth to closed position
     });
+    
+    // Clear global voice state
+    (window as any).__currentVoiceState = 'idle';
+    
+    console.log('🔇 Voice state set to idle - mouth animation stopped');
   },
   
   // Interaction handlers

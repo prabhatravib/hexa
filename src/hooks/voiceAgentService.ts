@@ -115,30 +115,60 @@ ${getLanguageInstructions()}`
           };
         }
         
-        // Set up audio event handlers for mouth animation and speech intensity analysis
-        session.on('audio' as any, (audioChunk: any) => {
-          // Voice is playing - trigger mouth animation
-          console.log('🎵 Voice audio received - mouth should animate');
-          console.log('🎵 startSpeaking function available:', !!startSpeaking);
-          if (startSpeaking) {
-            console.log('🎵 Calling startSpeaking()...');
-            startSpeaking(); // This will set voiceState and start mouth animation
-            console.log('🎵 startSpeaking() called successfully');
-          } else {
-            console.log('🎵 startSpeaking not available, using fallback setVoiceState');
-            setVoiceState('speaking'); // Fallback if startSpeaking not provided
+        // Track if we're currently speaking to avoid duplicate calls
+        let isCurrentlySpeaking = false;
+        
+        // Set up various event handlers for mouth animation
+        // Try multiple event names as the SDK might use different ones
+        const possibleAudioEvents = ['audio', 'response.audio.delta', 'response.audio', 'conversation.item.audio'];
+        possibleAudioEvents.forEach(eventName => {
+          session.on(eventName as any, (audioData: any) => {
+            console.log(`🎵 Event ${eventName} fired - starting mouth animation`);
+            if (!isCurrentlySpeaking) {
+              isCurrentlySpeaking = true;
+              if (startSpeaking) {
+                startSpeaking();
+              } else {
+                setVoiceState('speaking');
+              }
+            }
+          });
+        });
+        
+        // Handle audio completion events
+        const possibleDoneEvents = ['audio_done', 'response.audio.done', 'response.done', 'conversation.item.done'];
+        possibleDoneEvents.forEach(eventName => {
+          session.on(eventName as any, () => {
+            console.log(`🔇 Event ${eventName} fired - stopping mouth animation`);
+            isCurrentlySpeaking = false;
+            if (stopSpeaking) {
+              stopSpeaking();
+            } else {
+              setVoiceState('idle');
+            }
+          });
+        });
+        
+        // Also listen for response events that might indicate speaking
+        session.on('response.created' as any, () => {
+          console.log('📢 Response created - AI is preparing to speak');
+          setVoiceState('thinking');
+        });
+        
+        session.on('response.output_item.added' as any, (item: any) => {
+          console.log('📢 Output item added:', item);
+          if (item?.type === 'audio' || item?.content_type?.includes('audio')) {
+            console.log('🎵 Audio output item detected - starting mouth animation');
+            if (!isCurrentlySpeaking) {
+              isCurrentlySpeaking = true;
+              if (startSpeaking) {
+                startSpeaking();
+              } else {
+                setVoiceState('speaking');
+              }
+            }
           }
         });
-      
-      session.on('audio_done' as any, () => {
-        // Voice stopped - stop mouth animation
-        console.log('🔇 Voice audio done - mouth should stop animating');
-        if (stopSpeaking) {
-          stopSpeaking(); // This will set voiceState and stop mouth animation
-        } else {
-          setVoiceState('idle'); // Fallback if stopSpeaking not provided
-        }
-      });
       
       session.on('error' as any, (error: any) => {
         console.error('❌ OpenAI session error:', error);
@@ -196,20 +226,61 @@ ${getLanguageInstructions()}`
           }
         }, 1000); // Wait 1 second after connection
         
+         // Track audio element state for mouth animation
+         let audioPlaying = false;
+         
          // Fallback: ensure analyser is running even if remote_track isn't emitted
          audioEl.addEventListener('playing', async () => {
-           console.log('🎵 Audio playing - ensuring analyser is running');
+           console.log('🎵 Audio playing - ensuring analyser is running and mouth animating');
+           audioPlaying = true;
            if (!analysisStarted) {
              await startAnalysisWithNodes((ctx) => ctx.createMediaElementSource(audioEl));
            }
-           if (startSpeaking) startSpeaking();
+           // Always trigger speaking state when audio is playing
+           if (startSpeaking) {
+             startSpeaking();
+           } else {
+             setVoiceState('speaking');
+           }
+         });
+         
+         // Also handle play event
+         audioEl.addEventListener('play', () => {
+           console.log('🎵 Audio play event - starting mouth animation');
+           audioPlaying = true;
+           if (startSpeaking) {
+             startSpeaking();
+           } else {
+             setVoiceState('speaking');
+           }
+         });
+         
+         // Monitor time updates to ensure mouth stays animated during playback
+         audioEl.addEventListener('timeupdate', () => {
+           if (audioPlaying && !audioEl.paused && audioEl.currentTime > 0) {
+             // Ensure we're in speaking state while audio is playing
+             const currentState = (window as any).__currentVoiceState;
+             if (currentState !== 'speaking') {
+               console.log('⚠️ Audio playing but not in speaking state, fixing...');
+               if (startSpeaking) {
+                 startSpeaking();
+               } else {
+                 setVoiceState('speaking');
+               }
+             }
+           }
          });
         
         ['pause', 'ended', 'emptied'].forEach(ev => {
           audioEl.addEventListener(ev, () => {
             console.log(`🔇 Audio ${ev} - stopping speech and mouth animation`);
+            audioPlaying = false;
             if (setSpeechIntensity) setSpeechIntensity(0);
-            if (stopSpeaking) stopSpeaking();
+            if (stopSpeaking) {
+              stopSpeaking();
+            } else {
+              setVoiceState('idle');
+            }
           });
         });
       } else {

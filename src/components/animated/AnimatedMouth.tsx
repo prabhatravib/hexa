@@ -89,12 +89,17 @@ export const AnimatedMouth: React.FC<AnimatedMouthProps> = ({
       const centerY = position.y;
       const halfWidth = width / 2;
       
-      // Dynamic mouth curve based on openness
-      const curveHeight = clampedOpenness * 15; // Max curve height
+      // Dynamic mouth curve based on openness - increased for better visibility
+      const maxCurveHeight = 25; // Increased from 15 for more visible animation
+      const curveHeight = clampedOpenness * maxCurveHeight;
       const controlY = centerY - curveHeight;
       
-      // Create smooth curve path
-      const newPath = `M ${centerX - halfWidth} ${centerY} Q ${centerX} ${controlY} ${centerX + halfWidth} ${centerY}`;
+      // Create smooth curve path with enhanced opening
+      // Also add slight width change when opening for more natural look
+      const widthScale = 1 + (clampedOpenness * 0.1); // Slight width increase when open
+      const adjustedHalfWidth = halfWidth * widthScale;
+      
+      const newPath = `M ${centerX - adjustedHalfWidth} ${centerY} Q ${centerX} ${controlY} ${centerX + adjustedHalfWidth} ${centerY}`;
       setPathD(newPath);
     });
     
@@ -103,9 +108,12 @@ export const AnimatedMouth: React.FC<AnimatedMouthProps> = ({
     const centerX = position.x;
     const centerY = position.y;
     const halfWidth = width / 2;
-    const curveHeight = initialOpenness * 15;
+    const maxCurveHeight = 25; // Match the increased height
+    const curveHeight = initialOpenness * maxCurveHeight;
     const controlY = centerY - curveHeight;
-    const initialPath = `M ${centerX - halfWidth} ${centerY} Q ${centerX} ${controlY} ${centerX + halfWidth} ${centerY}`;
+    const widthScale = 1 + (initialOpenness * 0.1);
+    const adjustedHalfWidth = halfWidth * widthScale;
+    const initialPath = `M ${centerX - adjustedHalfWidth} ${centerY} Q ${centerX} ${controlY} ${centerX + adjustedHalfWidth} ${centerY}`;
     setPathD(initialPath);
     
     return unsubscribe;
@@ -134,20 +142,31 @@ export const AnimatedMouth: React.FC<AnimatedMouthProps> = ({
   
   // Main animation loop using requestAnimationFrame - now reads from ref
   const animateMouth = useCallback(() => {
+    // Get the current voice state from the store to avoid stale closures
+    const currentVoiceState = useAnimationStore.getState().voiceState;
+    
     // Primary behavior: if speaking, synthesize a simple flap independent of analyser
     let target = targetRef.current; // default to store target
-    if (voiceState === 'speaking') {
+    if (currentVoiceState === 'speaking') {
       const t = performance.now() / 1000;
-      const base = 0.35; // slightly open
-      const amp = 0.25;  // flap amount
-      target = base + Math.max(0, Math.sin(t * 6.0)) * amp;
+      const base = 0.4; // slightly more open base
+      const amp = 0.3;  // larger flap amount for more visible animation
+      // Use a faster frequency for more dynamic movement
+      target = base + Math.max(0, Math.sin(t * 8.0)) * amp;
+      
+      if (process.env.NODE_ENV === 'development') {
+        // Log occasionally to avoid spam
+        if (Math.floor(t * 10) % 10 === 0) {
+          console.log(`👄 Mouth flapping: target=${target.toFixed(3)}, voiceState=${currentVoiceState}`);
+        }
+      }
     }
-    const current = currentOpenness.get();
+    
     // Drive openness directly for clear, visible motion
     currentOpenness.set(target);
     
     // Add micro-motion when not speaking (subtle breathing)
-    const isCurrentlySpeaking = voiceState === 'speaking';
+    const isCurrentlySpeaking = currentVoiceState === 'speaking';
     if (!isCurrentlySpeaking && !reducedMotionRef.current) {
       const time = Date.now() * 0.001;
       const microAmplitude = 0.02; // Max micro-motion amplitude
@@ -158,23 +177,31 @@ export const AnimatedMouth: React.FC<AnimatedMouthProps> = ({
     
     // Continue animation loop
     animationFrameRef.current = requestAnimationFrame(animateMouth);
-  }, [voiceState, currentOpenness, springOpenness]); // Removed mouthOpennessTarget dependency
+  }, [currentOpenness]); // Simplified dependencies
   
   // Start/stop animation loop based on voice state and target values
   useEffect(() => {
     const isSpeaking = voiceState === 'speaking';
     const hasTargetValue = mouthOpennessTarget > 0; // Allow even tiny targets to trigger animation
     
-    // Always start animation when there's a target value or when speaking
-    if (hasTargetValue || isSpeaking) {
+    // Always start animation when speaking, regardless of target value
+    if (isSpeaking) {
       if (!animationFrameRef.current) {
         if (process.env.NODE_ENV === 'development') {
-          console.log('🚀 Starting mouth animation loop');
+          console.log('🚀 Starting mouth animation loop (speaking detected)');
+        }
+        animationFrameRef.current = requestAnimationFrame(animateMouth);
+      }
+    } else if (hasTargetValue) {
+      // Also start if we have a target value (for analyzer-driven animation)
+      if (!animationFrameRef.current) {
+        if (process.env.NODE_ENV === 'development') {
+          console.log('🚀 Starting mouth animation loop (target value detected)');
         }
         animationFrameRef.current = requestAnimationFrame(animateMouth);
       }
     } else {
-      // Stop animation only when no target and not speaking
+      // Stop animation only when not speaking AND no target
       if (animationFrameRef.current) {
         if (process.env.NODE_ENV === 'development') {
           console.log('⏹️ Stopping mouth animation loop');
