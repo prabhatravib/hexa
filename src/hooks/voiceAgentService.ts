@@ -166,6 +166,33 @@ ${getLanguageInstructions()}`
         
         // Track if we're currently speaking to avoid duplicate calls
         let isCurrentlySpeaking = false;
+
+        // Prefer high-level lifecycle events from the session when available
+        session.on('agent_start' as any, () => {
+          console.log('📢 agent_start - entering speaking state');
+          if (!isCurrentlySpeaking) {
+            isCurrentlySpeaking = true;
+            if (startSpeaking) {
+              startSpeaking();
+            } else {
+              setVoiceState('speaking');
+            }
+          }
+        });
+
+        const forceStopSpeaking = (reason: string) => {
+          console.log(`🔇 ${reason} - leaving speaking state`);
+          isCurrentlySpeaking = false;
+          if (stopSpeaking) {
+            stopSpeaking();
+          } else {
+            setVoiceState('idle');
+          }
+          (window as any).__currentVoiceState = 'idle';
+        };
+
+        session.on('audio_stopped' as any, () => forceStopSpeaking('audio_stopped'));
+        session.on('agent_end' as any, () => forceStopSpeaking('agent_end'));
         
         // Set up various event handlers for mouth animation
         // Try multiple event names as the SDK might use different ones
@@ -351,10 +378,8 @@ ${getLanguageInstructions()}`
             if (attempts >= maxAttempts) {
               console.warn('⚠️ Could not find audio stream after', maxAttempts, 'attempts');
               clearInterval(interval);
-              
-              // Last resort: start synthetic flapping
-              console.log('🎯 Starting synthetic mouth flapping as fallback');
-              startSpeaking?.();
+              // Do not force speaking here; rely on session events
+              console.log('🎯 No audio stream found; relying on session events for speaking state');
             }
           }, 500); // Check every 500ms
         };
