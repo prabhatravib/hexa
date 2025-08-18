@@ -52,8 +52,12 @@ export const AnimatedMouth: React.FC<AnimatedMouthProps> = ({
   
   // Use ref to capture latest target value and avoid stale closure
   const targetRef = useRef(0);
+  const lastNonZeroTargetTimeRef = useRef(0);
   useEffect(() => { 
     targetRef.current = mouthOpennessTarget; 
+    if (mouthOpennessTarget > 0.02) {
+      lastNonZeroTargetTimeRef.current = Date.now();
+    }
   }, [mouthOpennessTarget]);
   
   // State for dynamic path that updates with motion values
@@ -130,7 +134,14 @@ export const AnimatedMouth: React.FC<AnimatedMouthProps> = ({
   
   // Main animation loop using requestAnimationFrame - now reads from ref
   const animateMouth = useCallback(() => {
-    const target = targetRef.current; // Read fresh target from ref
+    // Primary behavior: if speaking, synthesize a simple flap independent of analyser
+    let target = targetRef.current; // default to store target
+    if (voiceState === 'speaking') {
+      const t = performance.now() / 1000;
+      const base = 0.35; // slightly open
+      const amp = 0.25;  // flap amount
+      target = base + Math.max(0, Math.sin(t * 6.0)) * amp;
+    }
     const current = currentOpenness.get();
     const delta = target - current;
     
@@ -292,11 +303,20 @@ export const AnimatedMouth: React.FC<AnimatedMouthProps> = ({
         duration: 0.3,
         ease: EASING.ELASTIC,
       }
+    },
+    speaking: {
+      scaleY: [1, 1.15, 1, 0.95, 1],
+      transition: {
+        duration: 0.5,
+        repeat: Infinity,
+        ease: 'easeInOut'
+      }
     }
   };
   
   // Helper to get current animation variant
   const getCurrentVariant = () => {
+    if (voiceState === 'speaking') return 'speaking';
     if (animationState === 'active') return 'smile';
     if (animationState === 'idle') return 'breathing';
     return 'static';

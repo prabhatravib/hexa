@@ -40,10 +40,15 @@ export const useVoiceInteraction = (options: UseVoiceInteractionOptions = {}) =>
     stopSpeaking
   } = useAnimationStore();
 
+  // Shared AudioContext for all analysis and playback; resumed on user gesture
+  const audioContextRef = useRef<AudioContext | null>(null);
+
   // Speech intensity smoothing and mouth target management
   const emaAccumulatorRef = useRef(0); // EMA accumulator for speech intensity
   const lastUpdateTimeRef = useRef(0); // Last store update time for throttling
   const lastTargetRef = useRef(0); // Last target value for change-based throttling
+  const lastAnalyzerWriteRef = useRef(0); // Last time real analyser updated the mouth
+  const fallbackFlapRafRef = useRef<number | null>(null); // RAF id for synthetic flap
   
   // Performance instrumentation
   const performanceRef = useRef({
@@ -103,6 +108,36 @@ export const useVoiceInteraction = (options: UseVoiceInteractionOptions = {}) =>
     }
   }, [setMouthTarget]);
 
+  // Fallback: If we are in 'speaking' but no analyser updates are coming, drive a synthetic flap
+  const startFallbackFlap = useCallback(() => {
+    if (fallbackFlapRafRef.current !== null) return;
+    const loop = () => {
+      // Stop if we left speaking state
+      if (useAnimationStore.getState().voiceState !== 'speaking') {
+        if (fallbackFlapRafRef.current) cancelAnimationFrame(fallbackFlapRafRef.current);
+        fallbackFlapRafRef.current = null;
+        return;
+      }
+      const sinceAnalyzer = Date.now() - lastAnalyzerWriteRef.current;
+      if (sinceAnalyzer > 150) {
+        const t = performance.now() / 1000;
+        const base = 0.35;
+        const amp = 0.25;
+        const value = base + Math.max(0, Math.sin(t * 6.0)) * amp; // simple flap
+        setMouthTarget(value);
+      }
+      fallbackFlapRafRef.current = requestAnimationFrame(loop);
+    };
+    fallbackFlapRafRef.current = requestAnimationFrame(loop);
+  }, [setMouthTarget]);
+
+  const stopFallbackFlap = useCallback(() => {
+    if (fallbackFlapRafRef.current) {
+      cancelAnimationFrame(fallbackFlapRafRef.current);
+      fallbackFlapRafRef.current = null;
+    }
+  }, []);
+
   // Handle voice state changes for mouth target management
   useEffect(() => {
     if (voiceState === 'speaking') {
@@ -110,20 +145,25 @@ export const useVoiceInteraction = (options: UseVoiceInteractionOptions = {}) =>
       if (emaAccumulatorRef.current === 0) {
         emaAccumulatorRef.current = 0.1; // Small initial value to avoid jump
       }
+      // Begin fallback flapping in case analyser isn't feeding us
+      startFallbackFlap();
     } else {
       // When not speaking, reset mouth and clear EMA state
       resetMouth();
       emaAccumulatorRef.current = 0;
       lastTargetRef.current = 0;
+      stopFallbackFlap();
       
       if (process.env.NODE_ENV === 'development') {
         console.log('🔄 Voice state changed, resetting mouth and EMA state');
       }
     }
-  }, [voiceState, resetMouth]);
+  }, [voiceState, resetMouth, startFallbackFlap, stopFallbackFlap]);
 
   // Enhanced speech intensity handler with mouth target updates
   const handleSpeechIntensity = useCallback((rawIntensity: number) => {
+    // Mark that we received a real analyser update
+    lastAnalyzerWriteRef.current = Date.now();
     // Update legacy speech intensity for backward compatibility
     setSpeechIntensity(rawIntensity);
     
@@ -137,12 +177,15 @@ export const useVoiceInteraction = (options: UseVoiceInteractionOptions = {}) =>
     }
   }, [setSpeechIntensity, processSpeechIntensity, updateMouthTarget]);
 
+  
+
   const { initializeOpenAIAgent, initializeOpenAIAgentFromWorker } = useVoiceAgentService({
     setVoiceState,
     onError,
     startSpeaking,
     stopSpeaking,
-    setSpeechIntensity: handleSpeechIntensity // pass the existing processor
+    setSpeechIntensity: handleSpeechIntensity, // pass the existing processor
+    audioContextRef // provide shared AudioContext so analyser runs
   });
 
   const [isConnected, setIsConnected] = useState(false);
@@ -155,7 +198,6 @@ export const useVoiceInteraction = (options: UseVoiceInteractionOptions = {}) =>
   const wsRef = useRef<WebSocket | null>(null);
   const openaiAgentRef = useRef<any>(null);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
-  const audioContextRef = useRef<AudioContext | null>(null);
   const audioQueueRef = useRef<ArrayBuffer[]>([]);
   const isPlayingRef = useRef(false);
 
