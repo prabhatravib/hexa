@@ -401,17 +401,66 @@ ${getLanguageInstructions()}`
           }
         });
         
-        ['pause', 'ended', 'emptied'].forEach(ev => {
-          audioEl.addEventListener(ev, () => {
-            console.log(`🔇 Audio ${ev} - stopping speech and mouth animation`);
-            audioPlaying = false;
-            if (setSpeechIntensity) setSpeechIntensity(0);
-            if (stopSpeaking) {
-              stopSpeaking();
-            } else {
+        // Add duration tracking to know when audio should end
+        let audioDurationTimeout: NodeJS.Timeout | null = null;
+
+        audioEl.addEventListener('loadedmetadata', () => {
+          console.log('🎵 Audio metadata loaded, duration:', audioEl.duration);
+          
+          // Set a timeout based on audio duration to ensure stopping
+          if (audioEl.duration && isFinite(audioEl.duration)) {
+            if (audioDurationTimeout) clearTimeout(audioDurationTimeout);
+            
+            audioDurationTimeout = setTimeout(() => {
+              console.log('⏰ Audio duration timeout reached, forcing stop');
+              if (stopSpeaking) stopSpeaking();
               setVoiceState('idle');
-            }
-          });
+            }, (audioEl.duration + 1) * 1000); // Add 1 second buffer
+          }
+        });
+
+        // Clear timeout when audio actually ends
+        audioEl.addEventListener('ended', () => {
+          console.log('🔇 Audio ended - stopping speech and mouth animation');
+          audioPlaying = false;
+          analysisStarted = false; // Reset analysis flag
+          if (setSpeechIntensity) setSpeechIntensity(0);
+          // Force stop speaking state
+          if (stopSpeaking) {
+            stopSpeaking();
+          }
+          // Also directly update the store to ensure state is reset
+          setVoiceState('idle');
+          // Update global state for debugging
+          (window as any).__currentVoiceState = 'idle';
+          
+          // Clear duration timeout
+          if (audioDurationTimeout) {
+            clearTimeout(audioDurationTimeout);
+            audioDurationTimeout = null;
+          }
+        });
+
+        audioEl.addEventListener('pause', () => {
+          console.log('🔇 Audio paused - stopping speech and mouth animation');
+          audioPlaying = false;
+          if (setSpeechIntensity) setSpeechIntensity(0);
+          if (stopSpeaking) {
+            stopSpeaking();
+          }
+          setVoiceState('idle');
+          (window as any).__currentVoiceState = 'idle';
+        });
+
+        audioEl.addEventListener('emptied', () => {
+          console.log('🔇 Audio emptied - stopping speech and mouth animation');
+          audioPlaying = false;
+          if (setSpeechIntensity) setSpeechIntensity(0);
+          if (stopSpeaking) {
+            stopSpeaking();
+          }
+          setVoiceState('idle');
+          (window as any).__currentVoiceState = 'idle';
         });
       } else {
         throw new Error('Client secret not available for WebRTC connection');

@@ -145,6 +145,17 @@ export const AnimatedMouth: React.FC<AnimatedMouthProps> = ({
     // Get the current voice state from the store to avoid stale closures
     const currentVoiceState = useAnimationStore.getState().voiceState;
     
+    // Stop animation if voice state is idle
+    if (currentVoiceState === 'idle') {
+      console.log('👄 Voice state is idle, stopping mouth animation');
+      currentOpenness.set(0); // Reset to closed
+      if (animationFrameRef.current) {
+        cancelAnimationFrame(animationFrameRef.current);
+        animationFrameRef.current = null;
+      }
+      return; // Exit the animation loop
+    }
+    
     // Primary behavior: if speaking, synthesize a simple flap independent of analyser
     let target = targetRef.current; // default to store target
     if (currentVoiceState === 'speaking') {
@@ -170,8 +181,10 @@ export const AnimatedMouth: React.FC<AnimatedMouthProps> = ({
       microMotionRef.current = 0;
     }
     
-    // Continue animation loop
-    animationFrameRef.current = requestAnimationFrame(animateMouth);
+    // Continue animation only if still speaking
+    if (currentVoiceState === 'speaking') {
+      animationFrameRef.current = requestAnimationFrame(animateMouth);
+    }
   }, [currentOpenness]); // Simplified dependencies
   
   // Start/stop animation loop based on voice state and target values

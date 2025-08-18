@@ -108,36 +108,6 @@ export const useVoiceInteraction = (options: UseVoiceInteractionOptions = {}) =>
     }
   }, [setMouthTarget]);
 
-  // Fallback: If we are in 'speaking' but no analyser updates are coming, drive a synthetic flap
-  const startFallbackFlap = useCallback(() => {
-    if (fallbackFlapRafRef.current !== null) {
-      console.log('🎯 Fallback flap already running, skipping');
-      return;
-    }
-    console.log('🎯 Starting fallback flap animation');
-    const loop = () => {
-      // Stop if we left speaking state
-      if (useAnimationStore.getState().voiceState !== 'speaking') {
-        console.log('🎯 Voice state no longer speaking, stopping fallback flap');
-        if (fallbackFlapRafRef.current) cancelAnimationFrame(fallbackFlapRafRef.current);
-        fallbackFlapRafRef.current = null;
-        return;
-      }
-      const sinceAnalyzer = Date.now() - lastAnalyzerWriteRef.current;
-      if (sinceAnalyzer > 150) {
-        const t = performance.now() / 1000;
-        const base = 0.35;
-        const amp = 0.25;
-        const value = base + Math.max(0, Math.sin(t * 6.0)) * amp; // simple flap
-        // console.log('🎯 Fallback flap value:', value.toFixed(3)); // Commented out to reduce spam
-        console.log(`🎯 Fallback flap setting mouth target: ${value.toFixed(3)}`);
-        setMouthTarget(value);
-      }
-      fallbackFlapRafRef.current = requestAnimationFrame(loop);
-    };
-    fallbackFlapRafRef.current = requestAnimationFrame(loop);
-  }, [setMouthTarget]);
-
   const stopFallbackFlap = useCallback(() => {
     if (fallbackFlapRafRef.current) {
       console.log('🎯 Stopping fallback flap animation');
@@ -147,6 +117,45 @@ export const useVoiceInteraction = (options: UseVoiceInteractionOptions = {}) =>
       console.log('🎯 Fallback flap not running, nothing to stop');
     }
   }, []);
+
+  // Fallback: If we are in 'speaking' but no analyser updates are coming, drive a synthetic flap
+  const startFallbackFlap = useCallback(() => {
+    if (fallbackFlapRafRef.current !== null) {
+      console.log('🎯 Fallback flap already running, skipping');
+      return;
+    }
+    console.log('🎯 Starting fallback flap animation');
+    
+    // Add a safety timeout to stop flapping after 30 seconds
+    const safetyTimeout = setTimeout(() => {
+      console.log('🎯 Safety timeout reached, stopping fallback flap');
+      stopFallbackFlap();
+      useAnimationStore.getState().stopSpeaking();
+    }, 30000); // 30 seconds maximum
+    
+    const loop = () => {
+      const currentState = useAnimationStore.getState().voiceState;
+      if (currentState !== 'speaking') {
+        console.log('🎯 Voice state no longer speaking, stopping fallback flap');
+        clearTimeout(safetyTimeout);
+        if (fallbackFlapRafRef.current) cancelAnimationFrame(fallbackFlapRafRef.current);
+        fallbackFlapRafRef.current = null;
+        return;
+      }
+      
+      const sinceAnalyzer = Date.now() - lastAnalyzerWriteRef.current;
+      if (sinceAnalyzer > 150) {
+        const t = performance.now() / 1000;
+        const base = 0.35;
+        const amp = 0.25;
+        const value = base + Math.max(0, Math.sin(t * 6.0)) * amp;
+        console.log(`🎯 Fallback flap setting mouth target: ${value.toFixed(3)}`);
+        setMouthTarget(value);
+      }
+      fallbackFlapRafRef.current = requestAnimationFrame(loop);
+    };
+    fallbackFlapRafRef.current = requestAnimationFrame(loop);
+  }, [setMouthTarget, stopFallbackFlap]);
 
   // Handle voice state changes for mouth target management
   useEffect(() => {
