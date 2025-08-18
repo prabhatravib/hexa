@@ -127,15 +127,13 @@ export const useVoiceInteraction = (options: UseVoiceInteractionOptions = {}) =>
     // Update legacy speech intensity for backward compatibility
     setSpeechIntensity(rawIntensity);
     
-    // Process mouth targets when there's actual voice data
+    // Process mouth targets for all intensity levels (including zero)
     // The WebRTC session will call this during audio playback
-    if (rawIntensity > 0) { // Allow even tiny levels so EMA can ramp from silence
-      const processedIntensity = processSpeechIntensity(rawIntensity);
-      updateMouthTarget(processedIntensity);
-      
-      if (process.env.NODE_ENV === 'development') {
-        console.log(`🎤 handleSpeechIntensity: raw=${rawIntensity.toFixed(3)}, processed=${processedIntensity.toFixed(3)}`);
-      }
+    const processedIntensity = processSpeechIntensity(rawIntensity);
+    updateMouthTarget(processedIntensity);
+    
+    if (process.env.NODE_ENV === 'development') {
+      console.log(`🎤 handleSpeechIntensity: raw=${rawIntensity.toFixed(3)}, processed=${processedIntensity.toFixed(3)}`);
     }
   }, [setSpeechIntensity, processSpeechIntensity, updateMouthTarget]);
 
@@ -216,6 +214,13 @@ export const useVoiceInteraction = (options: UseVoiceInteractionOptions = {}) =>
   // Start recording
   const startRecording = useCallback(async () => {
     try {
+      // Resume AudioContext on first user gesture to unlock audio processing
+      if (audioContextRef.current) {
+        if (audioContextRef.current.state === 'suspended') {
+          await audioContextRef.current.resume();
+        }
+      }
+      
       await startRecordingControl();
       setIsRecording(true);
     } catch (error) {

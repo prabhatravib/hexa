@@ -94,11 +94,11 @@ ${getLanguageInstructions()}`
         await session.connect(connectionOptions);
         console.log('✅ WebRTC connection successful with client secret');
         
-        // Set up remote track handling to get the actual audio stream
-        session.on('remote_track' as any, (event: any) => {
-          console.log('🎵 Remote track received:', event);
-          
-                     if (event.track && event.track.kind === 'audio') {
+                 // Set up remote track handling to get the actual audio stream
+         session.on('remote_track' as any, async (event: any) => {
+           console.log('🎵 Remote track received:', event);
+           
+                      if (event.track && event.track.kind === 'audio') {
              console.log('🎵 Audio track received, attaching to audio element');
              
              // Create a new MediaStream with the audio track
@@ -107,6 +107,9 @@ ${getLanguageInstructions()}`
              
              // Start audio analysis immediately on remote_track (more reliable than 'playing' event)
              const ctx = new (window.AudioContext || (window as any).webkitAudioContext)();
+             if (ctx.state === 'suspended') {
+               try { await ctx.resume(); } catch {}
+             }
              const src = ctx.createMediaStreamSource(stream);
              const analyser = ctx.createAnalyser();
              analyser.fftSize = 512;
