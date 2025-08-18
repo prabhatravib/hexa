@@ -191,8 +191,59 @@ ${getLanguageInstructions()}`
           (window as any).__currentVoiceState = 'idle';
         };
 
-        session.on('audio_stopped' as any, () => forceStopSpeaking('audio_stopped'));
-        session.on('agent_end' as any, () => forceStopSpeaking('agent_end'));
+        // Smart audio end detection - ignore early events, wait for real audio end
+        const delayedStopSpeaking = (reason: string) => {
+          console.log(`⏳ ${reason} received - checking if this is a real audio end or just an early event`);
+
+          const audioEl = (window as any).__hexaAudioEl;
+
+          // If no audio element, stop immediately
+          if (!audioEl) {
+            console.log(`✅ No audio element, stopping immediately`);
+            forceStopSpeaking(reason);
+            return;
+          }
+
+          // Check if audio is actually still playing
+          const audioStillPlaying = !audioEl.paused && audioEl.currentTime > 0;
+
+          if (!audioStillPlaying) {
+            console.log(`✅ Audio not playing, stopping immediately`);
+            forceStopSpeaking(reason);
+            return;
+          }
+
+          // Audio is still playing - this is an early event, wait for real end
+          console.log(`⚠️ ${reason} fired but audio still playing - this is an early event, waiting for real audio end`);
+
+          // Monitor audio state until it actually stops
+          const checkAudioState = setInterval(() => {
+            const stillPlaying = !audioEl.paused && audioEl.currentTime > 0;
+
+            if (!stillPlaying) {
+              console.log(`✅ Audio actually finished playing, now stopping mouth animation`);
+              clearInterval(checkAudioState);
+              forceStopSpeaking(reason);
+            }
+          }, 100); // Check every 100ms for fast response
+
+          // Safety timeout: stop monitoring after 15 seconds maximum
+          setTimeout(() => {
+            clearInterval(checkAudioState);
+            console.log(`⚠️ Safety timeout reached after 15s, forcing stop`);
+            forceStopSpeaking(reason);
+          }, 15000);
+        };
+
+        // Ignore early audio_stopped events from the SDK; they often precede real playback end
+        session.on('audio_stopped' as any, () => {
+          console.log('⏸️ audio_stopped received (ignored) - waiting for agent_end or real audio end');
+        });
+
+        session.on('agent_end' as any, () => {
+          console.log('📢 agent_end - waiting for actual audio to finish before stopping');
+          delayedStopSpeaking('agent_end');
+        });
         
         // Set up various event handlers for mouth animation
         // Try multiple event names as the SDK might use different ones
