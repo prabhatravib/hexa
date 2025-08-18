@@ -16,6 +16,7 @@ export class VoiceSession {
   private agentManager: AgentManager;
   private clients: Set<any> = new Set();
   private sessionId: string;
+  private isActive: boolean = true;
 
   constructor(private state: DurableObjectState, env: Env) {
     this.sessionId = crypto.randomUUID();
@@ -38,6 +39,11 @@ export class VoiceSession {
       (message: any) => this.broadcastToClients(message)
     );
 
+    // Add cleanup on worker restart
+    this.state.blockConcurrencyWhile(async () => {
+      await this.cleanupStaleSessions();
+    });
+
     console.log('🔧 VoiceSession initialized, OpenAI connection will be established when needed');
   }
 
@@ -58,6 +64,8 @@ export class VoiceSession {
         }), {
           headers: { 'Content-Type': 'application/json' }
         });
+      case '/voice/reset':
+        return this.handleReset(request);
       default:
         return new Response('Not found', { status: 404 });
     }
@@ -92,6 +100,16 @@ export class VoiceSession {
         // Clean up when client disconnects
         request.signal.addEventListener('abort', () => {
           this.clients.delete(client);
+          console.log('🔌 Client disconnected, cleaning up...');
+          
+          // If no more clients, reset the session after a delay
+          if (this.clients.size === 0) {
+            setTimeout(() => {
+              if (this.clients.size === 0) {
+                this.resetSession();
+              }
+            }, 5000); // Wait 5 seconds before resetting
+          }
         });
       }
     });
@@ -219,6 +237,50 @@ export class VoiceSession {
     }
   }
 
+  private async handleReset(request: Request): Promise<Response> {
+    try {
+      console.log('🔄 Manual reset requested');
+      
+      // Reset the session
+      this.resetSession();
+      
+      // Notify all clients about the reset
+      this.broadcastToClients({
+        type: 'session_reset',
+        sessionId: this.sessionId,
+        message: 'Session has been reset'
+      });
+      
+      return new Response(JSON.stringify({ 
+        success: true, 
+        message: 'Session reset successfully',
+        newSessionId: this.sessionId
+      }), {
+        headers: {
+          'Content-Type': 'application/json',
+          'Access-Control-Allow-Origin': '*',
+          'Access-Control-Allow-Methods': 'POST, OPTIONS',
+          'Access-Control-Allow-Headers': 'Content-Type'
+        }
+      });
+      
+    } catch (error) {
+      console.error('❌ Failed to reset session:', error);
+      return new Response(JSON.stringify({
+        success: false,
+        error: 'Failed to reset session'
+      }), {
+        status: 500,
+        headers: {
+          'Content-Type': 'application/json',
+          'Access-Control-Allow-Origin': '*',
+          'Access-Control-Allow-Methods': 'POST, OPTIONS',
+          'Access-Control-Allow-Headers': 'Content-Type'
+        }
+      });
+    }
+  }
+
   private handleOpenAIConnectionMessage(data: string): void {
     try {
       const message = JSON.parse(data);
@@ -249,5 +311,42 @@ export class VoiceSession {
       }
     });
     console.log('✅ Sent to SSE client');
+  }
+
+  private async cleanupStaleSessions(): Promise<void> {
+    try {
+      // Reset any existing OpenAI connection
+      if (this.openaiConnection.isConnected()) {
+        this.openaiConnection.disconnect();
+      }
+      
+      // Clear any stored session state
+      await this.state.storage.delete('openai_session');
+      await this.state.storage.delete('webrtc_state');
+      
+      console.log('🧹 Cleaned up stale session data');
+    } catch (error) {
+      console.warn('⚠️ Failed to cleanup stale sessions:', error);
+    }
+  }
+
+  private resetSession(): void {
+    if (!this.isActive) return;
+    
+    console.log('🔄 Resetting session due to inactivity...');
+    
+    // Disconnect OpenAI
+    if (this.openaiConnection.isConnected()) {
+      this.openaiConnection.disconnect();
+    }
+    
+    // Clear storage
+    this.state.storage.delete('openai_session');
+    this.state.storage.delete('webrtc_state');
+    
+    // Reset session ID
+    this.sessionId = crypto.randomUUID();
+    
+    console.log('✅ Session reset complete');
   }
 }

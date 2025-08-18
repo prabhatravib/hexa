@@ -56,6 +56,23 @@ ${getLanguageInstructions()}`
       console.log('Session:', session);
     };
 
+    // Add global reset function for manual recovery
+    (window as any).__hexaReset = async () => {
+      console.log('🔄 Manual reset triggered from console');
+      try {
+        const response = await fetch('/voice/reset', { method: 'POST' });
+        if (response.ok) {
+          console.log('✅ Session reset successful');
+          // Reload the page to get a fresh start
+          window.location.reload();
+        } else {
+          console.error('❌ Failed to reset session');
+        }
+      } catch (error) {
+        console.error('❌ Reset request failed:', error);
+      }
+    };
+
     // Monitor audio element state
     audioEl.addEventListener('loadeddata', () => {
       console.log('🎵 Audio element loaded data');
@@ -122,6 +139,19 @@ ${getLanguageInstructions()}`
     
   } catch (error) {
     console.error('❌ Failed to initialize OpenAI Agent:', error);
+    
+    // Check if it's a WebRTC connection error
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    if (errorMessage.includes('setRemoteDescription') || errorMessage.includes('SessionDescription')) {
+      console.log('🔧 WebRTC connection error detected. You can:');
+      console.log('1. Call __hexaReset() in console to reset the session');
+      console.log('2. Reload the page');
+      console.log('3. Wait a few minutes and try again');
+      
+      // Expose the error for manual recovery
+      (window as any).__hexaLastError = error;
+    }
+    
     setVoiceState('error');
     onError?.('Failed to initialize OpenAI Agent');
     return null;

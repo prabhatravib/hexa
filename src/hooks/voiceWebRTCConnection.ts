@@ -32,8 +32,43 @@ export const initializeWebRTCConnection = async (
   };
   
   console.log('🔧 Connecting with client secret options:', connectionOptions);
-  await session.connect(connectionOptions);
-  console.log('✅ WebRTC connection successful with client secret');
+  
+  try {
+    await session.connect(connectionOptions);
+    console.log('✅ WebRTC connection successful with client secret');
+  } catch (error) {
+    console.error('❌ WebRTC connection failed:', error);
+    
+    // Check if it's a session description parsing error
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    if (errorMessage.includes('setRemoteDescription') || errorMessage.includes('SessionDescription')) {
+      console.log('🔧 Session description error detected. This usually means:');
+      console.log('1. Previous session is still active');
+      console.log('2. Worker needs to be restarted');
+      console.log('3. OpenAI session is stale');
+      
+      // Try to reset the session
+      try {
+        const resetResponse = await fetch('/voice/reset', { method: 'POST' });
+        if (resetResponse.ok) {
+          console.log('✅ Session reset successful, retrying connection...');
+          // Wait a moment for cleanup
+          await new Promise(resolve => setTimeout(resolve, 2000));
+          
+          // Try connecting again
+          await session.connect(connectionOptions);
+          console.log('✅ WebRTC connection successful after reset');
+        } else {
+          throw new Error('Failed to reset session');
+        }
+      } catch (resetError) {
+        console.error('❌ Failed to reset and retry:', resetError);
+        throw error; // Re-throw original error
+      }
+    } else {
+      throw error; // Re-throw if it's not a session description error
+    }
+  }
   
   // Debug: Log session state and properties
   console.log('🔍 Session after connection:', {
@@ -155,6 +190,40 @@ export const initializeWebRTCConnection = async (
 
   // Start checking immediately after connection
   checkForStream();
+  
+  // Set up periodic connection health check
+  const healthCheckInterval = setInterval(async () => {
+    try {
+      // Check if WebRTC connection is still healthy
+      const pc = (session as any)._pc;
+      if (pc && (pc.connectionState === 'failed' || pc.iceConnectionState === 'failed')) {
+        console.warn('⚠️ WebRTC connection unhealthy, attempting recovery...');
+        
+        // Try to reset and reconnect
+        try {
+          const resetResponse = await fetch('/voice/reset', { method: 'POST' });
+          if (resetResponse.ok) {
+            console.log('✅ Health check: Session reset successful');
+            // The page will reload after reset, so clear the interval
+            clearInterval(healthCheckInterval);
+          }
+        } catch (resetError) {
+          console.error('❌ Health check: Failed to reset session:', resetError);
+        }
+      }
+    } catch (error) {
+      console.warn('⚠️ Health check error:', error);
+    }
+  }, 30000); // Check every 30 seconds
+  
+  // Clean up interval when connection is lost
+  const cleanup = () => {
+    clearInterval(healthCheckInterval);
+  };
+  
+  // Set up cleanup on session events
+  session.on('disconnected' as any, cleanup);
+  session.on('error' as any, cleanup);
   
   // Set up audio element event handlers
   setupAudioElementHandlers(audioEl, {
