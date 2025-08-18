@@ -11,6 +11,9 @@ interface VoiceConnectionServiceOptions {
   openaiAgentRef: React.MutableRefObject<any>;
   setSessionInfo: (info: any) => void;
   setResponse: (text: string) => void;
+  startSpeaking?: () => void;
+  stopSpeaking?: () => void;
+  setSpeechIntensity?: (intensity: number) => void;
 }
 
 export const useVoiceConnectionService = ({
@@ -21,7 +24,10 @@ export const useVoiceConnectionService = ({
   initializeOpenAIAgent,
   openaiAgentRef,
   setSessionInfo,
-  setResponse
+  setResponse,
+  startSpeaking,
+  stopSpeaking,
+  setSpeechIntensity
 }: VoiceConnectionServiceOptions) => {
   
   // Connect using SSE for receiving messages
@@ -74,15 +80,19 @@ export const useVoiceConnectionService = ({
               onResponse?.(data.text);
               break;
               
+            case 'agent_start':
             case 'audio_delta':
               console.log('Audio delta received - voice is playing');
-              // The WebRTC session will handle the actual audio stream
-              // This is just a notification that audio is playing
+              setVoiceState('speaking');
+              startSpeaking?.();
               break;
               
             case 'audio_done':
+            case 'agent_end':
               console.log('Audio done received - voice stopped');
-              // The WebRTC session will handle stopping the audio
+              setSpeechIntensity?.(0);
+              stopSpeaking?.();
+              setVoiceState('idle');
               break;
               
             case 'error':
@@ -116,7 +126,7 @@ export const useVoiceConnectionService = ({
       onError?.('Failed to initialize voice service');
       return null;
     }
-  }, [setVoiceState, onError, onResponse, initializeOpenAIAgentFromWorker, initializeOpenAIAgent, openaiAgentRef, setSessionInfo, setResponse]);
+  }, [setVoiceState, onError, onResponse, initializeOpenAIAgentFromWorker, initializeOpenAIAgent, openaiAgentRef, setSessionInfo, setResponse, startSpeaking, stopSpeaking, setSpeechIntensity]);
 
   return {
     connect

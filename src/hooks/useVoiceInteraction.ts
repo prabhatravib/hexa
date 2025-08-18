@@ -169,7 +169,10 @@ export const useVoiceInteraction = (options: UseVoiceInteractionOptions = {}) =>
     initializeOpenAIAgent,
     openaiAgentRef,
     setSessionInfo,
-    setResponse
+    setResponse,
+    startSpeaking,
+    stopSpeaking,
+    setSpeechIntensity: handleSpeechIntensity
   });
 
   const {
