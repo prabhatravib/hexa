@@ -204,8 +204,11 @@ ${getLanguageInstructions()}`
             return;
           }
 
-          // Check if audio is actually still playing
-          const audioStillPlaying = !audioEl.paused && audioEl.currentTime > 0;
+          // Check multiple conditions for audio still playing
+          const audioStillPlaying = !audioEl.paused && 
+                                   audioEl.currentTime > 0 && 
+                                   audioEl.readyState >= 2 && // HAVE_CURRENT_DATA or better
+                                   audioEl.srcObject !== null;
 
           if (!audioStillPlaying) {
             console.log(`✅ Audio not playing, stopping immediately`);
@@ -215,34 +218,59 @@ ${getLanguageInstructions()}`
 
           // Audio is still playing - this is an early event, wait for real end
           console.log(`⚠️ ${reason} fired but audio still playing - this is an early event, waiting for real audio end`);
+          console.log(`Audio state: paused=${audioEl.paused}, currentTime=${audioEl.currentTime}, readyState=${audioEl.readyState}`);
+
+          let checkCount = 0;
+          const maxChecks = 300; // 30 seconds maximum (100ms * 300)
 
           // Monitor audio state until it actually stops
           const checkAudioState = setInterval(() => {
-            const stillPlaying = !audioEl.paused && audioEl.currentTime > 0;
-
-            if (!stillPlaying) {
-              console.log(`✅ Audio actually finished playing, now stopping mouth animation`);
-              clearInterval(checkAudioState);
-              forceStopSpeaking(reason);
-            }
+            checkCount++;
+            
+            // More robust check for audio playing
+            const stillPlaying = !audioEl.paused && 
+                                audioEl.currentTime > 0 && 
+                                audioEl.readyState >= 2 &&
+                                audioEl.srcObject !== null;
+            
+            // Also check if audio time is advancing
+            const previousTime = audioEl.currentTime;
+            
+            setTimeout(() => {
+              const timeAdvanced = audioEl.currentTime > previousTime;
+              
+              if (!stillPlaying || !timeAdvanced || checkCount >= maxChecks) {
+                console.log(`✅ Audio actually finished playing (stillPlaying=${stillPlaying}, timeAdvanced=${timeAdvanced}, checks=${checkCount}), now stopping mouth animation`);
+                clearInterval(checkAudioState);
+                forceStopSpeaking(reason);
+              }
+            }, 50); // Check if time advanced after 50ms
+            
           }, 100); // Check every 100ms for fast response
-
-          // Safety timeout: stop monitoring after 15 seconds maximum
-          setTimeout(() => {
-            clearInterval(checkAudioState);
-            console.log(`⚠️ Safety timeout reached after 15s, forcing stop`);
-            forceStopSpeaking(reason);
-          }, 15000);
         };
 
-        // Ignore early audio_stopped events from the SDK; they often precede real playback end
+        // Listen for the real audio end event - output_audio_buffer.stopped
+        session.on('transport_event' as any, (events: any) => {
+          // Handle both array and single object cases
+          const eventArray = Array.isArray(events) ? events : [events];
+          
+          eventArray.forEach((event: any) => {
+            if (event.type === 'output_audio_buffer.stopped') {
+              console.log('🎵 output_audio_buffer.stopped - real audio finished, stopping mouth animation');
+              forceStopSpeaking('output_audio_buffer.stopped');
+            }
+          });
+        });
+
+        // Ignore audio_stopped events completely - they're unreliable
         session.on('audio_stopped' as any, () => {
-          console.log('⏸️ audio_stopped received (ignored) - waiting for agent_end or real audio end');
+          console.log('⏸️ audio_stopped received (completely ignored) - will wait for output_audio_buffer.stopped');
+          // Do nothing - let output_audio_buffer.stopped handle stopping
         });
 
         session.on('agent_end' as any, () => {
-          console.log('📢 agent_end - waiting for actual audio to finish before stopping');
-          delayedStopSpeaking('agent_end');
+          console.log('📢 agent_end - waiting for output_audio_buffer.stopped before stopping');
+          // Do nothing - let output_audio_buffer.stopped handle stopping
         });
         
         // Set up various event handlers for mouth animation
@@ -262,17 +290,12 @@ ${getLanguageInstructions()}`
           });
         });
         
-        // Handle audio completion events
+        // Handle audio completion events - ignore premature done events
         const possibleDoneEvents = ['audio_done', 'response.audio.done', 'response.done', 'conversation.item.done'];
         possibleDoneEvents.forEach(eventName => {
           session.on(eventName as any, () => {
-            console.log(`🔇 Event ${eventName} fired - stopping mouth animation`);
-            isCurrentlySpeaking = false;
-            if (stopSpeaking) {
-              stopSpeaking();
-            } else {
-              setVoiceState('idle');
-            }
+            console.log(`⛔ Ignoring premature event ${eventName}; waiting for output_audio_buffer.stopped or audio element end`);
+            // Do not change voice state here; rely on output_audio_buffer.stopped and audio element events
           });
         });
         
