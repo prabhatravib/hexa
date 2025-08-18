@@ -1,5 +1,7 @@
 import { useCallback } from 'react';
 import { getLanguageInstructions } from '@/lib/languageConfig';
+import { initializeAudioAnalysis } from './voiceAudioAnalysis';
+import { setupSessionEventHandlers } from './voiceSessionEvents';
 
 type VoiceState = 'idle' | 'listening' | 'thinking' | 'speaking' | 'error';
 
@@ -8,8 +10,7 @@ interface VoiceAgentServiceOptions {
   onError?: (error: string) => void;
   startSpeaking?: () => void;
   stopSpeaking?: () => void;
-  setSpeechIntensity?: (intensity: number) => void; // NEW: for real-time audio analysis
-  // Use a shared AudioContext that is resumed on user gesture to avoid autoplay blocks
+  setSpeechIntensity?: (intensity: number) => void;
   audioContextRef?: React.MutableRefObject<AudioContext | null>;
 }
 
@@ -39,9 +40,8 @@ ${getLanguageInstructions()}`
       // Create a dedicated audio element for the Realtime session and expose it globally for debugging
       const audioEl = new Audio();
       audioEl.autoplay = true;
-      let analysisStarted = false; // guard so analyser is wired only once
       (window as any).__hexaAudioEl = audioEl;
-      (window as any).__currentVoiceState = 'idle'; // Add this for debugging
+      (window as any).__currentVoiceState = 'idle';
       
       // Add global debug function
       (window as any).__hexaDebug = () => {
@@ -51,11 +51,10 @@ ${getLanguageInstructions()}`
         console.log('Audio readyState:', audioEl.readyState);
         console.log('Audio paused:', audioEl.paused);
         console.log('Voice State:', (window as any).__currentVoiceState);
-        console.log('Analysis Started:', analysisStarted);
         console.log('Session:', session);
       };
 
-      // ADD THIS: Monitor audio element state
+      // Monitor audio element state
       audioEl.addEventListener('loadeddata', () => {
         console.log('🎵 Audio element loaded data');
         console.log('Audio element state:', {
@@ -78,266 +77,34 @@ ${getLanguageInstructions()}`
           });
         });
       });
-
-      // Helper to start analyser using either a MediaStreamSource or MediaElementSource
-      const startAnalysisWithNodes = async (
-        makeSource: (ctx: AudioContext) => AudioNode
-      ) => {
-        if (analysisStarted) {
-          console.log('🎵 Analysis already started, skipping');
-          return;
-        }
-        console.log('🎵 Starting audio analysis...');
-        analysisStarted = true;
-
-        // Prefer shared AudioContext (resumed on user gesture)
-        let ctx: AudioContext;
-        if (audioContextRef && audioContextRef.current) {
-          ctx = audioContextRef.current;
-          try { if (ctx.state === 'suspended') { await ctx.resume(); } } catch {}
-        } else {
-          ctx = new (window.AudioContext || (window as any).webkitAudioContext)();
-          if (audioContextRef) audioContextRef.current = ctx;
-          if (ctx.state === 'suspended') {
-            try { await ctx.resume(); } catch {}
-          }
-        }
-
-        const srcNode = makeSource(ctx);
-        console.log('🎵 Created audio source node:', srcNode.constructor.name);
-        const analyser = ctx.createAnalyser();
-        analyser.fftSize = 512;
-        analyser.smoothingTimeConstant = 0.25;
-        srcNode.connect(analyser);
-        console.log('🎵 Connected source to analyzer, starting tick loop');
-
-        // Dynamic gate with hysteresis for natural mouth movement
-        let noiseFloor = 0.02;
-        let speaking = false;
-        let level = 0;
-        const OPEN_MARGIN = 0.03;
-        const CLOSE_MARGIN = 0.015;
-        const ATTACK = 0.30;
-        const RELEASE = 0.06;
-
-        const tick = () => {
-          const td = new Uint8Array(analyser.fftSize);
-          analyser.getByteTimeDomainData(td);
-          let sum = 0;
-          for (let i = 0; i < td.length; i++) {
-            const v = (td[i] - 128) / 128;
-            sum += v * v;
-          }
-          const rms = Math.sqrt(sum / td.length);
-          if (!speaking) noiseFloor = 0.9 * noiseFloor + 0.1 * rms;
-          const openThr = noiseFloor + OPEN_MARGIN;
-          const closeThr = noiseFloor + CLOSE_MARGIN;
-          if (!speaking && rms > openThr) speaking = true;
-          if (speaking && rms < closeThr) speaking = false;
-          const over = Math.max(0, rms - noiseFloor);
-          const norm = Math.min(1, over / (1 - noiseFloor));
-          const alpha = speaking ? ATTACK : RELEASE;
-          level += alpha * ((speaking ? norm : 0) - level);
-          
-          // Add debugging for analyzer output
-          if (process.env.NODE_ENV === 'development' && Math.random() < 0.01) { // Log 1% of the time
-            console.log(`🎵 Analyzer: rms=${rms.toFixed(4)}, level=${level.toFixed(4)}, speaking=${speaking}`);
-          }
-          
-          if (setSpeechIntensity) setSpeechIntensity(level);
-          requestAnimationFrame(tick);
-        };
-        
-        // Start the analyzer tick loop
-        tick();
-      };
       
       // Create session and connect
       const session = new RealtimeSession(agent);
       
-              // Debug: Log all session events to understand what's available
-        const originalEmit = (session as any).emit;
-        if (originalEmit) {
-          (session as any).emit = function(event: string, ...args: any[]) {
-            console.log(`🔍 Session event: ${event}`, args);
-            return originalEmit.call(this, event, ...args);
-          };
-        }
-        
-        // Track if we're currently speaking to avoid duplicate calls
-        let isCurrentlySpeaking = false;
-
-        // Prefer high-level lifecycle events from the session when available
-        session.on('agent_start' as any, () => {
-          console.log('📢 agent_start - entering speaking state');
-          if (!isCurrentlySpeaking) {
-            isCurrentlySpeaking = true;
-            if (startSpeaking) {
-              startSpeaking();
-            } else {
-              setVoiceState('speaking');
-            }
-          }
-        });
-
-        const forceStopSpeaking = (reason: string) => {
-          console.log(`🔇 ${reason} - leaving speaking state`);
-          isCurrentlySpeaking = false;
-          if (stopSpeaking) {
-            stopSpeaking();
-          } else {
-            setVoiceState('idle');
-          }
-          (window as any).__currentVoiceState = 'idle';
+      // Debug: Log all session events to understand what's available
+      const originalEmit = (session as any).emit;
+      if (originalEmit) {
+        (session as any).emit = function(event: string, ...args: any[]) {
+          console.log(`🔍 Session event: ${event}`, args);
+          return originalEmit.call(this, event, ...args);
         };
-
-        // Smart audio end detection - ignore early events, wait for real audio end
-        const delayedStopSpeaking = (reason: string) => {
-          console.log(`⏳ ${reason} received - checking if this is a real audio end or just an early event`);
-
-          const audioEl = (window as any).__hexaAudioEl;
-
-          // If no audio element, stop immediately
-          if (!audioEl) {
-            console.log(`✅ No audio element, stopping immediately`);
-            forceStopSpeaking(reason);
-            return;
-          }
-
-          // Check multiple conditions for audio still playing
-          const audioStillPlaying = !audioEl.paused && 
-                                   audioEl.currentTime > 0 && 
-                                   audioEl.readyState >= 2 && // HAVE_CURRENT_DATA or better
-                                   audioEl.srcObject !== null;
-
-          if (!audioStillPlaying) {
-            console.log(`✅ Audio not playing, stopping immediately`);
-            forceStopSpeaking(reason);
-            return;
-          }
-
-          // Audio is still playing - this is an early event, wait for real end
-          console.log(`⚠️ ${reason} fired but audio still playing - this is an early event, waiting for real audio end`);
-          console.log(`Audio state: paused=${audioEl.paused}, currentTime=${audioEl.currentTime}, readyState=${audioEl.readyState}`);
-
-          let checkCount = 0;
-          const maxChecks = 300; // 30 seconds maximum (100ms * 300)
-
-          // Monitor audio state until it actually stops
-          const checkAudioState = setInterval(() => {
-            checkCount++;
-            
-            // More robust check for audio playing
-            const stillPlaying = !audioEl.paused && 
-                                audioEl.currentTime > 0 && 
-                                audioEl.readyState >= 2 &&
-                                audioEl.srcObject !== null;
-            
-            // Also check if audio time is advancing
-            const previousTime = audioEl.currentTime;
-            
-            setTimeout(() => {
-              const timeAdvanced = audioEl.currentTime > previousTime;
-              
-              if (!stillPlaying || !timeAdvanced || checkCount >= maxChecks) {
-                console.log(`✅ Audio actually finished playing (stillPlaying=${stillPlaying}, timeAdvanced=${timeAdvanced}, checks=${checkCount}), now stopping mouth animation`);
-                clearInterval(checkAudioState);
-                forceStopSpeaking(reason);
-              }
-            }, 50); // Check if time advanced after 50ms
-            
-          }, 100); // Check every 100ms for fast response
-        };
-
-        // Listen for the real audio end event - output_audio_buffer.stopped
-        session.on('transport_event' as any, (events: any) => {
-          // Handle both array and single object cases
-          const eventArray = Array.isArray(events) ? events : [events];
-          
-          eventArray.forEach((event: any) => {
-            if (event.type === 'output_audio_buffer.stopped') {
-              console.log('🎵 output_audio_buffer.stopped - real audio finished, stopping mouth animation');
-              forceStopSpeaking('output_audio_buffer.stopped');
-            }
-          });
-        });
-
-        // Ignore audio_stopped events completely - they're unreliable
-        session.on('audio_stopped' as any, () => {
-          console.log('⏸️ audio_stopped received (completely ignored) - will wait for output_audio_buffer.stopped');
-          // Do nothing - let output_audio_buffer.stopped handle stopping
-        });
-
-        session.on('agent_end' as any, () => {
-          console.log('📢 agent_end - waiting for output_audio_buffer.stopped before stopping');
-          // Do nothing - let output_audio_buffer.stopped handle stopping
-        });
-        
-        // Set up various event handlers for mouth animation
-        // Try multiple event names as the SDK might use different ones
-        const possibleAudioEvents = ['audio', 'response.audio.delta', 'response.audio', 'conversation.item.audio'];
-        possibleAudioEvents.forEach(eventName => {
-          session.on(eventName as any, (audioData: any) => {
-            console.log(`🎵 Event ${eventName} fired - starting mouth animation`);
-            if (!isCurrentlySpeaking) {
-              isCurrentlySpeaking = true;
-              if (startSpeaking) {
-                startSpeaking();
-              } else {
-                setVoiceState('speaking');
-              }
-            }
-          });
-        });
-        
-        // Handle audio completion events - ignore premature done events
-        const possibleDoneEvents = ['audio_done', 'response.audio.done', 'response.done', 'conversation.item.done'];
-        possibleDoneEvents.forEach(eventName => {
-          session.on(eventName as any, () => {
-            console.log(`⛔ Ignoring premature event ${eventName}; waiting for output_audio_buffer.stopped or audio element end`);
-            // Do not change voice state here; rely on output_audio_buffer.stopped and audio element events
-          });
-        });
-        
-        // Also listen for response events that might indicate speaking
-        session.on('response.created' as any, () => {
-          console.log('📢 Response created - AI is preparing to speak');
-          setVoiceState('thinking');
-        });
-        
-        // Debug: Log all voice state changes
-        const originalSetVoiceState = setVoiceState;
-        setVoiceState = (state: VoiceState) => {
-          console.log(`🎤 Voice state changing from ${(window as any).__currentVoiceState} to ${state}`);
-          originalSetVoiceState(state);
-        };
-        
-        session.on('response.output_item.added' as any, (item: any) => {
-          console.log('📢 Output item added:', item);
-          if (item?.type === 'audio' || item?.content_type?.includes('audio')) {
-            console.log('🎵 Audio output item detected - starting mouth animation');
-            if (!isCurrentlySpeaking) {
-              isCurrentlySpeaking = true;
-              if (startSpeaking) {
-                startSpeaking();
-              } else {
-                setVoiceState('speaking');
-              }
-            }
-          }
-        });
+      }
       
-      session.on('error' as any, (error: any) => {
-        console.error('❌ OpenAI session error:', error);
-        setVoiceState('error');
-        onError?.(error.message || 'OpenAI session error');
+      // Set up session event handlers
+      setupSessionEventHandlers(session, {
+        setVoiceState,
+        startSpeaking,
+        stopSpeaking,
+        audioEl,
+        audioContextRef,
+        setSpeechIntensity
       });
       
       // Use the working method: WebRTC with client secret
       if (sessionData.clientSecret) {
         console.log('🔧 Connecting with client secret...');
         const connectionOptions = {
-          apiKey: sessionData.clientSecret, // Use client secret instead of API key
+          apiKey: sessionData.clientSecret,
           useInsecureApiKey: true,
           transport: 'webrtc' as const
         };
@@ -355,50 +122,53 @@ ${getLanguageInstructions()}`
           events: Object.keys(session)
         });
         
-                 // Set up remote track handling to get the actual audio stream
-         session.on('remote_track' as any, async (event: any) => {
-           console.log('🎵 Remote track received:', event);
-           console.log('Track details:', {
-             kind: event.track?.kind,
-             readyState: event.track?.readyState,
-             enabled: event.track?.enabled
-           });
-           
-                      if (event.track && event.track.kind === 'audio') {
-             console.log('🎵 Audio track received, attaching to audio element');
-             
-             // Create a new MediaStream with the audio track
-             const stream = new MediaStream([event.track]);
-             audioEl.srcObject = stream;
-             
-             // Start audio analysis immediately on remote_track
-             await startAnalysisWithNodes((ctx) => ctx.createMediaStreamSource(stream));
-             
-             // Start playing to trigger the playing event (for compatibility)
-             audioEl.play().catch((error: any) => {
-               console.warn('⚠️ Failed to autoplay audio:', error);
-             });
-             
-             // Monitor the track for when it ends
-             event.track.addEventListener('ended', () => {
-               console.log('🔇 Audio track ended - stopping speech and mouth animation');
-               audioPlaying = false;
-               analysisStarted = false;
-               isCurrentlySpeaking = false;
-               if (setSpeechIntensity) setSpeechIntensity(0);
-               if (stopSpeaking) {
-                 stopSpeaking();
-               } else {
-                 setVoiceState('idle');
-               }
-               (window as any).__currentVoiceState = 'idle';
-             });
-             
-             // Also monitor track state changes
-             event.track.addEventListener('ended', () => {
-               console.log('🔇 Audio track ended event fired');
-             });
-           }
+        // Set up remote track handling to get the actual audio stream
+        session.on('remote_track' as any, async (event: any) => {
+          console.log('🎵 Remote track received:', event);
+          console.log('Track details:', {
+            kind: event.track?.kind,
+            readyState: event.track?.readyState,
+            enabled: event.track?.enabled
+          });
+          
+          if (event.track && event.track.kind === 'audio') {
+            console.log('🎵 Audio track received, attaching to audio element');
+            
+            // Create a new MediaStream with the audio track
+            const stream = new MediaStream([event.track]);
+            audioEl.srcObject = stream;
+            
+            // Start audio analysis immediately on remote_track
+            await initializeAudioAnalysis(stream, audioEl, {
+              audioContextRef,
+              setSpeechIntensity,
+              startSpeaking,
+              stopSpeaking,
+              setVoiceState
+            });
+            
+            // Start playing to trigger the playing event (for compatibility)
+            audioEl.play().catch((error: any) => {
+              console.warn('⚠️ Failed to autoplay audio:', error);
+            });
+            
+            // Monitor the track for when it ends
+            event.track.addEventListener('ended', () => {
+              console.log('🔇 Audio track ended - stopping speech and mouth animation');
+              if (setSpeechIntensity) setSpeechIntensity(0);
+              if (stopSpeaking) {
+                stopSpeaking();
+              } else {
+                setVoiceState('idle');
+              }
+              (window as any).__currentVoiceState = 'idle';
+            });
+            
+            // Also monitor track state changes
+            event.track.addEventListener('ended', () => {
+              console.log('🔇 Audio track ended event fired');
+            });
+          }
         });
         
         // Debug: Monitor all session events
@@ -423,10 +193,14 @@ ${getLanguageInstructions()}`
               console.log('🎵 Found audio srcObject, starting analyzer');
               clearInterval(interval);
               
-              if (!analysisStarted) {
-                const stream = audioEl.srcObject as MediaStream;
-                await startAnalysisWithNodes((ctx) => ctx.createMediaStreamSource(stream));
-              }
+              const stream = audioEl.srcObject as MediaStream;
+              await initializeAudioAnalysis(stream, audioEl, {
+                audioContextRef,
+                setSpeechIntensity,
+                startSpeaking,
+                stopSpeaking,
+                setVoiceState
+              });
               return;
             }
             
@@ -452,159 +226,22 @@ ${getLanguageInstructions()}`
             if (attempts >= maxAttempts) {
               console.warn('⚠️ Could not find audio stream after', maxAttempts, 'attempts');
               clearInterval(interval);
-              // Do not force speaking here; rely on session events
               console.log('🎯 No audio stream found; relying on session events for speaking state');
             }
-          }, 500); // Check every 500ms
+          }, 500);
         };
 
         // Start checking immediately after connection
         checkForStream();
         
-         // Track audio element state for mouth animation
-         let audioPlaying = false;
-         
-         // Fallback: ensure analyser is running even if remote_track isn't emitted
-         audioEl.addEventListener('playing', async () => {
-           console.log('🎵 Audio playing - ensuring analyser is running and mouth animating');
-           console.log('🎵 Audio element state during playing:', {
-             srcObject: audioEl.srcObject,
-             readyState: audioEl.readyState,
-             paused: audioEl.paused,
-             currentTime: audioEl.currentTime
-           });
-           audioPlaying = true;
-           if (!analysisStarted) {
-             console.log('🎵 Starting analysis with MediaElementSource');
-             await startAnalysisWithNodes((ctx) => ctx.createMediaElementSource(audioEl));
-           } else {
-             console.log('🎵 Analysis already started, skipping');
-           }
-           // Always trigger speaking state when audio is playing
-           if (startSpeaking) {
-             startSpeaking();
-           } else {
-             setVoiceState('speaking');
-           }
-         });
-         
-         // Also handle play event
-         audioEl.addEventListener('play', () => {
-           console.log('🎵 Audio play event - starting mouth animation');
-           audioPlaying = true;
-           if (startSpeaking) {
-             startSpeaking();
-           } else {
-             setVoiceState('speaking');
-           }
-         });
-         
-                 // Monitor time updates to ensure mouth stays animated during playback
-        audioEl.addEventListener('timeupdate', () => {
-          if (audioPlaying && !audioEl.paused && audioEl.currentTime > 0) {
-            // Log audio playback progress occasionally
-            if (Math.random() < 0.01) { // Log 1% of the time
-              console.log(`🎵 Audio playing: time=${audioEl.currentTime.toFixed(2)}s, duration=${audioEl.duration.toFixed(2)}s`);
-            }
-            
-            // Ensure we're in speaking state while audio is playing
-            const currentState = (window as any).__currentVoiceState;
-            if (currentState !== 'speaking') {
-              console.log('⚠️ Audio playing but not in speaking state, fixing...');
-              if (startSpeaking) {
-                startSpeaking();
-              } else {
-                setVoiceState('speaking');
-              }
-            }
-          }
+        // Set up audio element event handlers
+        setupAudioElementHandlers(audioEl, {
+          setVoiceState,
+          startSpeaking,
+          stopSpeaking,
+          setSpeechIntensity
         });
         
-        // Add duration tracking to know when audio should end
-        let audioDurationTimeout: NodeJS.Timeout | null = null;
-
-        audioEl.addEventListener('loadedmetadata', () => {
-          console.log('🎵 Audio metadata loaded, duration:', audioEl.duration);
-          
-          // Set a timeout based on audio duration to ensure stopping
-          if (audioEl.duration && isFinite(audioEl.duration)) {
-            if (audioDurationTimeout) clearTimeout(audioDurationTimeout);
-            
-            audioDurationTimeout = setTimeout(() => {
-              console.log('⏰ Audio duration timeout reached, forcing stop');
-              if (stopSpeaking) stopSpeaking();
-              setVoiceState('idle');
-            }, (audioEl.duration + 1) * 1000); // Add 1 second buffer
-          }
-        });
-
-        // Clear timeout when audio actually ends
-        audioEl.addEventListener('ended', () => {
-          console.log('🔇 Audio ended - stopping speech and mouth animation');
-          audioPlaying = false;
-          analysisStarted = false; // Reset analysis flag
-          if (setSpeechIntensity) setSpeechIntensity(0);
-          
-          // Force stop speaking state
-          if (stopSpeaking) {
-            stopSpeaking();
-          } else {
-            setVoiceState('idle');
-          }
-          
-          // Update global state for debugging
-          (window as any).__currentVoiceState = 'idle';
-          
-          // Clear duration timeout
-          if (audioDurationTimeout) {
-            clearTimeout(audioDurationTimeout);
-            audioDurationTimeout = null;
-          }
-          
-          // Also reset the current speaking flag
-          isCurrentlySpeaking = false;
-        });
-
-        audioEl.addEventListener('pause', () => {
-          console.log('🔇 Audio paused - stopping speech and mouth animation');
-          audioPlaying = false;
-          analysisStarted = false;
-          if (setSpeechIntensity) setSpeechIntensity(0);
-          
-          if (stopSpeaking) {
-            stopSpeaking();
-          } else {
-            setVoiceState('idle');
-          }
-          
-          (window as any).__currentVoiceState = 'idle';
-        });
-
-        audioEl.addEventListener('emptied', () => {
-          console.log('🔇 Audio emptied - stopping speech and mouth animation');
-          audioPlaying = false;
-          analysisStarted = false;
-          if (setSpeechIntensity) setSpeechIntensity(0);
-          
-          if (stopSpeaking) {
-            stopSpeaking();
-          } else {
-            setVoiceState('idle');
-          }
-          
-          (window as any).__currentVoiceState = 'idle';
-        });
-
-        // Add error handler to stop animation on audio errors
-        audioEl.addEventListener('error', (e) => {
-          console.log('❌ Audio error - stopping speech and mouth animation', e);
-          audioPlaying = false;
-          analysisStarted = false;
-          isCurrentlySpeaking = false;
-          if (setSpeechIntensity) setSpeechIntensity(0);
-          if (stopSpeaking) stopSpeaking();
-          (window as any).__currentVoiceState = 'idle';
-        });
       } else {
         throw new Error('Client secret not available for WebRTC connection');
       }
@@ -662,4 +299,161 @@ export function base64ToArrayBuffer(base64: string): ArrayBuffer {
     bytes[i] = binaryString.charCodeAt(i);
   }
   return bytes.buffer;
+}
+
+// Helper function to set up audio element event handlers
+function setupAudioElementHandlers(audioEl: HTMLAudioElement, handlers: {
+  setVoiceState: (state: VoiceState) => void;
+  startSpeaking?: () => void;
+  stopSpeaking?: () => void;
+  setSpeechIntensity?: (intensity: number) => void;
+}) {
+  const { setVoiceState, startSpeaking, stopSpeaking, setSpeechIntensity } = handlers;
+  
+  // Track audio element state for mouth animation
+  let audioPlaying = false;
+  let analysisStarted = false;
+  let audioDurationTimeout: NodeJS.Timeout | null = null;
+  
+  // Fallback: ensure analyser is running even if remote_track isn't emitted
+  audioEl.addEventListener('playing', async () => {
+    console.log('🎵 Audio playing - ensuring analyser is running and mouth animating');
+    console.log('🎵 Audio element state during playing:', {
+      srcObject: audioEl.srcObject,
+      readyState: audioEl.readyState,
+      paused: audioEl.paused,
+      currentTime: audioEl.currentTime
+    });
+    audioPlaying = true;
+          if (!analysisStarted) {
+        console.log('🎵 Starting analysis with MediaElementSource');
+        await initializeAudioAnalysis(null, audioEl, {
+          audioContextRef: undefined,
+          setSpeechIntensity,
+          startSpeaking,
+          stopSpeaking,
+          setVoiceState
+        });
+      } else {
+      console.log('🎵 Analysis already started, skipping');
+    }
+    // Always trigger speaking state when audio is playing
+    if (startSpeaking) {
+      startSpeaking();
+    } else {
+      setVoiceState('speaking');
+    }
+  });
+  
+  // Also handle play event
+  audioEl.addEventListener('play', () => {
+    console.log('🎵 Audio play event - starting mouth animation');
+    audioPlaying = true;
+    if (startSpeaking) {
+      startSpeaking();
+    } else {
+      setVoiceState('speaking');
+    }
+  });
+  
+  // Monitor time updates to ensure mouth stays animated during playback
+  audioEl.addEventListener('timeupdate', () => {
+    if (audioPlaying && !audioEl.paused && audioEl.currentTime > 0) {
+      // Log audio playback progress occasionally
+      if (Math.random() < 0.01) {
+        console.log(`🎵 Audio playing: time=${audioEl.currentTime.toFixed(2)}s, duration=${audioEl.duration.toFixed(2)}s`);
+      }
+      
+      // Ensure we're in speaking state while audio is playing
+      const currentState = (window as any).__currentVoiceState;
+      if (currentState !== 'speaking') {
+        console.log('⚠️ Audio playing but not in speaking state, fixing...');
+        if (startSpeaking) {
+          startSpeaking();
+        } else {
+          setVoiceState('speaking');
+        }
+      }
+    }
+  });
+  
+  // Add duration tracking to know when audio should end
+  audioEl.addEventListener('loadedmetadata', () => {
+    console.log('🎵 Audio metadata loaded, duration:', audioEl.duration);
+    
+    // Set a timeout based on audio duration to ensure stopping
+    if (audioEl.duration && isFinite(audioEl.duration)) {
+      if (audioDurationTimeout) clearTimeout(audioDurationTimeout);
+      
+      audioDurationTimeout = setTimeout(() => {
+        console.log('⏰ Audio duration timeout reached, forcing stop');
+        if (stopSpeaking) stopSpeaking();
+        setVoiceState('idle');
+      }, (audioEl.duration + 1) * 1000); // Add 1 second buffer
+    }
+  });
+
+  // Clear timeout when audio actually ends
+  audioEl.addEventListener('ended', () => {
+    console.log('🔇 Audio ended - stopping speech and mouth animation');
+    audioPlaying = false;
+    analysisStarted = false;
+    if (setSpeechIntensity) setSpeechIntensity(0);
+    
+    // Force stop speaking state
+    if (stopSpeaking) {
+      stopSpeaking();
+    } else {
+      setVoiceState('idle');
+    }
+    
+    // Update global state for debugging
+    (window as any).__currentVoiceState = 'idle';
+    
+    // Clear duration timeout
+    if (audioDurationTimeout) {
+      clearTimeout(audioDurationTimeout);
+      audioDurationTimeout = null;
+    }
+  });
+
+  audioEl.addEventListener('pause', () => {
+    console.log('🔇 Audio paused - stopping speech and mouth animation');
+    audioPlaying = false;
+    analysisStarted = false;
+    if (setSpeechIntensity) setSpeechIntensity(0);
+    
+    if (stopSpeaking) {
+      stopSpeaking();
+    } else {
+      setVoiceState('idle');
+    }
+    
+    (window as any).__currentVoiceState = 'idle';
+  });
+
+  audioEl.addEventListener('emptied', () => {
+    console.log('🔇 Audio emptied - stopping speech and mouth animation');
+    audioPlaying = false;
+    analysisStarted = false;
+    if (setSpeechIntensity) setSpeechIntensity(0);
+    
+    if (stopSpeaking) {
+      stopSpeaking();
+    } else {
+      setVoiceState('idle');
+    }
+    
+    (window as any).__currentVoiceState = 'idle';
+  });
+
+  // Add error handler to stop animation on audio errors
+  audioEl.addEventListener('error', (e) => {
+    console.log('❌ Audio error - stopping speech and mouth animation', e);
+    audioPlaying = false;
+    analysisStarted = false;
+    if (setSpeechIntensity) setSpeechIntensity(0);
+    if (stopSpeaking) stopSpeaking();
+    (window as any).__currentVoiceState = 'idle';
+  });
 }
