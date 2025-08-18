@@ -103,6 +103,8 @@ export const useAnimationStore = create<AnimationStore>((set, get) => ({
   
   // Mouth target setters
   setMouthTarget: (value) => {
+    console.log(`🎯 setMouthTarget called with: ${value}`);
+    
     // Development warnings for invalid values
     if (process.env.NODE_ENV === 'development') {
       if (isNaN(value)) {
@@ -116,6 +118,7 @@ export const useAnimationStore = create<AnimationStore>((set, get) => ({
     
     // Clamp value to valid range and set target
     const clampedValue = Math.max(0, Math.min(1, value));
+    console.log(`🎯 Setting mouth target to: ${clampedValue.toFixed(3)}`);
     set({ mouthOpennessTarget: clampedValue });
   },
   
@@ -182,6 +185,8 @@ export const useAnimationStore = create<AnimationStore>((set, get) => ({
   },
   
   stopSpeaking: () => {
+    console.log('🔇 stopSpeaking() called - stopping voice interaction');
+    
     set({ 
       voiceState: 'idle',
       isSpeaking: false,

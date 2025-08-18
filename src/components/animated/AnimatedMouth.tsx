@@ -89,10 +89,10 @@ export const AnimatedMouth: React.FC<AnimatedMouthProps> = ({
       const centerY = position.y;
       const halfWidth = width / 2;
       
-      // Dynamic mouth curve based on openness - increased for better visibility
+      // Dynamic mouth curve based on openness - INVERTED for smiling expression
       const maxCurveHeight = 25; // Increased from 15 for more visible animation
       const curveHeight = clampedOpenness * maxCurveHeight;
-      const controlY = centerY - curveHeight;
+      const controlY = centerY + curveHeight; // INVERTED: + instead of - for upward curve
       
       // Create smooth curve path with enhanced opening
       // Also add slight width change when opening for more natural look
@@ -110,7 +110,7 @@ export const AnimatedMouth: React.FC<AnimatedMouthProps> = ({
     const halfWidth = width / 2;
     const maxCurveHeight = 25; // Match the increased height
     const curveHeight = initialOpenness * maxCurveHeight;
-    const controlY = centerY - curveHeight;
+    const controlY = centerY + curveHeight; // INVERTED: + instead of - for upward curve
     const widthScale = 1 + (initialOpenness * 0.1);
     const adjustedHalfWidth = halfWidth * widthScale;
     const initialPath = `M ${centerX - adjustedHalfWidth} ${centerY} Q ${centerX} ${controlY} ${centerX + adjustedHalfWidth} ${centerY}`;
@@ -148,18 +148,13 @@ export const AnimatedMouth: React.FC<AnimatedMouthProps> = ({
     // Primary behavior: if speaking, synthesize a simple flap independent of analyser
     let target = targetRef.current; // default to store target
     if (currentVoiceState === 'speaking') {
+      // ALWAYS use synthetic flap when speaking, don't wait for analyzer
       const t = performance.now() / 1000;
-      const base = 0.4; // slightly more open base
-      const amp = 0.3;  // larger flap amount for more visible animation
-      // Use a faster frequency for more dynamic movement
+      const base = 0.4;
+      const amp = 0.3;
       target = base + Math.max(0, Math.sin(t * 8.0)) * amp;
       
-      if (process.env.NODE_ENV === 'development') {
-        // Log occasionally to avoid spam
-        if (Math.floor(t * 10) % 10 === 0) {
-          console.log(`👄 Mouth flapping: target=${target.toFixed(3)}, voiceState=${currentVoiceState}`);
-        }
-      }
+      console.log(`👄 Mouth flapping (forced): target=${target.toFixed(3)}`);
     }
     
     // Drive openness directly for clear, visible motion

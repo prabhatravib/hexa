@@ -171,6 +171,28 @@ export const DevPanel: React.FC<DevPanelProps> = ({ isVisible = false }) => {
             Test Stop Speaking
           </button>
         </div>
+        
+        {/* Manual Mouth Test */}
+        <div className="flex space-x-2">
+          <button
+            onClick={() => {
+              console.log('🧪 Manual mouth test: Setting target to 0.8');
+              useAnimationStore.getState().setMouthTarget(0.8);
+            }}
+            className="px-2 py-1 text-xs bg-purple-500 text-white rounded hover:bg-purple-600"
+          >
+            Mouth 0.8
+          </button>
+          <button
+            onClick={() => {
+              console.log('🧪 Manual mouth test: Setting target to 0.2');
+              useAnimationStore.getState().setMouthTarget(0.2);
+            }}
+            className="px-2 py-1 text-xs bg-orange-500 text-white rounded hover:bg-orange-600"
+          >
+            Mouth 0.2
+          </button>
+        </div>
       </div>
       
       {/* Performance Stats */}
@@ -220,6 +242,37 @@ export const DevPanel: React.FC<DevPanelProps> = ({ isVisible = false }) => {
               {voiceState}
             </span>
           </div>
+        </div>
+        
+        {/* Voice Debug Section */}
+        <div className="border-t pt-2">
+          <h4 className="font-medium text-gray-700 dark:text-gray-300 mb-2">Voice Debug</h4>
+          <div className="space-y-1 text-xs">
+            <div className="flex justify-between">
+              <span className="text-gray-500">Audio Element:</span>
+              <span className={window.__hexaAudioEl ? 'text-green-600' : 'text-red-600'}>
+                {window.__hexaAudioEl ? '✅' : '❌'}
+              </span>
+            </div>
+            <div className="flex justify-between">
+              <span className="text-gray-500">Audio srcObject:</span>
+              <span className={window.__hexaAudioEl?.srcObject ? 'text-green-600' : 'text-red-600'}>
+                {window.__hexaAudioEl?.srcObject ? '✅' : '❌'}
+              </span>
+            </div>
+            <div className="flex justify-between">
+              <span className="text-gray-500">Audio Playing:</span>
+              <span className={window.__hexaAudioEl?.paused === false ? 'text-green-600' : 'text-red-600'}>
+                {window.__hexaAudioEl?.paused === false ? '✅' : '❌'}
+              </span>
+            </div>
+          </div>
+          <button 
+            onClick={() => window.__hexaDebug?.()}
+            className="mt-2 w-full px-2 py-1 bg-blue-500 text-white rounded hover:bg-blue-600 text-xs"
+          >
+            Debug Console
+          </button>
         </div>
       </div>
     </div>

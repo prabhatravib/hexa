@@ -41,12 +41,53 @@ ${getLanguageInstructions()}`
       audioEl.autoplay = true;
       let analysisStarted = false; // guard so analyser is wired only once
       (window as any).__hexaAudioEl = audioEl;
+      (window as any).__currentVoiceState = 'idle'; // Add this for debugging
+      
+      // Add global debug function
+      (window as any).__hexaDebug = () => {
+        console.log('🔍 Hexa Debug Info:');
+        console.log('Audio Element:', audioEl);
+        console.log('Audio srcObject:', audioEl.srcObject);
+        console.log('Audio readyState:', audioEl.readyState);
+        console.log('Audio paused:', audioEl.paused);
+        console.log('Voice State:', (window as any).__currentVoiceState);
+        console.log('Analysis Started:', analysisStarted);
+        console.log('Session:', session);
+      };
+
+      // ADD THIS: Monitor audio element state
+      audioEl.addEventListener('loadeddata', () => {
+        console.log('🎵 Audio element loaded data');
+        console.log('Audio element state:', {
+          srcObject: audioEl.srcObject,
+          readyState: audioEl.readyState,
+          paused: audioEl.paused,
+          duration: audioEl.duration
+        });
+      });
+      
+      // Monitor all audio element events for debugging
+      ['loadstart', 'durationchange', 'loadedmetadata', 'canplay', 'canplaythrough', 'play', 'playing', 'pause', 'ended', 'error'].forEach(eventName => {
+        audioEl.addEventListener(eventName, (e) => {
+          console.log(`🎵 Audio event: ${eventName}`, {
+            srcObject: audioEl.srcObject,
+            readyState: audioEl.readyState,
+            paused: audioEl.paused,
+            currentTime: audioEl.currentTime,
+            duration: audioEl.duration
+          });
+        });
+      });
 
       // Helper to start analyser using either a MediaStreamSource or MediaElementSource
       const startAnalysisWithNodes = async (
         makeSource: (ctx: AudioContext) => AudioNode
       ) => {
-        if (analysisStarted) return;
+        if (analysisStarted) {
+          console.log('🎵 Analysis already started, skipping');
+          return;
+        }
+        console.log('🎵 Starting audio analysis...');
         analysisStarted = true;
 
         // Prefer shared AudioContext (resumed on user gesture)
@@ -63,10 +104,12 @@ ${getLanguageInstructions()}`
         }
 
         const srcNode = makeSource(ctx);
+        console.log('🎵 Created audio source node:', srcNode.constructor.name);
         const analyser = ctx.createAnalyser();
         analyser.fftSize = 512;
         analyser.smoothingTimeConstant = 0.25;
         srcNode.connect(analyser);
+        console.log('🎵 Connected source to analyzer, starting tick loop');
 
         // Dynamic gate with hysteresis for natural mouth movement
         let noiseFloor = 0.02;
@@ -95,11 +138,17 @@ ${getLanguageInstructions()}`
           const norm = Math.min(1, over / (1 - noiseFloor));
           const alpha = speaking ? ATTACK : RELEASE;
           level += alpha * ((speaking ? norm : 0) - level);
+          
+          // Add debugging for analyzer output
+          if (process.env.NODE_ENV === 'development' && Math.random() < 0.01) { // Log 1% of the time
+            console.log(`🎵 Analyzer: rms=${rms.toFixed(4)}, level=${level.toFixed(4)}, speaking=${speaking}`);
+          }
+          
           if (setSpeechIntensity) setSpeechIntensity(level);
           requestAnimationFrame(tick);
         };
-
-        startSpeaking?.();
+        
+        // Start the analyzer tick loop
         tick();
       };
       
@@ -155,6 +204,13 @@ ${getLanguageInstructions()}`
           setVoiceState('thinking');
         });
         
+        // Debug: Log all voice state changes
+        const originalSetVoiceState = setVoiceState;
+        setVoiceState = (state: VoiceState) => {
+          console.log(`🎤 Voice state changing from ${(window as any).__currentVoiceState} to ${state}`);
+          originalSetVoiceState(state);
+        };
+        
         session.on('response.output_item.added' as any, (item: any) => {
           console.log('📢 Output item added:', item);
           if (item?.type === 'audio' || item?.content_type?.includes('audio')) {
@@ -189,9 +245,23 @@ ${getLanguageInstructions()}`
         await session.connect(connectionOptions);
         console.log('✅ WebRTC connection successful with client secret');
         
+        // Debug: Log session state and properties
+        console.log('🔍 Session after connection:', {
+          hasStream: !!(session as any).stream,
+          hasPc: !!(session as any)._pc,
+          pcState: (session as any)._pc?.connectionState,
+          pcIceState: (session as any)._pc?.iceConnectionState,
+          events: Object.keys(session)
+        });
+        
                  // Set up remote track handling to get the actual audio stream
          session.on('remote_track' as any, async (event: any) => {
            console.log('🎵 Remote track received:', event);
+           console.log('Track details:', {
+             kind: event.track?.kind,
+             readyState: event.track?.readyState,
+             enabled: event.track?.enabled
+           });
            
                       if (event.track && event.track.kind === 'audio') {
              console.log('🎵 Audio track received, attaching to audio element');
@@ -210,21 +280,67 @@ ${getLanguageInstructions()}`
            }
         });
         
-        // Alternative: Check if session already has a stream after connection
-        // Some implementations might set the stream directly
-        setTimeout(() => {
-          if (!audioEl.srcObject) {
-            console.log('🔍 Checking for existing session stream...');
-            // Try to get stream from session if available
+        // Debug: Monitor all session events
+        const sessionEvents = ['track', 'stream', 'connectionstatechange', 'iceconnectionstatechange', 'signalingstatechange'];
+        sessionEvents.forEach(eventName => {
+          session.on(eventName as any, (event: any) => {
+            console.log(`🔍 Session event: ${eventName}`, event);
+          });
+        });
+        
+        // More aggressive stream detection
+        const checkForStream = async () => {
+          let attempts = 0;
+          const maxAttempts = 10;
+          
+          const interval = setInterval(async () => {
+            attempts++;
+            console.log(`🔍 Checking for audio stream (attempt ${attempts}/${maxAttempts})...`);
+            
+            // Check if audio element has a source
+            if (audioEl.srcObject) {
+              console.log('🎵 Found audio srcObject, starting analyzer');
+              clearInterval(interval);
+              
+              if (!analysisStarted) {
+                const stream = audioEl.srcObject as MediaStream;
+                await startAnalysisWithNodes((ctx) => ctx.createMediaStreamSource(stream));
+              }
+              return;
+            }
+            
+            // Check if session has stream
             if ((session as any).stream) {
               console.log('🎵 Found session stream, attaching to audio element');
               audioEl.srcObject = (session as any).stream;
-              audioEl.play().catch((error: any) => {
-                console.warn('⚠️ Failed to autoplay audio:', error);
-              });
+              clearInterval(interval);
+              return;
             }
-          }
-        }, 1000); // Wait 1 second after connection
+            
+            // Check for any media streams in the session
+            if ((session as any)._pc?.getRemoteStreams) {
+              const remoteStreams = (session as any)._pc.getRemoteStreams();
+              if (remoteStreams && remoteStreams.length > 0) {
+                console.log('🎵 Found remote streams from RTCPeerConnection');
+                audioEl.srcObject = remoteStreams[0];
+                clearInterval(interval);
+                return;
+              }
+            }
+            
+            if (attempts >= maxAttempts) {
+              console.warn('⚠️ Could not find audio stream after', maxAttempts, 'attempts');
+              clearInterval(interval);
+              
+              // Last resort: start synthetic flapping
+              console.log('🎯 Starting synthetic mouth flapping as fallback');
+              startSpeaking?.();
+            }
+          }, 500); // Check every 500ms
+        };
+
+        // Start checking immediately after connection
+        checkForStream();
         
          // Track audio element state for mouth animation
          let audioPlaying = false;
@@ -232,9 +348,18 @@ ${getLanguageInstructions()}`
          // Fallback: ensure analyser is running even if remote_track isn't emitted
          audioEl.addEventListener('playing', async () => {
            console.log('🎵 Audio playing - ensuring analyser is running and mouth animating');
+           console.log('🎵 Audio element state during playing:', {
+             srcObject: audioEl.srcObject,
+             readyState: audioEl.readyState,
+             paused: audioEl.paused,
+             currentTime: audioEl.currentTime
+           });
            audioPlaying = true;
            if (!analysisStarted) {
+             console.log('🎵 Starting analysis with MediaElementSource');
              await startAnalysisWithNodes((ctx) => ctx.createMediaElementSource(audioEl));
+           } else {
+             console.log('🎵 Analysis already started, skipping');
            }
            // Always trigger speaking state when audio is playing
            if (startSpeaking) {
@@ -255,21 +380,26 @@ ${getLanguageInstructions()}`
            }
          });
          
-         // Monitor time updates to ensure mouth stays animated during playback
-         audioEl.addEventListener('timeupdate', () => {
-           if (audioPlaying && !audioEl.paused && audioEl.currentTime > 0) {
-             // Ensure we're in speaking state while audio is playing
-             const currentState = (window as any).__currentVoiceState;
-             if (currentState !== 'speaking') {
-               console.log('⚠️ Audio playing but not in speaking state, fixing...');
-               if (startSpeaking) {
-                 startSpeaking();
-               } else {
-                 setVoiceState('speaking');
-               }
-             }
-           }
-         });
+                 // Monitor time updates to ensure mouth stays animated during playback
+        audioEl.addEventListener('timeupdate', () => {
+          if (audioPlaying && !audioEl.paused && audioEl.currentTime > 0) {
+            // Log audio playback progress occasionally
+            if (Math.random() < 0.01) { // Log 1% of the time
+              console.log(`🎵 Audio playing: time=${audioEl.currentTime.toFixed(2)}s, duration=${audioEl.duration.toFixed(2)}s`);
+            }
+            
+            // Ensure we're in speaking state while audio is playing
+            const currentState = (window as any).__currentVoiceState;
+            if (currentState !== 'speaking') {
+              console.log('⚠️ Audio playing but not in speaking state, fixing...');
+              if (startSpeaking) {
+                startSpeaking();
+              } else {
+                setVoiceState('speaking');
+              }
+            }
+          }
+        });
         
         ['pause', 'ended', 'emptied'].forEach(ev => {
           audioEl.addEventListener(ev, () => {

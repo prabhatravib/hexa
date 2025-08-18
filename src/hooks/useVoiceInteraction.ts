@@ -110,10 +110,15 @@ export const useVoiceInteraction = (options: UseVoiceInteractionOptions = {}) =>
 
   // Fallback: If we are in 'speaking' but no analyser updates are coming, drive a synthetic flap
   const startFallbackFlap = useCallback(() => {
-    if (fallbackFlapRafRef.current !== null) return;
+    if (fallbackFlapRafRef.current !== null) {
+      console.log('🎯 Fallback flap already running, skipping');
+      return;
+    }
+    console.log('🎯 Starting fallback flap animation');
     const loop = () => {
       // Stop if we left speaking state
       if (useAnimationStore.getState().voiceState !== 'speaking') {
+        console.log('🎯 Voice state no longer speaking, stopping fallback flap');
         if (fallbackFlapRafRef.current) cancelAnimationFrame(fallbackFlapRafRef.current);
         fallbackFlapRafRef.current = null;
         return;
@@ -124,6 +129,8 @@ export const useVoiceInteraction = (options: UseVoiceInteractionOptions = {}) =>
         const base = 0.35;
         const amp = 0.25;
         const value = base + Math.max(0, Math.sin(t * 6.0)) * amp; // simple flap
+        // console.log('🎯 Fallback flap value:', value.toFixed(3)); // Commented out to reduce spam
+        console.log(`🎯 Fallback flap setting mouth target: ${value.toFixed(3)}`);
         setMouthTarget(value);
       }
       fallbackFlapRafRef.current = requestAnimationFrame(loop);
@@ -133,14 +140,20 @@ export const useVoiceInteraction = (options: UseVoiceInteractionOptions = {}) =>
 
   const stopFallbackFlap = useCallback(() => {
     if (fallbackFlapRafRef.current) {
+      console.log('🎯 Stopping fallback flap animation');
       cancelAnimationFrame(fallbackFlapRafRef.current);
       fallbackFlapRafRef.current = null;
+    } else {
+      console.log('🎯 Fallback flap not running, nothing to stop');
     }
   }, []);
 
   // Handle voice state changes for mouth target management
   useEffect(() => {
+    console.log(`🎤 Voice state changed to: ${voiceState}`);
+    
     if (voiceState === 'speaking') {
+      console.log('🎤 Starting speaking mode - initializing fallback flap');
       // When speaking starts, ensure EMA accumulator is ready
       if (emaAccumulatorRef.current === 0) {
         emaAccumulatorRef.current = 0.1; // Small initial value to avoid jump
@@ -148,6 +161,7 @@ export const useVoiceInteraction = (options: UseVoiceInteractionOptions = {}) =>
       // Begin fallback flapping in case analyser isn't feeding us
       startFallbackFlap();
     } else {
+      console.log('🎤 Stopping speaking mode - cleaning up');
       // When not speaking, reset mouth and clear EMA state
       resetMouth();
       emaAccumulatorRef.current = 0;
@@ -162,6 +176,8 @@ export const useVoiceInteraction = (options: UseVoiceInteractionOptions = {}) =>
 
   // Enhanced speech intensity handler with mouth target updates
   const handleSpeechIntensity = useCallback((rawIntensity: number) => {
+    console.log(`🎤 handleSpeechIntensity called with: ${rawIntensity.toFixed(3)}`);
+    
     // Mark that we received a real analyser update
     lastAnalyzerWriteRef.current = Date.now();
     // Update legacy speech intensity for backward compatibility

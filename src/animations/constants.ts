@@ -74,14 +74,14 @@ export const COLORS = {
   },
 };
 
-// SVG Path definitions for mouth expressions
+// SVG Path definitions for mouth expressions - INVERTED for smiling
 export const MOUTH_PATHS = {
-  HAPPY: 'M 82 108 Q 100 128 118 108',
-  EXCITED: 'M 80 108 Q 100 132 120 108',
-  NEUTRAL: 'M 85 115 L 115 115',
-  CURIOUS: 'M 82 108 Q 100 125 118 108',
-  THINKING: 'M 88 115 Q 100 118 112 115',
-  SPEAKING: 'M 85 108 Q 100 125 115 108',
+  HAPPY: 'M 82 108 Q 100 88 118 108',      // INVERTED: control point Y changed from 128 to 88
+  EXCITED: 'M 80 108 Q 100 84 120 108',    // INVERTED: control point Y changed from 132 to 84
+  NEUTRAL: 'M 85 115 L 115 115',            // Straight line (no change needed)
+  CURIOUS: 'M 82 108 Q 100 91 118 108',    // INVERTED: control point Y changed from 125 to 91
+  THINKING: 'M 88 115 Q 100 112 112 115',  // INVERTED: control point Y changed from 118 to 112
+  SPEAKING: 'M 85 108 Q 100 91 115 108',   // INVERTED: control point Y changed from 125 to 91
 };
 
 // Animation keyframes for complex animations
