@@ -49,16 +49,16 @@ export class MessageHandlers {
     try {
       console.log('🔧 Audio data received, sending session info to frontend for WebRTC connection...');
       
-      // Instead of trying to process audio in the worker, send session info to frontend
-      // The frontend will handle the WebRTC connection directly
+      // Send session info to frontend for WebRTC connection
+      // The frontend will handle the WebRTC connection using the Agents Realtime SDK
       const sessionInfo = this.openaiConnection.getSessionInfo();
       
       this.broadcastToClients({
         type: 'session_info',
         sessionId: sessionInfo.sessionId,
-        clientSecret: sessionInfo.clientSecret,
         apiKey: sessionInfo.apiKey,
-        audioData: audioData // Pass the audio data to frontend
+        // For WebRTC, we don't need clientSecret - the frontend uses the API key directly
+        supportsWebRTC: true
       });
       
       console.log('✅ Session info sent to frontend for WebRTC connection');

@@ -75,42 +75,22 @@ export class OpenAIConnection {
   }
 
   private async createSession(apiKey: string): Promise<any> {
-    console.log('🔧 Creating OpenAI Realtime session...');
+    console.log('🔧 Creating OpenAI WebRTC session...');
     
-    // Use the standard Realtime API endpoint with optimal configuration
-    const requestBody = {
-      model: 'gpt-4o-realtime-preview',
-      voice: 'alloy',
-      input_audio_format: 'pcm16',
-      output_audio_format: 'pcm16',
-      input_audio_transcription: { model: 'whisper-1' },
-      turn_detection: {
-        type: 'server_vad',
-        threshold: 0.5,
-        prefix_padding_ms: 300,
-        silence_duration_ms: 200
-      }
+    // For WebRTC, we need to create a session that supports it
+    // The frontend will handle the actual WebRTC connection using the Agents Realtime SDK
+    // We just need to provide the API key for the frontend to use
+    
+    // Create a mock session object that the frontend can use
+    const sessionData = {
+      id: `session_${Date.now()}`,
+      apiKey: apiKey,
+      // The frontend will create its own WebRTC session using the Agents Realtime SDK
+      supportsWebRTC: true
     };
     
-    console.log('🔧 Creating session with standard Realtime API...');
-    const response = await fetch('https://api.openai.com/v1/realtime/sessions', {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${apiKey}`,
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify(requestBody)
-    });
-    
-    if (response.status === 200) {
-      const sessionData = await response.json() as any;
-      console.log('✅ Session created successfully:', sessionData);
-      return sessionData;
-    } else {
-      const errorText = await response.text();
-      console.error('❌ Failed to create session:', response.status, errorText);
-      throw new Error(`Failed to create session: ${response.status} - ${errorText}`);
-    }
+    console.log('✅ WebRTC session info created for frontend:', sessionData);
+    return sessionData;
   }
 
   // Send message to OpenAI via HTTP (for non-audio messages)

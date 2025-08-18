@@ -81,18 +81,17 @@ ${getLanguageInstructions()}`
         onError?.(error.message || 'OpenAI session error');
       });
       
-      // Use the working method: WebRTC with client secret
-      if (sessionData.clientSecret) {
-        console.log('🔧 Connecting with client secret...');
+      // Use the working method: WebRTC with API key
+      if (sessionData.apiKey) {
+        console.log('🔧 Connecting with API key...');
         const connectionOptions = {
-          apiKey: sessionData.clientSecret, // Use client secret instead of API key
-          useInsecureApiKey: true,
+          apiKey: sessionData.apiKey, // Use API key directly
           transport: 'webrtc' as const
         };
         
-        console.log('🔧 Connecting with client secret options:', connectionOptions);
+        console.log('🔧 Connecting with API key options:', connectionOptions);
         await session.connect(connectionOptions);
-        console.log('✅ WebRTC connection successful with client secret');
+        console.log('✅ WebRTC connection successful with API key');
         
                  // Set up remote track handling to get the actual audio stream
          session.on('remote_track' as any, async (event: any) => {
@@ -211,9 +210,9 @@ ${getLanguageInstructions()}`
             if (stopSpeaking) stopSpeaking();
           });
         });
-      } else {
-        throw new Error('Client secret not available for WebRTC connection');
-      }
+             } else {
+         throw new Error('API key not available for WebRTC connection');
+       }
       
       console.log('✅ OpenAI Agent initialized and connected with WebRTC');
       setVoiceState('idle');
