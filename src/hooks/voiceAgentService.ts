@@ -98,18 +98,81 @@ ${getLanguageInstructions()}`
         session.on('remote_track' as any, (event: any) => {
           console.log('🎵 Remote track received:', event);
           
-          if (event.track && event.track.kind === 'audio') {
-            console.log('🎵 Audio track received, attaching to audio element');
-            
-            // Create a new MediaStream with the audio track
-            const stream = new MediaStream([event.track]);
-            audioEl.srcObject = stream;
-            
-            // Start playing to trigger the playing event
-            audioEl.play().catch((error: any) => {
-              console.warn('⚠️ Failed to autoplay audio:', error);
-            });
-          }
+                     if (event.track && event.track.kind === 'audio') {
+             console.log('🎵 Audio track received, attaching to audio element');
+             
+             // Create a new MediaStream with the audio track
+             const stream = new MediaStream([event.track]);
+             audioEl.srcObject = stream;
+             
+             // Start audio analysis immediately on remote_track (more reliable than 'playing' event)
+             const ctx = new (window.AudioContext || (window as any).webkitAudioContext)();
+             const src = ctx.createMediaStreamSource(stream);
+             const analyser = ctx.createAnalyser();
+             analyser.fftSize = 512;
+             analyser.smoothingTimeConstant = 0.25;
+             src.connect(analyser);
+
+             // Persistent state across ticks for dynamic gate with hysteresis
+             let noiseFloor = 0.02;      // EMA of background
+             let speaking = false;
+             let level = 0;              // smoothed mouth openness
+
+             const OPEN_MARGIN  = 0.03;  // dB-ish in RMS units
+             const CLOSE_MARGIN = 0.015; // lower than open -> hysteresis
+             const ATTACK  = 0.30;       // rise speed per frame
+             const RELEASE = 0.06;       // fall speed per frame
+
+             const tick = () => {
+               const td = new Uint8Array(analyser.fftSize);
+               analyser.getByteTimeDomainData(td);
+
+               // RMS 0..~1 (ignore bins <100 Hz and >6 kHz to reject hum)
+               let sum = 0;
+               for (let i = 0; i < td.length; i++) {
+                 const v = (td[i] - 128) / 128;
+                 sum += v * v;
+               }
+               const rms = Math.sqrt(sum / td.length);
+
+               // Update dynamic floor only when not speaking
+               if (!speaking) noiseFloor = 0.9 * noiseFloor + 0.1 * rms;
+
+               const openThr  = noiseFloor + OPEN_MARGIN;
+               const closeThr = noiseFloor + CLOSE_MARGIN;
+
+               if (!speaking && rms > openThr) speaking = true;
+               if (speaking && rms < closeThr) speaking = false;
+
+               // Normalize above floor
+               const over = Math.max(0, rms - noiseFloor);
+               const norm = Math.min(1, over / (1 - noiseFloor));
+
+               // Different attack/release smoothing
+               const alpha = speaking ? ATTACK : RELEASE;
+               level += alpha * ((speaking ? norm : 0) - level);
+
+               if (setSpeechIntensity) {
+                 console.log(`🎤 Dynamic gate: rms=${rms.toFixed(3)}, floor=${noiseFloor.toFixed(3)}, speaking=${speaking}, level=${level.toFixed(3)}`);
+                 setSpeechIntensity(level);
+                 if (process.env.NODE_ENV === 'development') {
+                   console.log(`🎤 Speech intensity: ${level.toFixed(3)}`);
+                 }
+               } else {
+                 console.warn('⚠️ setSpeechIntensity function not provided to voice agent service');
+               }
+               
+               requestAnimationFrame(tick);
+             };
+             
+             startSpeaking?.(); // ensure mouth loop starts
+             tick(); // start the analysis loop immediately
+             
+             // Start playing to trigger the playing event (for compatibility)
+             audioEl.play().catch((error: any) => {
+               console.warn('⚠️ Failed to autoplay audio:', error);
+             });
+           }
         });
         
         // Alternative: Check if session already has a stream after connection
@@ -128,82 +191,15 @@ ${getLanguageInstructions()}`
           }
         }, 1000); // Wait 1 second after connection
         
-        // Set up audio analysis and playback state handling
-        audioEl.addEventListener('playing', () => {
-          console.log('🎵 Audio playing - starting lip-sync analysis and calling startSpeaking');
-          
-          // First, call startSpeaking to set the voice state
-          if (startSpeaking) {
-            startSpeaking();
-          }
-          
-          // Then start the lip-sync analysis
-          const stream = audioEl.srcObject as MediaStream;
-          if (!stream) {
-            console.warn('⚠️ No MediaStream available for analysis');
-            return;
-          }
-          
-          const ctx = new (window.AudioContext || (window as any).webkitAudioContext)();
-          const src = ctx.createMediaStreamSource(stream);
-          const analyser = ctx.createAnalyser();
-          analyser.fftSize = 512;
-          analyser.smoothingTimeConstant = 0.25;
-          src.connect(analyser);
-          
-          // Persistent state across ticks for dynamic gate with hysteresis
-          let noiseFloor = 0.02;      // EMA of background
-          let speaking = false;
-          let level = 0;              // smoothed mouth openness
-
-          const OPEN_MARGIN  = 0.03;  // dB-ish in RMS units
-          const CLOSE_MARGIN = 0.015; // lower than open -> hysteresis
-          const ATTACK  = 0.30;       // rise speed per frame
-          const RELEASE = 0.06;       // fall speed per frame
-
-          const tick = () => {
-            const td = new Uint8Array(analyser.fftSize);
-            analyser.getByteTimeDomainData(td);
-
-            // RMS 0..~1 (ignore bins <100 Hz and >6 kHz to reject hum)
-            let sum = 0;
-            for (let i = 0; i < td.length; i++) {
-              const v = (td[i] - 128) / 128;
-              sum += v * v;
-            }
-            const rms = Math.sqrt(sum / td.length);
-
-            // Update dynamic floor only when not speaking
-            if (!speaking) noiseFloor = 0.9 * noiseFloor + 0.1 * rms;
-
-            const openThr  = noiseFloor + OPEN_MARGIN;
-            const closeThr = noiseFloor + CLOSE_MARGIN;
-
-            if (!speaking && rms > openThr) speaking = true;
-            if (speaking && rms < closeThr) speaking = false;
-
-            // Normalize above floor
-            const over = Math.max(0, rms - noiseFloor);
-            const norm = Math.min(1, over / (1 - noiseFloor));
-
-            // Different attack/release smoothing
-            const alpha = speaking ? ATTACK : RELEASE;
-            level += alpha * ((speaking ? norm : 0) - level);
-
-            if (setSpeechIntensity) {
-              console.log(`🎤 Dynamic gate: rms=${rms.toFixed(3)}, floor=${noiseFloor.toFixed(3)}, speaking=${speaking}, level=${level.toFixed(3)}`);
-              setSpeechIntensity(level);
-              if (process.env.NODE_ENV === 'development') {
-                console.log(`🎤 Speech intensity: ${level.toFixed(3)}`);
-              }
-            } else {
-              console.warn('⚠️ setSpeechIntensity function not provided to voice agent service');
-            }
-            
-            requestAnimationFrame(tick);
-          };
-          tick();
-        });
+                 // Audio playing event (kept for compatibility, but analyzer now starts on remote_track)
+         audioEl.addEventListener('playing', () => {
+           console.log('🎵 Audio playing - analyzer already running from remote_track');
+           
+           // startSpeaking is already called in remote_track handler
+           if (startSpeaking) {
+             startSpeaking();
+           }
+         });
         
         ['pause', 'ended', 'emptied'].forEach(ev => {
           audioEl.addEventListener(ev, () => {

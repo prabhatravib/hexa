@@ -184,7 +184,7 @@ export const AnimatedMouth: React.FC<AnimatedMouthProps> = ({
   // Start/stop animation loop based on voice state and target values
   useEffect(() => {
     const isSpeaking = voiceState === 'speaking';
-    const hasTargetValue = mouthOpennessTarget > 0.01;
+    const hasTargetValue = mouthOpennessTarget > 0; // Allow even tiny targets to trigger animation
     
     // Always start animation when there's a target value or when speaking
     if (hasTargetValue || isSpeaking) {
@@ -214,7 +214,7 @@ export const AnimatedMouth: React.FC<AnimatedMouthProps> = ({
       console.log(`🎯 Mouth Target Changed: ${mouthOpennessTarget.toFixed(3)}`);
     }
     
-    if (mouthOpennessTarget > 0.01) {
+    if (mouthOpennessTarget > 0) { // Allow even tiny targets to trigger updates
       // Force a small update to trigger re-render
       currentOpenness.set(currentOpenness.get() + 0.001);
       if (process.env.NODE_ENV === 'development') {
@@ -257,7 +257,7 @@ export const AnimatedMouth: React.FC<AnimatedMouthProps> = ({
   
   // Determine which path to use
   const isCurrentlySpeaking = voiceState === 'speaking';
-  const hasTargetValue = mouthOpennessTarget > 0.01;
+  const hasTargetValue = mouthOpennessTarget > 0; // Allow even tiny targets to use dynamic path
   const isAnimating = animationFrameRef.current !== null;
   
   // Use dynamic path when there's a target value, speaking, or animating
