@@ -425,12 +425,14 @@ ${getLanguageInstructions()}`
           audioPlaying = false;
           analysisStarted = false; // Reset analysis flag
           if (setSpeechIntensity) setSpeechIntensity(0);
+          
           // Force stop speaking state
           if (stopSpeaking) {
             stopSpeaking();
+          } else {
+            setVoiceState('idle');
           }
-          // Also directly update the store to ensure state is reset
-          setVoiceState('idle');
+          
           // Update global state for debugging
           (window as any).__currentVoiceState = 'idle';
           
@@ -444,22 +446,30 @@ ${getLanguageInstructions()}`
         audioEl.addEventListener('pause', () => {
           console.log('🔇 Audio paused - stopping speech and mouth animation');
           audioPlaying = false;
+          analysisStarted = false;
           if (setSpeechIntensity) setSpeechIntensity(0);
+          
           if (stopSpeaking) {
             stopSpeaking();
+          } else {
+            setVoiceState('idle');
           }
-          setVoiceState('idle');
+          
           (window as any).__currentVoiceState = 'idle';
         });
 
         audioEl.addEventListener('emptied', () => {
           console.log('🔇 Audio emptied - stopping speech and mouth animation');
           audioPlaying = false;
+          analysisStarted = false;
           if (setSpeechIntensity) setSpeechIntensity(0);
+          
           if (stopSpeaking) {
             stopSpeaking();
+          } else {
+            setVoiceState('idle');
           }
-          setVoiceState('idle');
+          
           (window as any).__currentVoiceState = 'idle';
         });
       } else {

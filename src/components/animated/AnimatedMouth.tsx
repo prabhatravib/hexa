@@ -156,26 +156,18 @@ export const AnimatedMouth: React.FC<AnimatedMouthProps> = ({
       return; // Exit the animation loop
     }
     
-    // Primary behavior: if speaking, synthesize a simple flap independent of analyser
-    let target = targetRef.current; // default to store target
-    if (currentVoiceState === 'speaking') {
-      // ALWAYS use synthetic flap when speaking, don't wait for analyzer
-      const t = performance.now() / 1000;
-      const base = 0.4;
-      const amp = 0.3;
-      target = base + Math.max(0, Math.sin(t * 8.0)) * amp;
-      
-      console.log(`👄 Mouth flapping (forced): target=${target.toFixed(3)}`);
-    }
+    // Use the target from the store (set by analyzer or fallback flap)
+    const target = targetRef.current;
+    
+    console.log(`👄 Animating mouth: state=${currentVoiceState}, target=${target.toFixed(3)}`);
     
     // Drive openness directly for clear, visible motion
     currentOpenness.set(target);
     
     // Add micro-motion when not speaking (subtle breathing)
-    const isCurrentlySpeaking = currentVoiceState === 'speaking';
-    if (!isCurrentlySpeaking && !reducedMotionRef.current) {
+    if (currentVoiceState !== 'speaking' && !reducedMotionRef.current) {
       const time = Date.now() * 0.001;
-      const microAmplitude = 0.02; // Max micro-motion amplitude
+      const microAmplitude = 0.02;
       microMotionRef.current = Math.sin(time * 2) * microAmplitude * 0.5;
     } else {
       microMotionRef.current = 0;
@@ -184,43 +176,42 @@ export const AnimatedMouth: React.FC<AnimatedMouthProps> = ({
     // Continue animation only if still speaking
     if (currentVoiceState === 'speaking') {
       animationFrameRef.current = requestAnimationFrame(animateMouth);
+    } else {
+      // Stop and reset
+      currentOpenness.set(0);
+      animationFrameRef.current = null;
     }
-  }, [currentOpenness]); // Simplified dependencies
+  }, [currentOpenness]);
   
-  // Start/stop animation loop based on voice state and target values
+  // Start/stop animation loop based on voice state
   useEffect(() => {
     const isSpeaking = voiceState === 'speaking';
-    const hasTargetValue = mouthOpennessTarget > 0; // Allow even tiny targets to trigger animation
     
-    // Always start animation when speaking, regardless of target value
     if (isSpeaking) {
+      // Start animation if not already running
       if (!animationFrameRef.current) {
-        if (process.env.NODE_ENV === 'development') {
-          console.log('🚀 Starting mouth animation loop (speaking detected)');
-        }
-        animationFrameRef.current = requestAnimationFrame(animateMouth);
-      }
-    } else if (hasTargetValue) {
-      // Also start if we have a target value (for analyzer-driven animation)
-      if (!animationFrameRef.current) {
-        if (process.env.NODE_ENV === 'development') {
-          console.log('🚀 Starting mouth animation loop (target value detected)');
-        }
+        console.log('🚀 Starting mouth animation loop (speaking detected)');
         animationFrameRef.current = requestAnimationFrame(animateMouth);
       }
     } else {
-      // Stop animation only when not speaking AND no target
+      // Stop animation when not speaking
       if (animationFrameRef.current) {
-        if (process.env.NODE_ENV === 'development') {
-          console.log('⏹️ Stopping mouth animation loop');
-        }
+        console.log('⏹️ Stopping mouth animation loop (not speaking)');
         cancelAnimationFrame(animationFrameRef.current);
         animationFrameRef.current = null;
       }
+      // Reset mouth to closed
+      currentOpenness.set(0);
     }
     
-    lastTargetRef.current = mouthOpennessTarget;
-  }, [voiceState, mouthOpennessTarget, animateMouth]);
+    // Cleanup on unmount
+    return () => {
+      if (animationFrameRef.current) {
+        cancelAnimationFrame(animationFrameRef.current);
+        animationFrameRef.current = null;
+      }
+    };
+  }, [voiceState, animateMouth, currentOpenness]);
   
   // Force update when target changes to ensure immediate response
   useEffect(() => {

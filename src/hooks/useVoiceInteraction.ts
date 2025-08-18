@@ -113,36 +113,41 @@ export const useVoiceInteraction = (options: UseVoiceInteractionOptions = {}) =>
       console.log('🎯 Stopping fallback flap animation');
       cancelAnimationFrame(fallbackFlapRafRef.current);
       fallbackFlapRafRef.current = null;
-    } else {
-      console.log('🎯 Fallback flap not running, nothing to stop');
+      // Reset mouth to closed position
+      setMouthTarget(0);
+      resetMouth();
     }
-  }, []);
+  }, [setMouthTarget, resetMouth]);
 
   // Fallback: If we are in 'speaking' but no analyser updates are coming, drive a synthetic flap
   const startFallbackFlap = useCallback(() => {
-    if (fallbackFlapRafRef.current !== null) {
-      console.log('🎯 Fallback flap already running, skipping');
-      return;
-    }
+    // Always stop any existing flap first
+    stopFallbackFlap();
+    
     console.log('🎯 Starting fallback flap animation');
     
-    // Add a safety timeout to stop flapping after 30 seconds
-    const safetyTimeout = setTimeout(() => {
-      console.log('🎯 Safety timeout reached, stopping fallback flap');
-      stopFallbackFlap();
-      useAnimationStore.getState().stopSpeaking();
-    }, 30000); // 30 seconds maximum
+    let frameCount = 0;
+    const maxFrames = 1800; // Stop after 30 seconds (at 60fps)
     
     const loop = () => {
+      frameCount++;
+      
+      // Check current state from store directly
       const currentState = useAnimationStore.getState().voiceState;
-      if (currentState !== 'speaking') {
-        console.log('🎯 Voice state no longer speaking, stopping fallback flap');
-        clearTimeout(safetyTimeout);
-        if (fallbackFlapRafRef.current) cancelAnimationFrame(fallbackFlapRafRef.current);
+      
+      // Stop conditions
+      if (currentState !== 'speaking' || frameCount > maxFrames) {
+        console.log(`🎯 Stopping fallback flap: state=${currentState}, frames=${frameCount}`);
         fallbackFlapRafRef.current = null;
+        setMouthTarget(0);
+        resetMouth();
+        if (frameCount > maxFrames) {
+          useAnimationStore.getState().stopSpeaking();
+        }
         return;
       }
       
+      // Only flap if no recent analyzer updates
       const sinceAnalyzer = Date.now() - lastAnalyzerWriteRef.current;
       if (sinceAnalyzer > 150) {
         const t = performance.now() / 1000;
@@ -152,10 +157,12 @@ export const useVoiceInteraction = (options: UseVoiceInteractionOptions = {}) =>
         console.log(`🎯 Fallback flap setting mouth target: ${value.toFixed(3)}`);
         setMouthTarget(value);
       }
+      
       fallbackFlapRafRef.current = requestAnimationFrame(loop);
     };
+    
     fallbackFlapRafRef.current = requestAnimationFrame(loop);
-  }, [setMouthTarget, stopFallbackFlap]);
+  }, [setMouthTarget, resetMouth, stopFallbackFlap]);
 
   // Handle voice state changes for mouth target management
   useEffect(() => {
@@ -170,18 +177,24 @@ export const useVoiceInteraction = (options: UseVoiceInteractionOptions = {}) =>
       // Begin fallback flapping in case analyser isn't feeding us
       startFallbackFlap();
     } else {
-      console.log('🎤 Stopping speaking mode - cleaning up');
-      // When not speaking, reset mouth and clear EMA state
+      console.log('🎤 Not speaking - stopping all mouth animations');
+      // When not speaking, stop everything and reset
+      stopFallbackFlap();
       resetMouth();
+      setMouthTarget(0);
       emaAccumulatorRef.current = 0;
       lastTargetRef.current = 0;
-      stopFallbackFlap();
       
       if (process.env.NODE_ENV === 'development') {
-        console.log('🔄 Voice state changed, resetting mouth and EMA state');
+        console.log('🔄 Voice state changed to non-speaking, stopped all animations');
       }
     }
-  }, [voiceState, resetMouth, startFallbackFlap, stopFallbackFlap]);
+    
+    // Cleanup on unmount
+    return () => {
+      stopFallbackFlap();
+    };
+  }, [voiceState, resetMouth, setMouthTarget, startFallbackFlap, stopFallbackFlap]);
 
   // Enhanced speech intensity handler with mouth target updates
   const handleSpeechIntensity = useCallback((rawIntensity: number) => {
