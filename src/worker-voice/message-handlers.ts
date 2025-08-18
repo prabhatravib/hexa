@@ -9,6 +9,7 @@ export interface Env {
 export class MessageHandlers {
   private openaiConnection: any;
   private broadcastToClients: (message: any) => void;
+  private isAgentResponding: boolean = false;
 
   constructor(openaiConnection: any, broadcastToClients: (message: any) => void) {
     this.openaiConnection = openaiConnection;
@@ -180,6 +181,14 @@ export class MessageHandlers {
           break;
           
         case 'response.audio_transcript.delta':
+          // Send agent_start on first text delta to trigger mouth animation
+          if (!this.isAgentResponding) {
+            this.isAgentResponding = true;
+            this.broadcastToClients({
+              type: 'agent_start'
+            });
+          }
+          
           this.broadcastToClients({
             type: 'response_text_delta',
             text: message.delta
@@ -187,6 +196,14 @@ export class MessageHandlers {
           break;
           
         case 'response.audio.delta':
+          // Send agent_start on first audio delta to trigger mouth animation
+          if (!this.isAgentResponding) {
+            this.isAgentResponding = true;
+            this.broadcastToClients({
+              type: 'agent_start'
+            });
+          }
+          
           this.broadcastToClients({
             type: 'audio_delta',
             audio: message.delta
@@ -194,6 +211,14 @@ export class MessageHandlers {
           break;
           
         case 'response.audio.done':
+          // Send agent_end when audio is done to stop mouth animation
+          if (this.isAgentResponding) {
+            this.isAgentResponding = false;
+            this.broadcastToClients({
+              type: 'agent_end'
+            });
+          }
+          
           this.broadcastToClients({
             type: 'audio_done'
           });
@@ -201,6 +226,14 @@ export class MessageHandlers {
           
         case 'error':
           console.error('OpenAI error:', message.error);
+          // Reset agent state on error
+          if (this.isAgentResponding) {
+            this.isAgentResponding = false;
+            this.broadcastToClients({
+              type: 'agent_end'
+            });
+          }
+          
           this.broadcastToClients({
             type: 'error',
             error: {
