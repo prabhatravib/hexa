@@ -76,12 +76,12 @@ export const COLORS = {
 
 // SVG Path definitions for mouth expressions - SMILE curves
 export const MOUTH_PATHS = {
-  HAPPY: 'M 82 108 Q 100 128 118 108',      // Smile: control point Y=128 (below endpoints)
-  EXCITED: 'M 80 108 Q 100 132 120 108',    // Big smile: control point Y=132
-  NEUTRAL: 'M 85 115 L 115 115',            // Straight line (no change needed)
-  CURIOUS: 'M 82 108 Q 100 125 118 108',    // Slight smile: control point Y=125
-  THINKING: 'M 88 115 Q 100 118 112 115',   // Very slight smile: control point Y=118
-  SPEAKING: 'M 85 108 Q 100 125 115 108',   // Speaking smile: control point Y=125
+  HAPPY: 'M 80 118 Q 100 133 120 118',      // Smile: control point Y=133 (15 units below endpoints) - width 40, Y=118 to match active state
+  EXCITED: 'M 78 118 Q 100 137 122 118',    // Big smile: control point Y=137 - width 44, Y=118 to match active state
+  NEUTRAL: 'M 80 118 L 120 118',            // Straight line - width 40, Y=118 to match active state
+  CURIOUS: 'M 80 118 Q 100 130 120 118',    // Slight smile: control point Y=130 (12 units below endpoints) - width 40, Y=118 to match active state
+  THINKING: 'M 82 118 Q 100 121 118 118',   // Very slight smile: control point Y=121 (3 units below endpoints) - width 36, Y=118 to match active state
+  SPEAKING: 'M 80 118 Q 100 135 120 118',   // Speaking smile: control point Y=135 (17 units below endpoints) - width 40, Y=118 to match active state
 };
 
 // Animation keyframes for complex animations
