@@ -2,11 +2,10 @@ import React, { useEffect, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useAnimationStore } from '@/store/animationStore';
 import { useAnimationState, useAnimationSequence } from '@/hooks/useAnimationState';
-import { useVoiceInteraction } from '@/hooks/useVoiceInteraction';
+import { useVoiceStatus } from '@/hooks/useVoiceStatus';
 import { AnimatedMouth } from './AnimatedMouth';
 import { DevPanel } from './DevPanel';
 import { TIMING, EASING, SCALE, ROTATION, OPACITY, KEYFRAMES } from '@/animations/constants';
-import { Mic, MicOff, Volume2, AlertCircle, Loader2 } from 'lucide-react';
 
 interface AnimatedHexagonProps {
   size?: number;
