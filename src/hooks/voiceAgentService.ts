@@ -277,6 +277,26 @@ ${getLanguageInstructions()}`
              audioEl.play().catch((error: any) => {
                console.warn('⚠️ Failed to autoplay audio:', error);
              });
+             
+             // Monitor the track for when it ends
+             event.track.addEventListener('ended', () => {
+               console.log('🔇 Audio track ended - stopping speech and mouth animation');
+               audioPlaying = false;
+               analysisStarted = false;
+               isCurrentlySpeaking = false;
+               if (setSpeechIntensity) setSpeechIntensity(0);
+               if (stopSpeaking) {
+                 stopSpeaking();
+               } else {
+                 setVoiceState('idle');
+               }
+               (window as any).__currentVoiceState = 'idle';
+             });
+             
+             // Also monitor track state changes
+             event.track.addEventListener('ended', () => {
+               console.log('🔇 Audio track ended event fired');
+             });
            }
         });
         

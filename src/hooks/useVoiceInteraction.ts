@@ -127,7 +127,8 @@ export const useVoiceInteraction = (options: UseVoiceInteractionOptions = {}) =>
     console.log('🎯 Starting fallback flap animation');
     
     let frameCount = 0;
-    const maxFrames = 1800; // Back to 30 seconds max (at 60fps) since we're not checking audio element
+    const maxFrames = 300; // Reduced to 5 seconds max for faster response
+    let lastAudioCheckTime = Date.now();
     
     const loop = () => {
       frameCount++;
@@ -135,16 +136,30 @@ export const useVoiceInteraction = (options: UseVoiceInteractionOptions = {}) =>
       // Check current state from store directly - this is the authoritative source
       const currentState = useAnimationStore.getState().voiceState;
       
-      // Stop conditions - ONLY check voice state and frame count
-      if (currentState !== 'speaking' || frameCount > maxFrames) {
-        console.log(`🎯 Stopping fallback flap: state=${currentState}, frames=${frameCount}`);
+      // Additional check: monitor for audio stream changes that indicate audio ended
+      const audioEl = (window as any).__hexaAudioEl;
+      let audioStreamEnded = false;
+      
+      if (audioEl && audioEl.srcObject) {
+        const stream = audioEl.srcObject as MediaStream;
+        // Check if the audio track is still active
+        if (stream.getAudioTracks().length === 0 || 
+            stream.getAudioTracks().some(track => track.readyState === 'ended')) {
+          audioStreamEnded = true;
+          console.log('🔇 Audio stream ended detected');
+        }
+      }
+      
+      // Stop conditions - check voice state, frame count, and audio stream status
+      if (currentState !== 'speaking' || frameCount > maxFrames || audioStreamEnded) {
+        console.log(`🎯 Stopping fallback flap: state=${currentState}, frames=${frameCount}, audioStreamEnded=${audioStreamEnded}`);
         fallbackFlapRafRef.current = null;
         setMouthTarget(0);
         resetMouth();
         
-        // Force stop speaking only if we hit max frames
-        if (frameCount > maxFrames && currentState === 'speaking') {
-          console.log('🔇 Forcing stop speaking due to timeout');
+        // Force stop speaking if we hit max frames or audio stream ended
+        if ((frameCount > maxFrames || audioStreamEnded) && currentState === 'speaking') {
+          console.log('🔇 Forcing stop speaking due to timeout or audio stream end');
           useAnimationStore.getState().stopSpeaking();
         }
         return;
@@ -159,6 +174,15 @@ export const useVoiceInteraction = (options: UseVoiceInteractionOptions = {}) =>
         const value = base + Math.max(0, Math.sin(t * 6.0)) * amp;
         console.log(`🎯 Fallback flap setting mouth target: ${value.toFixed(3)}`);
         setMouthTarget(value);
+      }
+      
+      // Check audio stream status every 100ms for faster response
+      const now = Date.now();
+      if (now - lastAudioCheckTime > 100) {
+        lastAudioCheckTime = now;
+        if (audioStreamEnded) {
+          console.log('⚠️ Audio stream ended, will stop fallback flap');
+        }
       }
       
       fallbackFlapRafRef.current = requestAnimationFrame(loop);
