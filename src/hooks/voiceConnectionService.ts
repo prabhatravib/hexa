@@ -1,4 +1,4 @@
-import { useCallback } from 'react';
+import { useCallback, useRef } from 'react';
 
 type VoiceState = 'idle' | 'listening' | 'thinking' | 'speaking' | 'error';
 
@@ -30,6 +30,26 @@ export const useVoiceConnectionService = ({
   setSpeechIntensity
 }: VoiceConnectionServiceOptions) => {
   
+  // Synthetic flapping loop to guarantee mouth motion when speaking events arrive
+  const flapRafRef = useRef<number | null>(null);
+  const startSyntheticFlap = () => {
+    if (flapRafRef.current !== null) return;
+    const loop = () => {
+      // Simple on/off flap between 0.35 and ~0.60 openness
+      const t = performance.now() / 1000;
+      const value = 0.35 + Math.max(0, Math.sin(t * 6.0)) * 0.25;
+      setSpeechIntensity?.(value);
+      flapRafRef.current = requestAnimationFrame(loop);
+    };
+    flapRafRef.current = requestAnimationFrame(loop);
+  };
+  const stopSyntheticFlap = () => {
+    if (flapRafRef.current !== null) {
+      cancelAnimationFrame(flapRafRef.current);
+      flapRafRef.current = null;
+    }
+  };
+
   // Connect using SSE for receiving messages
   const connect = useCallback(async () => {
     try {
@@ -85,6 +105,8 @@ export const useVoiceConnectionService = ({
               console.log('Audio delta received - voice is playing');
               setVoiceState('speaking');
               startSpeaking?.();
+              // Ensure visible mouth motion even if analyser isn’t available
+              startSyntheticFlap();
               break;
               
             case 'audio_done':
@@ -93,6 +115,7 @@ export const useVoiceConnectionService = ({
               setSpeechIntensity?.(0);
               stopSpeaking?.();
               setVoiceState('idle');
+              stopSyntheticFlap();
               break;
               
             case 'error':

@@ -143,40 +143,8 @@ export const AnimatedMouth: React.FC<AnimatedMouthProps> = ({
       target = base + Math.max(0, Math.sin(t * 6.0)) * amp;
     }
     const current = currentOpenness.get();
-    const delta = target - current;
-    
-    if (process.env.NODE_ENV === 'development' && Math.random() < 0.01) { // Log 1% of frames to avoid spam
-      console.log(`🔄 Animation Frame: target=${target.toFixed(3)}, current=${current.toFixed(3)}, delta=${delta.toFixed(3)}`);
-    }
-    
-    // Determine direction for spring tuning
-    const direction: 'opening' | 'closing' = delta > 0 ? 'opening' : 'closing';
-    
-    // Adjust spring parameters based on direction (fast open, slower close)
-    if (direction !== lastDirectionRef.current) {
-      lastDirectionRef.current = direction;
-      
-      // Recreate spring with new parameters for direction changes
-      if (direction === 'opening') {
-        // Fast opening: higher stiffness, lower damping
-        springOpenness.set(springOpenness.get());
-        // Note: In a real implementation, we'd need to recreate the spring
-        // For now, we'll use the default spring behavior
-      } else {
-        // Slower closing: lower stiffness, higher damping
-        springOpenness.set(springOpenness.get());
-        // Note: In a real implementation, we'd need to recreate the spring
-        // For now, we'll use the default spring behavior
-      }
-    }
-    
-    // Update target with velocity capping to prevent jitter
-    const maxVelocity = 0.05; // Cap max velocity
-    const clampedDelta = Math.max(-maxVelocity, Math.min(maxVelocity, delta));
-    
-    if (Math.abs(clampedDelta) > 0.001) {
-      currentOpenness.set(current + clampedDelta);
-    }
+    // Drive openness directly for clear, visible motion
+    currentOpenness.set(target);
     
     // Add micro-motion when not speaking (subtle breathing)
     const isCurrentlySpeaking = voiceState === 'speaking';

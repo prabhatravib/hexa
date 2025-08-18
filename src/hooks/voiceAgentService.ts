@@ -36,10 +36,11 @@ export const useVoiceAgentService = ({ setVoiceState, onError, startSpeaking, st
 ${getLanguageInstructions()}`
       });
 
-      // Create a dedicated audio element for the Realtime session
+      // Create a dedicated audio element for the Realtime session and expose it globally for debugging
       const audioEl = new Audio();
       audioEl.autoplay = true;
       let analysisStarted = false; // guard so analyser is wired only once
+      (window as any).__hexaAudioEl = audioEl;
 
       // Helper to start analyser using either a MediaStreamSource or MediaElementSource
       const startAnalysisWithNodes = async (
