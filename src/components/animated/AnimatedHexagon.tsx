@@ -28,6 +28,9 @@ export const AnimatedHexagon: React.FC<AnimatedHexagonProps> = ({
     handleClick,
     voiceState,
     isVoiceActive,
+    initializationState,
+    initializationProgress,
+    isReadyForInteraction,
   } = useAnimationStore();
 
   // Use the enhanced animation hooks
@@ -68,6 +71,13 @@ export const AnimatedHexagon: React.FC<AnimatedHexagonProps> = ({
   // Handle voice toggle - now the entire hexagon is the voice interface
   const handleVoiceToggle = (e: React.MouseEvent) => {
     e.stopPropagation(); // Prevent triggering the main click handler
+    
+    // Prevent interaction until system is ready
+    if (initializationState !== 'ready') {
+      console.log('⚠️ Voice interaction blocked - system not ready');
+      return;
+    }
+    
     if (isRecording) {
       stopRecording();
     } else {
@@ -77,6 +87,10 @@ export const AnimatedHexagon: React.FC<AnimatedHexagonProps> = ({
 
   // Get voice status icon for the center of the hexagon
   const getVoiceStatusIcon = () => {
+    if (initializationState !== 'ready') {
+      return <Loader2 className="w-6 h-6 animate-spin" />;
+    }
+    
     if (!isConnected) {
       return <MicOff className="w-6 h-6" />;
     }
@@ -97,6 +111,10 @@ export const AnimatedHexagon: React.FC<AnimatedHexagonProps> = ({
 
   // Get voice status color
   const getVoiceStatusColor = () => {
+    if (initializationState !== 'ready') {
+      return 'text-blue-500';
+    }
+    
     if (!isConnected) return 'text-gray-400';
     
     switch (voiceState) {
@@ -178,6 +196,51 @@ export const AnimatedHexagon: React.FC<AnimatedHexagonProps> = ({
       {/* Dev Panel */}
       <DevPanel isVisible={showDevPanel} />
       
+      {/* Loading overlay during initialization */}
+      <AnimatePresence>
+        {initializationState !== 'ready' && (
+          <motion.div
+            className="absolute inset-0 bg-black/20 backdrop-blur-sm rounded-full z-20 flex items-center justify-center"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+          >
+            <div className="text-center">
+              {initializationState === 'initializing' && (
+                <div className="flex flex-col items-center space-y-2">
+                  <Loader2 className="w-8 h-8 animate-spin text-green-500" />
+                  <span className="text-sm text-white font-medium">Initializing...</span>
+                </div>
+              )}
+              
+              {initializationState === 'connecting' && (
+                <div className="flex flex-col items-center space-y-2">
+                  <Loader2 className="w-8 h-8 animate-spin text-blue-500" />
+                  <span className="text-sm text-white font-medium">Connecting...</span>
+                  <div className="w-24 h-2 bg-gray-700 rounded-full overflow-hidden">
+                    <motion.div
+                      className="h-full bg-blue-500 rounded-full"
+                      initial={{ width: 0 }}
+                      animate={{ width: `${initializationProgress}%` }}
+                      transition={{ duration: 0.3 }}
+                    />
+                  </div>
+                  <span className="text-xs text-gray-300">{initializationProgress}%</span>
+                </div>
+              )}
+              
+              {initializationState === 'error' && (
+                <div className="flex flex-col items-center space-y-2">
+                  <AlertCircle className="w-8 h-8 text-red-500" />
+                  <span className="text-sm text-white font-medium">Connection Failed</span>
+                  <span className="text-xs text-gray-300 text-center px-2">Please refresh the page to retry</span>
+                </div>
+              )}
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+      
       {/* Transcript display above hexagon */}
       <AnimatePresence>
         {transcript && (
@@ -214,15 +277,21 @@ export const AnimatedHexagon: React.FC<AnimatedHexagonProps> = ({
       </AnimatePresence>
 
       <motion.div 
-        className="inline-block cursor-pointer w-full h-full relative"
+        className={`inline-block w-full h-full relative ${
+          initializationState === 'ready' ? 'cursor-pointer' : 'cursor-not-allowed'
+        }`}
         variants={containerVariants}
         animate={animationState}
         initial="idle"
-        onMouseEnter={handleMouseEnter}
-        onMouseLeave={handleMouseLeave}
+        onMouseEnter={initializationState === 'ready' ? handleMouseEnter : undefined}
+        onMouseLeave={initializationState === 'ready' ? handleMouseLeave : undefined}
         onClick={handleVoiceToggle}
-        whileTap={{ scale: 0.95 }}
-        title={isConnected ? 'Click to toggle voice recording' : 'Voice service not connected'}
+        whileTap={initializationState === 'ready' ? { scale: 0.95 } : {}}
+        title={
+          initializationState === 'ready' 
+            ? (isConnected ? 'Click to toggle voice recording' : 'Voice service not connected')
+            : 'Voice system initializing...'
+        }
       >
         <svg 
           width="100%" 
@@ -272,6 +341,23 @@ export const AnimatedHexagon: React.FC<AnimatedHexagonProps> = ({
             strokeWidth={voiceState === 'listening' ? '2.5' : '1.5'}
             filter="url(#glow)"
             className={voiceState === 'listening' ? 'animate-pulse' : ''}
+            animate={
+              initializationState !== 'ready' 
+                ? { 
+                    scale: [1, 1.02, 1],
+                    opacity: [0.8, 1, 0.8]
+                  }
+                : {}
+            }
+            transition={
+              initializationState !== 'ready'
+                ? {
+                    duration: 2,
+                    repeat: Infinity,
+                    ease: "easeInOut"
+                  }
+                : {}
+            }
           />
           
           {/* Animated breathing effect rings */}
@@ -368,6 +454,24 @@ export const AnimatedHexagon: React.FC<AnimatedHexagonProps> = ({
               repeat: Infinity
             }}
           />
+        )}
+      </AnimatePresence>
+      
+      {/* Status text below hexagon */}
+      <AnimatePresence>
+        {initializationState !== 'ready' && (
+          <motion.div
+            className="absolute -bottom-8 left-1/2 transform -translate-x-1/2 text-center"
+            initial={{ opacity: 0, y: 10 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: 10 }}
+          >
+            <p className="text-sm text-gray-600 dark:text-gray-400 font-medium">
+              {initializationState === 'initializing' && 'Initializing voice system...'}
+              {initializationState === 'connecting' && 'Connecting to voice service...'}
+              {initializationState === 'error' && 'Connection failed'}
+            </p>
+          </motion.div>
         )}
       </AnimatePresence>
       

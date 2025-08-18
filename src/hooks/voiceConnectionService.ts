@@ -31,6 +31,8 @@ export const useVoiceConnectionService = ({
   setSpeechIntensity
 }: VoiceConnectionServiceOptions) => {
   
+  const { setInitializationState, setInitializationProgress } = useAnimationStore();
+  
   // Synthetic flapping loop to guarantee mouth motion when speaking events arrive
   const flapRafRef = useRef<number | null>(null);
   const startSyntheticFlap = () => {
@@ -54,11 +56,15 @@ export const useVoiceConnectionService = ({
   // Connect using SSE for receiving messages
   const connect = useCallback(async () => {
     try {
+      setInitializationState('connecting');
+      setInitializationProgress(10);
+      
       // Use SSE for receiving messages (real-time updates)
       const eventSource = new EventSource(`${window.location.origin}/voice/sse`);
       
       eventSource.onopen = () => {
         console.log('Voice SSE connected successfully');
+        setInitializationProgress(30);
         
         // Initialize OpenAI Agent immediately after SSE connection
         // We'll get the API key from the worker
@@ -74,23 +80,31 @@ export const useVoiceConnectionService = ({
           switch (data.type) {
             case 'connected':
               console.log('SSE connection established');
+              setInitializationProgress(40);
               break;
               
             case 'ready':
               console.log('Voice session ready:', data.sessionId);
+              setInitializationProgress(60);
               break;
               
             case 'session_info':
               console.log('Session info received, updating OpenAI Agent...');
+              setInitializationProgress(80);
               setSessionInfo(data);
               // Update the agent with new session info if needed
               if (openaiAgentRef.current) {
                 console.log('✅ OpenAI Agent already initialized, session info updated');
+                setInitializationProgress(100);
+                setInitializationState('ready');
               } else {
                 // Initialize with real session info
                 const session = await initializeOpenAIAgent(data);
                 if (session) {
                   openaiAgentRef.current = session;
+                  setInitializationProgress(100);
+                  setInitializationState('ready');
+                  console.log('✅ OpenAI Agent initialized successfully');
                 }
               }
               break;
@@ -135,6 +149,7 @@ export const useVoiceConnectionService = ({
               console.error('Voice error received:', data);
               console.error('Error details:', data.error);
               setVoiceState('error');
+              setInitializationState('error');
               onError?.(data.error?.message || data.error || 'Unknown error');
               break;
               
@@ -144,6 +159,7 @@ export const useVoiceConnectionService = ({
         } catch (parseError) {
           console.error('Failed to parse SSE message:', parseError, 'Raw data:', event.data);
           setVoiceState('error');
+          setInitializationState('error');
           onError?.('Failed to process voice message. Please try again.');
         }
       };
@@ -151,6 +167,7 @@ export const useVoiceConnectionService = ({
       eventSource.onerror = (error) => {
         console.error('SSE error:', error);
         setVoiceState('error');
+        setInitializationState('error');
         onError?.('Voice service connection failed. Please check your internet connection.');
       };
       

@@ -39,7 +39,8 @@ export const useVoiceInteraction = (options: UseVoiceInteractionOptions = {}) =>
     startListening,
     stopListening,
     startSpeaking,
-    stopSpeaking
+    stopSpeaking,
+    setInitializationState,
   } = useVoiceAnimation();
 
 
@@ -106,6 +107,7 @@ export const useVoiceInteraction = (options: UseVoiceInteractionOptions = {}) =>
   // Connect using SSE for receiving messages
   const connect = useCallback(async () => {
     try {
+      setInitializationState('connecting');
       const eventSource = await connectToVoice();
       if (eventSource) {
         setIsConnected(true);
@@ -116,9 +118,10 @@ export const useVoiceInteraction = (options: UseVoiceInteractionOptions = {}) =>
     } catch (error) {
       console.error('Failed to connect:', error);
       setVoiceState('error');
+      setInitializationState('error');
       onError?.('Failed to initialize voice service');
     }
-  }, [connectToVoice, setVoiceState, onError]);
+  }, [connectToVoice, setVoiceState, onError, setInitializationState]);
   
   // Start recording
   const startRecording = useCallback(async () => {
@@ -184,6 +187,7 @@ export const useVoiceInteraction = (options: UseVoiceInteractionOptions = {}) =>
   // Clean up
   useEffect(() => {
     if (autoStart) {
+      setInitializationState('initializing');
       connect();
     }
     

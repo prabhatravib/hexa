@@ -4,6 +4,7 @@ import { TIMING, getRandomBlinkDelay } from '@/animations/constants';
 export type AnimationState = 'idle' | 'hover' | 'active';
 export type ExpressionState = 'happy' | 'neutral' | 'curious' | 'excited';
 export type VoiceState = 'idle' | 'listening' | 'thinking' | 'speaking' | 'error';
+export type InitializationState = 'initializing' | 'connecting' | 'ready' | 'error';
 
 interface AnimationStore {
   // Current states
@@ -17,6 +18,10 @@ interface AnimationStore {
   isVoiceActive: boolean;
   isSpeaking: boolean;
   speechIntensity: number; // 0-1 for mouth animation
+  
+  // Initialization state
+  initializationState: InitializationState;
+  initializationProgress: number; // 0-100
   
   /**
    * Target mouth openness value for animation.
@@ -39,6 +44,10 @@ interface AnimationStore {
   setVoiceActive: (active: boolean) => void;
   setSpeaking: (speaking: boolean) => void;
   setSpeechIntensity: (intensity: number) => void;
+  
+  // Initialization state setters
+  setInitializationState: (state: InitializationState) => void;
+  setInitializationProgress: (progress: number) => void;
   
   /**
    * Sets the target mouth openness value.
@@ -63,6 +72,9 @@ interface AnimationStore {
   startSpeaking: () => void;
   stopSpeaking: () => void;
   
+  // Utility functions
+  isReadyForInteraction: () => boolean;
+  
   // Interaction handlers
   handleMouseEnter: () => void;
   handleMouseLeave: () => void;
@@ -82,6 +94,10 @@ export const useAnimationStore = create<AnimationStore>((set, get) => ({
   isSpeaking: false,
   speechIntensity: 0,
   
+  // Initialization state
+  initializationState: 'initializing',
+  initializationProgress: 0,
+  
   // Mouth animation target
   mouthOpennessTarget: 0,
   
@@ -100,6 +116,10 @@ export const useAnimationStore = create<AnimationStore>((set, get) => ({
   setVoiceActive: (active) => set({ isVoiceActive: active }),
   setSpeaking: (speaking) => set({ isSpeaking: speaking }),
   setSpeechIntensity: (intensity) => set({ speechIntensity: intensity }),
+  
+  // Initialization state setters
+  setInitializationState: (state) => set({ initializationState: state }),
+  setInitializationProgress: (progress) => set({ initializationProgress: Math.max(0, Math.min(100, progress)) }),
   
   // Mouth target setters
   setMouthTarget: (value) => {
@@ -201,6 +221,11 @@ export const useAnimationStore = create<AnimationStore>((set, get) => ({
     (window as any).__currentVoiceState = 'idle';
     
     console.log('🔇 Voice state set to idle - mouth animation stopped');
+  },
+  
+  // Utility functions
+  isReadyForInteraction: () => {
+    return get().voiceState === 'idle' && get().isSpeaking === false;
   },
   
   // Interaction handlers

@@ -13,7 +13,8 @@ export const useVoiceAnimation = () => {
     startListening,
     stopListening,
     startSpeaking,
-    stopSpeaking
+    stopSpeaking,
+    setInitializationState,
   } = useAnimationStore();
 
   // Shared AudioContext for all analysis and playback; resumed on user gesture
@@ -207,6 +208,7 @@ export const useVoiceAnimation = () => {
     startListening,
     stopListening,
     startSpeaking,
-    stopSpeaking
+    stopSpeaking,
+    setInitializationState,
   };
 };
