@@ -189,20 +189,13 @@ export const AnimatedHexagon: React.FC<AnimatedHexagonProps> = ({
   };
 
   return (
-    <div className={`hexagon-interface relative inline-block ${className}`} style={{ width: size, height: size }}>
+    <div className={`hexagon-interface relative inline-block ${className}`} style={{ width: size * 1.3, height: size }}>
       {/* SVG Definitions for Rounded Hexagon */}
       <svg className="hexagon-svg-defs">
         <defs>
-          {/* Rounded-corner hexagon in object-bounding-box coords (0-1) */}
+          {/* Simple circular clip-path to encompass the entire hexagon */}
           <clipPath id="roundedHex" clipPathUnits="objectBoundingBox">
-            {/* r controls corner roundness; keep it the same on all 6 nodes */}
-            <path d="
-              M 0.50 0.00
-              L 0.85 0.18   Q 0.92 0.22 0.92 0.25
-              L 0.92 0.75   Q 0.92 0.78 0.85 0.82
-              L 0.50 1.00
-              L 0.15 0.82   Q 0.08 0.78 0.08 0.75
-              L 0.08 0.25   Q 0.08 0.22 0.15 0.18 Z" />
+            <circle cx="0.5" cy="0.5" r="0.5" />
           </clipPath>
         </defs>
       </svg>
@@ -291,9 +284,14 @@ export const AnimatedHexagon: React.FC<AnimatedHexagonProps> = ({
       </AnimatePresence>
 
       <motion.div 
-        className={`rounded-hexagon-clip inline-block w-full h-full relative ${
+        className={`inline-block w-full h-full relative ${
           initializationState === 'ready' ? 'cursor-pointer' : 'cursor-not-allowed'
         } ${isVoiceActive ? 'voice-active' : ''} ${initializationState !== 'ready' ? 'loading' : ''}`}
+        style={{ 
+          width: size,
+          height: size,
+          margin: '0 auto'
+        }}
         variants={containerVariants}
         animate={animationState}
         initial="idle"
@@ -336,7 +334,7 @@ export const AnimatedHexagon: React.FC<AnimatedHexagonProps> = ({
             </filter>
           </defs>
           
-          {/* Animated glow background */}
+          {/* Animated glow background - keeping circular for outer effects */}
           <motion.circle 
             cx="100" 
             cy="100" 
@@ -347,14 +345,14 @@ export const AnimatedHexagon: React.FC<AnimatedHexagonProps> = ({
             className={voiceState === 'listening' ? 'animate-pulse' : ''}
           />
           
-          {/* Main hexagon with rounded corners using improved SVG path */}
+          {/* Main hexagon with rounded corners - only this shape changes */}
           <motion.path 
             d="M 100 20 
-               L 180 60 Q 190 65 190 70
-               L 190 130 Q 190 135 180 140
+               L 170 60 Q 184 66 184 70
+               L 184 130 Q 184 134 170 140
                L 100 180
-               L 20 140 Q 10 135 10 130
-               L 10 70 Q 10 65 20 60 Z" 
+               L 30 140 Q 16 134 16 130
+               L 16 70 Q 16 66 30 60 Z" 
             fill="url(#hexagonGradient)" 
             stroke={voiceState === 'listening' ? '#10b981' : '#059669'}
             strokeWidth={voiceState === 'listening' ? '2.5' : '1.5'}
@@ -379,7 +377,7 @@ export const AnimatedHexagon: React.FC<AnimatedHexagonProps> = ({
             }
           />
           
-          {/* Animated breathing effect rings */}
+          {/* Animated breathing effect rings - keeping circular */}
           <AnimatePresence>
             {isPulsing && (
               <motion.circle
@@ -458,7 +456,7 @@ export const AnimatedHexagon: React.FC<AnimatedHexagonProps> = ({
         )}
       </motion.div>
 
-      {/* Voice active pulse ring around the entire hexagon */}
+      {/* Voice active pulse ring around the entire hexagon - keeping circular */}
       <AnimatePresence>
         {isVoiceActive && (
           <motion.div
