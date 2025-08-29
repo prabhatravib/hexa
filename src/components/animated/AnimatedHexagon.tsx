@@ -7,6 +7,7 @@ import { AnimatedMouth } from './AnimatedMouth';
 import { DevPanel } from './DevPanel';
 import { TIMING, EASING, SCALE, ROTATION, OPACITY, KEYFRAMES } from '@/animations/constants';
 import { Mic, MicOff, Volume2, AlertCircle, Loader2 } from 'lucide-react';
+import './hexagon.css';
 
 interface AnimatedHexagonProps {
   size?: number;
@@ -66,8 +67,6 @@ export const AnimatedHexagon: React.FC<AnimatedHexagonProps> = ({
     return () => stopIdleAnimation();
   }, []);
 
-  const hexagonPoints = "100,20 180,60 180,140 100,180 20,140 20,60";
-  
   // Handle voice toggle - now the entire hexagon is the voice interface
   const handleVoiceToggle = (e: React.MouseEvent) => {
     e.stopPropagation(); // Prevent triggering the main click handler
@@ -130,8 +129,6 @@ export const AnimatedHexagon: React.FC<AnimatedHexagonProps> = ({
         return 'text-green-400';
     }
   };
-  
-
 
   // Animation variants using constants
   const containerVariants = {
@@ -192,7 +189,24 @@ export const AnimatedHexagon: React.FC<AnimatedHexagonProps> = ({
   };
 
   return (
-    <div className={`relative inline-block ${className}`} style={{ width: size, height: size }}>
+    <div className={`hexagon-interface relative inline-block ${className}`} style={{ width: size, height: size }}>
+      {/* SVG Definitions for Rounded Hexagon */}
+      <svg className="hexagon-svg-defs">
+        <defs>
+          {/* Rounded-corner hexagon in object-bounding-box coords (0-1) */}
+          <clipPath id="roundedHex" clipPathUnits="objectBoundingBox">
+            {/* r controls corner roundness; keep it the same on all 6 nodes */}
+            <path d="
+              M 0.50 0.00
+              L 0.85 0.18   Q 0.92 0.22 0.92 0.25
+              L 0.92 0.75   Q 0.92 0.78 0.85 0.82
+              L 0.50 1.00
+              L 0.15 0.82   Q 0.08 0.78 0.08 0.75
+              L 0.08 0.25   Q 0.08 0.22 0.15 0.18 Z" />
+          </clipPath>
+        </defs>
+      </svg>
+
       {/* Dev Panel */}
       <DevPanel isVisible={showDevPanel} />
       
@@ -277,9 +291,9 @@ export const AnimatedHexagon: React.FC<AnimatedHexagonProps> = ({
       </AnimatePresence>
 
       <motion.div 
-        className={`inline-block w-full h-full relative ${
+        className={`rounded-hexagon-clip inline-block w-full h-full relative ${
           initializationState === 'ready' ? 'cursor-pointer' : 'cursor-not-allowed'
-        }`}
+        } ${isVoiceActive ? 'voice-active' : ''} ${initializationState !== 'ready' ? 'loading' : ''}`}
         variants={containerVariants}
         animate={animationState}
         initial="idle"
@@ -333,9 +347,14 @@ export const AnimatedHexagon: React.FC<AnimatedHexagonProps> = ({
             className={voiceState === 'listening' ? 'animate-pulse' : ''}
           />
           
-          {/* Main hexagon */}
-          <motion.polygon 
-            points={hexagonPoints} 
+          {/* Main hexagon with rounded corners using improved SVG path */}
+          <motion.path 
+            d="M 100 20 
+               L 180 60 Q 190 65 190 70
+               L 190 130 Q 190 135 180 140
+               L 100 180
+               L 20 140 Q 10 135 10 130
+               L 10 70 Q 10 65 20 60 Z" 
             fill="url(#hexagonGradient)" 
             stroke={voiceState === 'listening' ? '#10b981' : '#059669'}
             strokeWidth={voiceState === 'listening' ? '2.5' : '1.5'}

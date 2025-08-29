@@ -1,0 +1,59 @@
+/* Hexagon Interface with Rounded Edges */
+.hexagon-interface {
+  position: relative;
+  display: inline-block;
+  clip-path: url(#roundedHex);
+  -webkit-clip-path: url(#roundedHex);
+}
+
+/* SVG Definitions for Rounded Hexagon */
+.hexagon-svg-defs {
+  position: absolute;
+  width: 0;
+  height: 0;
+}
+
+/* Rounded corner hexagon clip-path */
+.rounded-hexagon-clip {
+  clip-path: url(#roundedHex);
+  -webkit-clip-path: url(#roundedHex);
+}
+
+/* Alternative CSS-only rounded hexagon using polygon with border-radius */
+.hexagon-rounded-css {
+  width: 200px;
+  height: 200px;
+  background: linear-gradient(135deg, #a7f3d0 0%, #6ee7b7 30%, #34d399 70%, #059669 100%);
+  clip-path: polygon(50% 0%, 85% 18%, 92% 25%, 92% 75%, 85% 82%, 50% 100%, 15% 82%, 8% 75%, 8% 25%, 15% 18%);
+  -webkit-clip-path: polygon(50% 0%, 85% 18%, 92% 25%, 92% 75%, 85% 82%, 50% 100%, 15% 82%, 8% 75%, 8% 25%, 15% 18%);
+}
+
+/* Hover effects for rounded hexagon */
+.hexagon-interface:hover {
+  transform: scale(1.05);
+  transition: transform 0.3s ease;
+}
+
+/* Voice active state styling */
+.hexagon-interface.voice-active {
+  box-shadow: 0 0 20px rgba(16, 185, 129, 0.6);
+}
+
+/* Loading state styling */
+.hexagon-interface.loading {
+  opacity: 0.8;
+  filter: blur(1px);
+}
+
+/* Responsive sizing */
+@media (max-width: 768px) {
+  .hexagon-interface {
+    transform: scale(0.8);
+  }
+}
+
+@media (max-width: 480px) {
+  .hexagon-interface {
+    transform: scale(0.6);
+  }
+}
