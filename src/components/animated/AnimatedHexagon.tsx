@@ -347,12 +347,20 @@ export const AnimatedHexagon: React.FC<AnimatedHexagonProps> = ({
           
           {/* Main hexagon with rounded corners - only this shape changes */}
           <motion.path 
-            d="M 100 20 
-               L 170 60 Q 180 65 180 70
-               L 180 130 Q 180 135 170 140
-               L 100 180
-               L 30 140 Q 20 135 20 130
-               L 20 70 Q 20 65 30 60 Z" 
+            d="M 100 22
+               Q 100 20 102 21
+               L 168 58
+               Q 180 64 180 70
+               L 180 130
+               Q 180 136 168 142
+               L 102 179
+               Q 100 180 98 179
+               L 32 142
+               Q 20 136 20 130
+               L 20 70
+               Q 20 64 32 58
+               L 98 21
+               Q 100 20 100 22 Z"
             fill="url(#hexagonGradient)" 
             stroke={voiceState === 'listening' ? '#10b981' : '#059669'}
             strokeWidth={voiceState === 'listening' ? '2.5' : '1.5'}
