@@ -347,10 +347,10 @@ export const AnimatedHexagon: React.FC<AnimatedHexagonProps> = ({
           
           {/* Main hexagon with rounded corners - only this shape changes */}
           <motion.path 
-            d="M 100 20 
+            d="M 100 20 Q 100 15 100 10 Q 100 15 100 20
                L 170 60 Q 184 66 184 70
                L 184 130 Q 184 134 170 140
-               L 100 180
+               L 100 180 Q 100 185 100 190 Q 100 185 100 180
                L 30 140 Q 16 134 16 130
                L 16 70 Q 16 66 30 60 Z" 
             fill="url(#hexagonGradient)" 
