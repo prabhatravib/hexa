@@ -1,7 +1,5 @@
-import { useCallback, useRef } from 'react';
-import { useAnimationStore } from '../store/animationStore';
-
-type VoiceState = 'idle' | 'listening' | 'thinking' | 'speaking' | 'error';
+import { useCallback, useRef, useState } from 'react';
+import { useAnimationStore, VoiceState } from '../store/animationStore';
 
 interface VoiceConnectionServiceOptions {
   setVoiceState: (state: VoiceState) => void;
@@ -151,6 +149,23 @@ export const useVoiceConnectionService = ({
               setVoiceState('error');
               setInitializationState('error');
               onError?.(data.error?.message || data.error || 'Unknown error');
+              break;
+              
+            case 'worker_restarting':
+              console.log('🔄 Worker is restarting:', data.message);
+              setVoiceState('retrying');
+              setInitializationState('connecting');
+              setInitializationProgress(20);
+              // Don't show error - this is expected behavior
+              break;
+              
+            case 'worker_restarted':
+              console.log('✅ Worker restart complete:', data.message);
+              setInitializationProgress(50);
+              // Reinitialize the connection with the new session
+              setTimeout(() => {
+                initializeOpenAIAgentFromWorker();
+              }, 1000);
               break;
               
             default:

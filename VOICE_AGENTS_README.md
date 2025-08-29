@@ -19,7 +19,7 @@ This repository now includes a comprehensive voice agent system built with OpenA
 ## 🏗️ Architecture
 
 ### Speech-to-Speech (Realtime) Architecture
-The system uses OpenAI's multimodal speech-to-speech architecture with the `gpt-4o-realtime-preview` model, which:
+The system uses OpenAI's multimodal speech-to-speech architecture with the `gpt-realtime` model, which:
 - Processes audio inputs and outputs directly
 - Handles speech in real-time
 - Understands emotion and intent

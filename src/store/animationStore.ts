@@ -3,7 +3,7 @@ import { TIMING, getRandomBlinkDelay } from '@/animations/constants';
 
 export type AnimationState = 'idle' | 'hover' | 'active';
 export type ExpressionState = 'happy' | 'neutral' | 'curious' | 'excited';
-export type VoiceState = 'idle' | 'listening' | 'thinking' | 'speaking' | 'error';
+export type VoiceState = 'idle' | 'listening' | 'thinking' | 'speaking' | 'error' | 'retrying';
 export type InitializationState = 'initializing' | 'connecting' | 'ready' | 'error';
 
 interface AnimationStore {

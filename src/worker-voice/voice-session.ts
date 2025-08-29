@@ -6,19 +6,21 @@ import { OpenAIConnection } from './openai-connection';
 
 export interface Env {
   OPENAI_API_KEY: string;
+  OPENAI_VOICE_MODEL: string;
   VOICE_SESSION: DurableObjectNamespace;
   ASSETS: Fetcher;
 }
 
 export class VoiceSession {
+  private sessionId: string;
+  private clients: Set<any> = new Set();
   private openaiConnection: OpenAIConnection;
   private messageHandlers: MessageHandlers;
   private agentManager: AgentManager;
-  private clients: Set<any> = new Set();
-  private sessionId: string;
   private isActive: boolean = true;
+  private autoRestartInterval: number | null = null;
 
-  constructor(private state: DurableObjectState, env: Env) {
+  constructor(private state: DurableObjectState, private env: Env) {
     this.sessionId = crypto.randomUUID();
     
     this.openaiConnection = new OpenAIConnection(
@@ -39,12 +41,60 @@ export class VoiceSession {
       (message: any) => this.broadcastToClients(message)
     );
 
+    // Auto-restart worker every 30 minutes to prevent stale connections
+    this.startAutoRestart();
+
     // Add cleanup on worker restart
     this.state.blockConcurrencyWhile(async () => {
       await this.cleanupStaleSessions();
     });
 
     console.log('🔧 VoiceSession initialized, OpenAI connection will be established when needed');
+  }
+
+  private startAutoRestart(): void {
+    // Restart every 30 minutes (30 * 60 * 1000 ms)
+    this.autoRestartInterval = setInterval(() => {
+      console.log('🔄 Auto-restarting worker after 30 minutes to prevent stale connections...');
+      this.performAutoRestart();
+    }, 30 * 60 * 1000) as unknown as number;
+  }
+
+  private async performAutoRestart(): Promise<void> {
+    try {
+      // Notify all clients about the restart
+      this.broadcastToClients({
+        type: 'worker_restarting',
+        message: 'Worker is restarting to maintain optimal performance',
+        sessionId: this.sessionId
+      });
+
+      // Clean up existing connections using the dedicated restart cleanup
+      await this.cleanupForRestart();
+      
+      // Reset session ID
+      this.sessionId = crypto.randomUUID();
+      
+      // Wait a moment for cleanup
+      await new Promise(resolve => setTimeout(resolve, 1000));
+      
+      // Restart the auto-restart interval
+      this.startAutoRestart();
+      
+      // Notify clients that restart is complete
+      this.broadcastToClients({
+        type: 'worker_restarted',
+        message: 'Worker restart complete',
+        newSessionId: this.sessionId
+      });
+
+      console.log('✅ Worker auto-restart completed successfully');
+      
+    } catch (error) {
+      console.error('❌ Auto-restart failed:', error);
+      // Even if restart fails, continue with new session
+      this.startAutoRestart();
+    }
   }
 
   async fetch(request: Request): Promise<Response> {
@@ -315,6 +365,8 @@ export class VoiceSession {
 
   private async cleanupStaleSessions(): Promise<void> {
     try {
+      console.log('🧹 Cleaning up stale sessions...');
+      
       // Reset any existing OpenAI connection
       if (this.openaiConnection.isConnected()) {
         this.openaiConnection.disconnect();
@@ -323,6 +375,9 @@ export class VoiceSession {
       // Clear any stored session state
       await this.state.storage.delete('openai_session');
       await this.state.storage.delete('webrtc_state');
+      
+      // Clear all client connections
+      this.clients.clear();
       
       console.log('🧹 Cleaned up stale session data');
     } catch (error) {
@@ -348,5 +403,34 @@ export class VoiceSession {
     this.sessionId = crypto.randomUUID();
     
     console.log('✅ Session reset complete');
+  }
+
+  // Cleanup method for auto-restart
+  private async cleanupForRestart(): Promise<void> {
+    try {
+      console.log('🧹 Cleaning up for worker restart...');
+      
+      // Stop the auto-restart interval
+      if (this.autoRestartInterval !== null) {
+        clearInterval(this.autoRestartInterval);
+        this.autoRestartInterval = null;
+      }
+      
+      // Clean up OpenAI connection
+      if (this.openaiConnection.isConnected()) {
+        this.openaiConnection.disconnect();
+      }
+      
+      // Clear storage
+      await this.state.storage.delete('openai_session');
+      await this.state.storage.delete('webrtc_state');
+      
+      // Clear clients
+      this.clients.clear();
+      
+      console.log('✅ Cleanup for restart completed');
+    } catch (error) {
+      console.error('❌ Cleanup for restart failed:', error);
+    }
   }
 }

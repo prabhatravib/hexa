@@ -2,6 +2,7 @@
 
 export interface Env {
   OPENAI_API_KEY: string;
+  OPENAI_VOICE_MODEL: string;
   VOICE_SESSION: DurableObjectNamespace;
   ASSETS: Fetcher;
 }
@@ -31,6 +32,7 @@ export class OpenAIConnection {
 
   async connect(): Promise<boolean> {
     console.log('🔧 OpenAI connect() called');
+    console.log('🔧 Using voice model:', this.env.OPENAI_VOICE_MODEL || 'gpt-realtime (fallback)');
     const apiKey = this.env.OPENAI_API_KEY;
     
     if (!apiKey) {
@@ -40,6 +42,10 @@ export class OpenAIConnection {
         details: 'Missing OPENAI_API_KEY secret in Cloudflare dashboard'
       });
       return false;
+    }
+    
+    if (!this.env.OPENAI_VOICE_MODEL) {
+      console.warn('⚠️ No OPENAI_VOICE_MODEL environment variable set, using fallback: gpt-realtime');
     }
     
     try {
@@ -79,8 +85,8 @@ export class OpenAIConnection {
     
     // Use the standard Realtime API endpoint with optimal configuration
     const requestBody = {
-      model: 'gpt-4o-realtime-preview',
-      voice: 'alloy',
+      model: this.env.OPENAI_VOICE_MODEL || 'gpt-realtime', // Read from environment variable with fallback
+      voice: 'marin', // or 'cedar' - both are new GA voices
       input_audio_format: 'pcm16',
       output_audio_format: 'pcm16',
       input_audio_transcription: { model: 'whisper-1' },

@@ -92,6 +92,24 @@ export const DevPanel: React.FC<DevPanelProps> = ({ isVisible = false }) => {
     
     return () => clearInterval(interval);
   }, [simulateSpeaking, isVisible, setMouthTarget]);
+
+  const handleReset = async () => {
+    try {
+      console.log('🔄 Manual reset triggered');
+      const response = await fetch('/voice/reset', { method: 'POST' });
+      if (response.ok) {
+        console.log('✅ Manual reset successful');
+        // Reload the page to start fresh
+        window.location.reload();
+      } else {
+        console.error('❌ Manual reset failed:', response.status);
+      }
+    } catch (error) {
+      console.error('❌ Manual reset error:', error);
+      // Force reload as fallback
+      window.location.reload();
+    }
+  };
   
   if (!isVisible) return null;
   
@@ -275,6 +293,12 @@ export const DevPanel: React.FC<DevPanelProps> = ({ isVisible = false }) => {
           </button>
         </div>
       </div>
+      <button 
+        onClick={handleReset}
+        className="mt-4 w-full px-2 py-1 bg-red-500 text-white rounded hover:bg-red-600 text-xs"
+      >
+        Reset Voice Service
+      </button>
     </div>
   );
 };
