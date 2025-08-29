@@ -189,17 +189,7 @@ export const AnimatedHexagon: React.FC<AnimatedHexagonProps> = ({
   };
 
   return (
-    <div className={`hexagon-interface relative inline-block ${className}`} style={{ width: size * 1.3, height: size }}>
-      {/* SVG Definitions for Rounded Hexagon */}
-      <svg className="hexagon-svg-defs">
-        <defs>
-          {/* Simple circular clip-path to encompass the entire hexagon */}
-          <clipPath id="roundedHex" clipPathUnits="objectBoundingBox">
-            <circle cx="0.5" cy="0.5" r="0.5" />
-          </clipPath>
-        </defs>
-      </svg>
-
+    <div className={`relative inline-block ${className}`} style={{ width: size * 1.4, height: size * 1.4 }}>
       {/* Dev Panel */}
       <DevPanel isVisible={showDevPanel} />
       
@@ -334,33 +324,21 @@ export const AnimatedHexagon: React.FC<AnimatedHexagonProps> = ({
             </filter>
           </defs>
           
-          {/* Animated glow background - keeping circular for outer effects */}
-          <motion.circle 
-            cx="100" 
-            cy="100" 
-            r="95" 
-            fill="url(#centerHighlight)"
-            variants={glowVariants}
-            animate={animationState}
-            className={voiceState === 'listening' ? 'animate-pulse' : ''}
-          />
+
           
           {/* Main hexagon with rounded corners - only this shape changes */}
           <motion.path 
-            d="M 100 22
-               Q 100 20 102 21
-               L 168 58
-               Q 180 64 180 70
-               L 180 130
-               Q 180 136 168 142
-               L 102 179
-               Q 100 180 98 179
-               L 32 142
-               Q 20 136 20 130
-               L 20 70
-               Q 20 64 32 58
-               L 98 21
-               Q 100 20 100 22 Z"
+            d="M 100 25
+               L 165 55
+               Q 175 60 175 70
+               L 175 130
+               Q 175 140 165 145
+               L 100 175
+               L 35 145
+               Q 25 140 25 130
+               L 25 70
+               Q 25 60 35 55
+               L 100 25 Z"
             fill="url(#hexagonGradient)" 
             stroke={voiceState === 'listening' ? '#10b981' : '#059669'}
             strokeWidth={voiceState === 'listening' ? '2.5' : '1.5'}
@@ -385,21 +363,7 @@ export const AnimatedHexagon: React.FC<AnimatedHexagonProps> = ({
             }
           />
           
-          {/* Animated breathing effect rings - keeping circular */}
-          <AnimatePresence>
-            {isPulsing && (
-              <motion.circle
-                cx="100"
-                cy="100"
-                r="40"
-                fill="none"
-                stroke="#10b981"
-                strokeWidth="1"
-                initial={{ scale: 0.8, opacity: 0 }}
-                animate={KEYFRAMES.PULSE_RING}
-              />
-            )}
-          </AnimatePresence>
+
           
           {/* Eyes with blink animation */}
           <motion.g>
@@ -468,15 +432,24 @@ export const AnimatedHexagon: React.FC<AnimatedHexagonProps> = ({
       <AnimatePresence>
         {isVoiceActive && (
           <motion.div
-            className="absolute inset-0 border-2 border-green-500 rounded-full"
-            initial={{ scale: 1, opacity: 0.7 }}
+            className="absolute inset-0 rounded-full"
+            style={{
+              width: size * 1.3,
+              height: size * 1.3,
+              left: '50%',
+              top: '50%',
+              transform: 'translate(-50%, -50%)',
+              border: '3px solid #10b981'
+            }}
+            initial={{ scale: 1, opacity: 0.5 }}
             animate={{
-              scale: [1, 1.1, 1.1],
-              opacity: [0.7, 0, 0]
+              scale: [1, 1.2, 1],
+              opacity: [0.5, 0, 0.5]
             }}
             transition={{
-              duration: 1.5,
-              repeat: Infinity
+              duration: 2,
+              repeat: Infinity,
+              ease: "easeInOut"
             }}
           />
         )}
