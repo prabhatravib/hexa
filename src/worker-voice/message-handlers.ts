@@ -83,6 +83,12 @@ export class MessageHandlers {
     try {
       console.log('🔧 Audio data received, sending session info to frontend for WebRTC connection...');
       
+      // NEW: Inject external data into the Realtime session if available
+      if (this.currentExternalData) {
+        console.log('🔧 Injecting external data into new voice session:', this.currentExternalData);
+        await this.openaiConnection.injectExternalDataIntoSession(this.currentExternalData);
+      }
+      
       // Instead of trying to process audio in the worker, send session info to frontend
       // The frontend will handle the WebRTC connection directly
       const sessionInfo = this.openaiConnection.getSessionInfo();

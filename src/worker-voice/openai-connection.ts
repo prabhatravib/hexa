@@ -149,7 +149,7 @@ export class OpenAIConnection {
           }
         }
         
-        const messages = [];
+        const messages = [] as Array<{ role: string; content: string }>;
         
         // Add system message with context if available
         if (systemContext) {
@@ -192,6 +192,77 @@ export class OpenAIConnection {
         message: 'Failed to send message to OpenAI',
         details: error
       });
+    }
+  }
+
+  // Inject external data into the current Realtime session
+  async injectExternalDataIntoSession(externalData: {
+    image?: string;
+    text?: string;
+    prompt?: string;
+    type?: string;
+  }): Promise<void> {
+    if (!this.sessionId) {
+      console.error('❌ No session available for external data injection');
+      return;
+    }
+
+    try {
+      console.log('🔧 Injecting external data into Realtime session:', externalData);
+      
+      // Create conversation item with external data context
+      const conversationItem = {
+        type: "conversation.item.create",
+        item: {
+          type: "message",
+          role: "user",
+          content: [] as Array<{
+            type: string;
+            text?: string;
+            image_url?: string;
+          }>
+        }
+      };
+
+      // Add text context if available
+      if (externalData.text || externalData.prompt) {
+        let contextText = '';
+        if (externalData.text) contextText += `Diagram/Code content: ${externalData.text}\n`;
+        if (externalData.prompt) contextText += `Context: ${externalData.prompt}\n`;
+        if (externalData.type) contextText += `Type: ${externalData.type}`;
+        
+        conversationItem.item.content.push({
+          type: "input_text",
+          text: contextText
+        });
+      }
+
+      // Add image if available
+      if (externalData.image) {
+        conversationItem.item.content.push({
+          type: "input_image",
+          image_url: externalData.image
+        });
+      }
+
+      // Send to OpenAI Realtime API
+      const response = await fetch(`https://api.openai.com/v1/realtime/sessions/${this.sessionId}/conversation/items`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${this.env.OPENAI_API_KEY}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify(conversationItem)
+      });
+
+      if (response.ok) {
+        console.log('✅ External data successfully injected into Realtime session');
+      } else {
+        const errorText = await response.text();
+        console.error('❌ Failed to inject external data:', response.status, errorText);
+      }
+    } catch (error) {
+      console.error('❌ Error injecting external data:', error);
     }
   }
 
