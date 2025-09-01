@@ -69,7 +69,7 @@ export const useVoiceInteraction = (options: UseVoiceInteractionOptions = {}) =>
   const audioQueueRef = useRef<ArrayBuffer[]>([]);
   const isPlayingRef = useRef(false);
 
-  const { connect: connectToVoice } = useVoiceConnectionService({
+  const { connect: connectToVoice, externalData } = useVoiceConnectionService({
     setVoiceState,
     onError,
     onResponse,
@@ -215,6 +215,7 @@ export const useVoiceInteraction = (options: UseVoiceInteractionOptions = {}) =>
     response,
     currentLanguage,
     supportedLanguages,
+    externalData,
     connect,
     disconnect: () => {
       if (wsRef.current) {

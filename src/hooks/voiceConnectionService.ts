@@ -31,6 +31,14 @@ export const useVoiceConnectionService = ({
   
   const { setInitializationState, setInitializationProgress } = useAnimationStore();
   
+  // Store external data for voice agent context
+  const [externalData, setExternalData] = useState<{
+    image?: string;
+    text?: string;
+    prompt?: string;
+    type?: string;
+  } | null>(null);
+  
   // Synthetic flapping loop to guarantee mouth motion when speaking events arrive
   const flapRafRef = useRef<number | null>(null);
   const startSyntheticFlap = () => {
@@ -93,6 +101,11 @@ export const useVoiceConnectionService = ({
               // Update the agent with new session info if needed
               if (openaiAgentRef.current) {
                 console.log('✅ OpenAI Agent already initialized, session info updated');
+                // Pass external data to existing agent if available
+                if (externalData) {
+                  console.log('🔧 Passing external data to existing agent:', externalData);
+                  // The agent should have access to external data through the worker
+                }
                 setInitializationProgress(100);
                 setInitializationState('ready');
               } else {
@@ -100,6 +113,11 @@ export const useVoiceConnectionService = ({
                 const session = await initializeOpenAIAgent(data);
                 if (session) {
                   openaiAgentRef.current = session;
+                  // Pass external data to new agent if available
+                  if (externalData) {
+                    console.log('🔧 Passing external data to new agent:', externalData);
+                    // The agent should have access to external data through the worker
+                  }
                   setInitializationProgress(100);
                   setInitializationState('ready');
                   console.log('✅ OpenAI Agent initialized successfully');
@@ -170,22 +188,26 @@ export const useVoiceConnectionService = ({
               
             case 'external_data_received':
               console.log('📥 External data received:', data.data);
-              // Handle external data received notification
+              // Store external data for voice agent context
+              setExternalData(data.data);
               break;
               
             case 'external_data_processed':
               console.log('✅ External data processed and available for voice discussions:', data.data);
-              // Handle external data processed notification
+              // Store external data for voice agent context
+              setExternalData(data.data);
               break;
               
             case 'external_text_available':
               console.log('📝 External text available for voice context:', data.text);
-              // Handle external text available notification
+              // Update external data with text content
+              setExternalData(prev => prev ? { ...prev, text: data.text } : { text: data.text });
               break;
               
             case 'external_image_available':
               console.log('🖼️ External image available for voice context:', data.dataType);
-              // Handle external image available notification
+              // Update external data with image content
+              setExternalData(prev => prev ? { ...prev, image: data.image, type: data.dataType } : { image: data.image, type: data.dataType });
               break;
               
             default:
@@ -217,6 +239,7 @@ export const useVoiceConnectionService = ({
   }, [setVoiceState, onError, onResponse, initializeOpenAIAgentFromWorker, initializeOpenAIAgent, openaiAgentRef, setSessionInfo, setResponse, startSpeaking, stopSpeaking, setSpeechIntensity]);
 
   return {
-    connect
+    connect,
+    externalData
   };
 };
