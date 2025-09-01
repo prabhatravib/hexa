@@ -11,6 +11,12 @@ export class MessageHandlers {
   private openaiConnection: any;
   private broadcastToClients: (message: any) => void;
   private isAgentResponding: boolean = false;
+  private currentExternalData: {
+    image?: string;
+    text?: string;
+    prompt?: string;
+    type?: string;
+  } | null = null;
 
   constructor(openaiConnection: any, broadcastToClients: (message: any) => void) {
     this.openaiConnection = openaiConnection;
@@ -19,6 +25,33 @@ export class MessageHandlers {
 
   setOpenAIConnection(openaiConnection: any): void {
     this.openaiConnection = openaiConnection;
+  }
+
+  // Method to update external data context
+  updateExternalData(externalData: {
+    image?: string;
+    text?: string;
+    prompt?: string;
+    type?: string;
+  } | null): void {
+    this.currentExternalData = externalData;
+    console.log('📝 Updated external data context in MessageHandlers:', externalData);
+  }
+
+  // Method to clear external data context
+  clearExternalData(): void {
+    this.currentExternalData = null;
+    console.log('🗑️ Cleared external data context in MessageHandlers');
+  }
+
+  // Method to get current external data context
+  getExternalData(): {
+    image?: string;
+    text?: string;
+    prompt?: string;
+    type?: string;
+  } | null {
+    return this.currentExternalData;
   }
 
   async handleAudioInput(audioData: string, sessionId: string): Promise<void> {
@@ -73,6 +106,9 @@ export class MessageHandlers {
   }
 
   async handleTextInput(text: string, sessionId: string): Promise<void> {
+    console.log('📝 Processing text input:', text);
+    console.log('📝 Current external data context:', this.currentExternalData);
+    
     // Check if OpenAI connection is available
     if (!this.openaiConnection) {
       console.error('❌ OpenAI connection not available');
@@ -99,10 +135,11 @@ export class MessageHandlers {
     }
     
     try {
-      // Send text message to OpenAI via HTTP
+      // Send text message to OpenAI via HTTP with external data context
       await this.openaiConnection.sendMessage({
         type: 'text',
-        text: text
+        text: text,
+        externalData: this.currentExternalData
       });
     } catch (error) {
       console.error('❌ Failed to send text message:', error);
@@ -122,7 +159,9 @@ export class MessageHandlers {
     console.log('📥 Processing external data:', externalData);
     
     // Store the external data for voice context
-    // This data will be available for AI voice interactions
+    this.currentExternalData = externalData;
+    console.log('📝 External data stored in MessageHandlers for voice context');
+    console.log('📝 External data will now be available for all voice/text interactions');
     
     // Broadcast to clients that external data was received
     this.broadcastToClients({
@@ -146,7 +185,7 @@ export class MessageHandlers {
       this.broadcastToClients({
         type: 'external_image_available',
         image: externalData.image,
-        type: externalData.type || 'image',
+        dataType: externalData.type || 'image',
         sessionId: sessionId
       });
     }
@@ -180,6 +219,10 @@ export class MessageHandlers {
           type: 'control',
           command: 'clear'
         });
+        
+        // Also clear external data context
+        this.currentExternalData = null;
+        console.log('🗑️ Cleared external data context on clear command');
         break;
         
       case 'get_agents':

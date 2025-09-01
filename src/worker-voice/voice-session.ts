@@ -488,6 +488,9 @@ export class VoiceSession {
 
       // Process the external data through message handlers
       await this.messageHandlers.handleExternalData(externalData, this.sessionId);
+      
+      // Also update the message handlers' external data context directly
+      this.messageHandlers.updateExternalData(externalData);
 
       // Broadcast to connected clients
       this.broadcastToClients({

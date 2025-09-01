@@ -131,6 +131,40 @@ export class OpenAIConnection {
       
       // For text messages, we can use the chat completions API
       if (message.type === 'text') {
+        // Build context-aware prompt with external data
+        let enhancedPrompt = message.text;
+        let systemContext = '';
+        
+        if (message.externalData) {
+          const { text, prompt, type, image } = message.externalData;
+          
+          // Create system context from external data
+          if (text || prompt) {
+            systemContext = `You have access to the following external data context:\n`;
+            if (text) systemContext += `- Text content: ${text}\n`;
+            if (prompt) systemContext += `- Context/prompt: ${prompt}\n`;
+            if (type) systemContext += `- Data type: ${type}\n`;
+            if (image) systemContext += `- Image data is also available (base64 encoded)\n`;
+            systemContext += `\nPlease use this context to provide relevant and informed responses to the user's questions.`;
+          }
+        }
+        
+        const messages = [];
+        
+        // Add system message with context if available
+        if (systemContext) {
+          messages.push({ role: 'system', content: systemContext });
+        }
+        
+        // Add user message
+        messages.push({ role: 'user', content: enhancedPrompt });
+        
+        console.log('📝 Sending message with context:', {
+          hasExternalData: !!message.externalData,
+          systemContext: systemContext ? 'Yes' : 'No',
+          userMessage: enhancedPrompt
+        });
+        
         const response = await fetch('https://api.openai.com/v1/chat/completions', {
           method: 'POST',
           headers: {
@@ -139,7 +173,7 @@ export class OpenAIConnection {
           },
           body: JSON.stringify({
             model: 'gpt-4o',
-            messages: [{ role: 'user', content: message.text }],
+            messages: messages,
             stream: false
           })
         });
