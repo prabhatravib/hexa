@@ -106,6 +106,14 @@ export class VoiceSession {
   async fetch(request: Request): Promise<Response> {
     const url = new URL(request.url);
     
+    // Extract session ID from URL parameters if present
+    const urlSessionId = url.searchParams.get('sessionId');
+    if (urlSessionId && urlSessionId !== this.sessionId) {
+      console.log('🆔 Session ID from URL parameter:', urlSessionId);
+      // For now, we'll use the URL session ID for external data operations
+      // but keep the current session ID for voice operations
+    }
+    
     switch (url.pathname) {
       case '/voice/sse':
         return this.handleSSE(request);
@@ -116,6 +124,7 @@ export class VoiceSession {
           status: 'ok', 
           message: 'Voice service is running',
           sessionId: this.sessionId,
+          urlSessionId: urlSessionId,
           timestamp: new Date().toISOString()
         }), {
           headers: { 'Content-Type': 'application/json' }
@@ -449,6 +458,97 @@ export class VoiceSession {
     return this.currentExternalData;
   }
 
+  // Store external data with session ID
+  private async storeExternalData(sessionId: string, data: {
+    image?: string;
+    text?: string;
+    prompt?: string;
+    type?: string;
+    timestamp: string;
+  }): Promise<void> {
+    try {
+      const storageKey = `external_data_${sessionId}`;
+      await this.state.storage.put(storageKey, data);
+      console.log('💾 Stored external data for session:', sessionId);
+    } catch (error) {
+      console.error('❌ Failed to store external data:', error);
+    }
+  }
+
+  // Get external data by session ID
+  private async getExternalDataBySessionId(sessionId: string): Promise<{
+    image?: string;
+    text?: string;
+    prompt?: string;
+    type?: string;
+    timestamp: string;
+  } | null> {
+    try {
+      const storageKey = `external_data_${sessionId}`;
+      const data = await this.state.storage.get(storageKey) as {
+        image?: string;
+        text?: string;
+        prompt?: string;
+        type?: string;
+        timestamp: string;
+      } | null;
+      return data || null;
+    } catch (error) {
+      console.error('❌ Failed to get external data:', error);
+      return null;
+    }
+  }
+
+  // Notify voice session of external data availability
+  private async notifyVoiceSession(sessionId: string, eventType: string, data: any): Promise<void> {
+    try {
+      console.log('🔔 Notifying voice session:', sessionId, 'Event:', eventType);
+      
+      // If this is for the current session, add to voice context
+      if (sessionId === this.sessionId) {
+        await this.addToVoiceContext(sessionId, {
+          type: 'external_data',
+          content: data,
+          available: true
+        });
+        
+        console.log('🎯 External data added to voice context:', data);
+      } else {
+        // For other sessions, we could implement cross-session notification
+        // For now, just log that we received data for a different session
+        console.log('📝 External data received for different session:', sessionId);
+      }
+    } catch (error) {
+      console.error('❌ Failed to notify voice session:', error);
+    }
+  }
+
+  // Add external data to voice agent context
+  private async addToVoiceContext(sessionId: string, contextData: {
+    type: string;
+    content: any;
+    available: boolean;
+  }): Promise<void> {
+    try {
+      // Store context data in storage
+      const contextKey = `voice_context_${sessionId}`;
+      const existingContext = (await this.state.storage.get(contextKey) as any[]) || [];
+      existingContext.push(contextData);
+      await this.state.storage.put(contextKey, existingContext);
+      
+      // Update message handlers with the new context
+      this.messageHandlers.updateExternalData({
+        text: contextData.content.mermaidCode,
+        prompt: contextData.content.originalPrompt,
+        type: contextData.content.diagramType
+      });
+      
+      console.log('✅ Voice context updated with external data');
+    } catch (error) {
+      console.error('❌ Failed to add to voice context:', error);
+    }
+  }
+
   // Handle external data status endpoint
   private async handleExternalDataStatus(request: Request): Promise<Response> {
     try {
@@ -476,15 +576,24 @@ export class VoiceSession {
         });
       }
 
-      const hasExternalData = this.currentExternalData !== null;
-      const dataType = this.currentExternalData?.type || null;
-      const timestamp = this.currentExternalData ? new Date().toISOString() : null;
+      // Extract session ID from query parameters
+      const url = new URL(request.url);
+      const querySessionId = url.searchParams.get('sessionId');
+      const targetSessionId = querySessionId || this.sessionId;
+      
+      console.log('🆔 Status request for session ID:', targetSessionId);
+
+      // Get external data for the specific session
+      const externalData = await this.getExternalDataBySessionId(targetSessionId);
+      const hasExternalData = externalData !== null;
+      const dataType = externalData?.type || null;
+      const timestamp = externalData?.timestamp || null;
 
       return new Response(JSON.stringify({
         hasExternalData,
         dataType,
         timestamp,
-        sessionId: this.sessionId
+        sessionId: targetSessionId
       }), {
         status: 200,
         headers: {
@@ -540,30 +649,63 @@ export class VoiceSession {
         text?: string;
         prompt?: string;
         type?: string;
+        sessionId?: string;
       };
 
       console.log('📥 Received external data:', externalData);
 
-      // Store the external data
-      this.currentExternalData = externalData;
+      // Extract session ID from request or use current session
+      const requestSessionId = externalData.sessionId || this.sessionId;
+      console.log('🆔 Using session ID for external data:', requestSessionId);
+      console.log('🆔 Current voice session ID:', this.sessionId);
+      console.log('🆔 Request session ID:', externalData.sessionId);
 
-      // Process the external data through message handlers
-      await this.messageHandlers.handleExternalData(externalData, this.sessionId);
-      
-      // Also update the message handlers' external data context directly
-      this.messageHandlers.updateExternalData(externalData);
-
-      // Broadcast to connected clients
-      this.broadcastToClients({
-        type: 'external_data_received',
-        data: externalData,
-        sessionId: this.sessionId
+      // Store the external data with session ID
+      await this.storeExternalData(requestSessionId, {
+        image: externalData.image,
+        text: externalData.text,
+        prompt: externalData.prompt,
+        type: externalData.type,
+        timestamp: new Date().toISOString()
       });
+
+      // If this is for the current session, update current external data
+      if (requestSessionId === this.sessionId) {
+        this.currentExternalData = {
+          image: externalData.image,
+          text: externalData.text,
+          prompt: externalData.prompt,
+          type: externalData.type
+        };
+
+        // Process the external data through message handlers
+        await this.messageHandlers.handleExternalData(this.currentExternalData, this.sessionId);
+        
+        // Also update the message handlers' external data context directly
+        this.messageHandlers.updateExternalData(this.currentExternalData);
+
+        // Broadcast to connected clients
+        this.broadcastToClients({
+          type: 'external_data_received',
+          data: this.currentExternalData,
+          sessionId: this.sessionId
+        });
+      }
+
+      // Trigger voice context update for the session
+      await this.notifyVoiceSession(requestSessionId, 'external_data_available', {
+        mermaidCode: externalData.text,
+        originalPrompt: externalData.prompt,
+        diagramType: externalData.type,
+        timestamp: new Date().toISOString()
+      });
+
+      console.log('✅ External data processing complete for session:', requestSessionId);
 
       return new Response(JSON.stringify({
         success: true,
-        message: 'External data received and stored for voice context',
-        sessionId: this.sessionId
+        message: 'External data received and context updated',
+        sessionId: requestSessionId
       }), {
         status: 200,
         headers: {
