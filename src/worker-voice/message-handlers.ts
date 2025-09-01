@@ -113,6 +113,47 @@ export class MessageHandlers {
     }
   }
 
+  async handleExternalData(externalData: {
+    image?: string;        // Optional image data
+    text?: string;         // Optional text input
+    prompt?: string;       // Optional context/prompt
+    type?: string;         // Type of external data
+  }, sessionId: string): Promise<void> {
+    console.log('📥 Processing external data:', externalData);
+    
+    // Store the external data for voice context
+    // This data will be available for AI voice interactions
+    
+    // Broadcast to clients that external data was received
+    this.broadcastToClients({
+      type: 'external_data_processed',
+      data: externalData,
+      sessionId: sessionId,
+      message: 'External data received and available for voice discussions'
+    });
+    
+    // If there's text content, we could potentially use it for voice context
+    if (externalData.text) {
+      this.broadcastToClients({
+        type: 'external_text_available',
+        text: externalData.text,
+        sessionId: sessionId
+      });
+    }
+    
+    // If there's an image, notify clients
+    if (externalData.image) {
+      this.broadcastToClients({
+        type: 'external_image_available',
+        image: externalData.image,
+        type: externalData.type || 'image',
+        sessionId: sessionId
+      });
+    }
+    
+    console.log('✅ External data processed and broadcasted to clients');
+  }
+
   async handleControl(command: string, sessionId: string): Promise<void> {
     // Check if OpenAI connection is available
     if (!this.openaiConnection) {

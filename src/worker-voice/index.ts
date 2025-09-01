@@ -26,6 +26,14 @@ export default {
       return durableObject.fetch(request);
     }
     
+    // Handle external data endpoint
+    if (url.pathname === '/api/external-data') {
+      const durableObjectId = env.VOICE_SESSION.idFromName('global');
+      const durableObject = env.VOICE_SESSION.get(durableObjectId);
+      
+      return durableObject.fetch(request);
+    }
+    
     // Serve static assets
     try {
       const asset = await env.ASSETS.fetch(request);

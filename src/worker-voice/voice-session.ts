@@ -19,6 +19,12 @@ export class VoiceSession {
   private agentManager: AgentManager;
   private isActive: boolean = true;
   private autoRestartInterval: number | null = null;
+  private currentExternalData: {
+    image?: string;
+    text?: string;
+    prompt?: string;
+    type?: string;
+  } | null = null;
 
   constructor(private state: DurableObjectState, private env: Env) {
     this.sessionId = crypto.randomUUID();
@@ -116,6 +122,8 @@ export class VoiceSession {
         });
       case '/voice/reset':
         return this.handleReset(request);
+      case '/api/external-data':
+        return this.handleExternalData(request);
       default:
         return new Response('Not found', { status: 404 });
     }
@@ -431,6 +439,87 @@ export class VoiceSession {
       console.log('✅ Cleanup for restart completed');
     } catch (error) {
       console.error('❌ Cleanup for restart failed:', error);
+    }
+  }
+
+  // Getter for external data
+  getExternalData() {
+    return this.currentExternalData;
+  }
+
+  // Handle external data endpoint
+  private async handleExternalData(request: Request): Promise<Response> {
+    try {
+      if (request.method === 'OPTIONS') {
+        return new Response(null, {
+          status: 200,
+          headers: {
+            'Access-Control-Allow-Origin': '*',
+            'Access-Control-Allow-Methods': 'POST, OPTIONS',
+            'Access-Control-Allow-Headers': 'Content-Type'
+          }
+        });
+      }
+
+      if (request.method !== 'POST') {
+        return new Response(JSON.stringify({
+          success: false,
+          error: 'Method not allowed. Use POST.'
+        }), {
+          status: 405,
+          headers: {
+            'Content-Type': 'application/json',
+            'Access-Control-Allow-Origin': '*'
+          }
+        });
+      }
+
+      const externalData = await request.json() as {
+        image?: string;
+        text?: string;
+        prompt?: string;
+        type?: string;
+      };
+
+      console.log('📥 Received external data:', externalData);
+
+      // Store the external data
+      this.currentExternalData = externalData;
+
+      // Process the external data through message handlers
+      await this.messageHandlers.handleExternalData(externalData, this.sessionId);
+
+      // Broadcast to connected clients
+      this.broadcastToClients({
+        type: 'external_data_received',
+        data: externalData,
+        sessionId: this.sessionId
+      });
+
+      return new Response(JSON.stringify({
+        success: true,
+        message: 'External data received and stored for voice context',
+        sessionId: this.sessionId
+      }), {
+        status: 200,
+        headers: {
+          'Content-Type': 'application/json',
+          'Access-Control-Allow-Origin': '*'
+        }
+      });
+
+    } catch (error) {
+      console.error('❌ Failed to handle external data:', error);
+      return new Response(JSON.stringify({
+        success: false,
+        error: 'Failed to process external data'
+      }), {
+        status: 500,
+        headers: {
+          'Content-Type': 'application/json',
+          'Access-Control-Allow-Origin': '*'
+        }
+      });
     }
   }
 }
