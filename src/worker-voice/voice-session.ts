@@ -141,12 +141,18 @@ export class VoiceSession {
         const client = {
           controller,
           encoder,
+          closed: false,
           send: (data: any) => {
+            if (client.closed) return;
+            
             try {
               const message = `data: ${JSON.stringify(data)}\n\n`;
               controller.enqueue(encoder.encode(message));
             } catch (error) {
               console.error('Failed to send SSE message:', error);
+              // Mark client as closed to avoid repeated errors
+              client.closed = true;
+              throw error; // Re-throw to trigger removal in broadcastToClients
             }
           }
         };
@@ -161,6 +167,7 @@ export class VoiceSession {
         
         // Clean up when client disconnects
         request.signal.addEventListener('abort', () => {
+          client.closed = true;
           this.clients.delete(client);
           console.log('🔌 Client disconnected, cleaning up...');
           
@@ -364,15 +371,31 @@ export class VoiceSession {
 
   private broadcastToClients(message: any): void {
     console.log('📤 Broadcasting message to clients:', message);
+    const clientsToRemove: any[] = [];
+    
     this.clients.forEach(client => {
       try {
+        // Skip closed clients
+        if (client.closed) {
+          clientsToRemove.push(client);
+          return;
+        }
+        
         client.send(message);
       } catch (error) {
         console.error('Failed to send to client:', error);
-        this.clients.delete(client);
+        // Mark for removal to avoid repeated errors
+        clientsToRemove.push(client);
       }
     });
-    console.log('✅ Sent to SSE client');
+    
+    // Remove failed/closed clients
+    clientsToRemove.forEach(client => {
+      this.clients.delete(client);
+      console.log('🗑️ Removed failed/closed SSE client');
+    });
+    
+    console.log(`✅ Sent to ${this.clients.size} SSE clients`);
   }
 
   private async cleanupStaleSessions(): Promise<void> {

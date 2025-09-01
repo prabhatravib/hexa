@@ -1,5 +1,7 @@
 import { useCallback, useRef, useState } from 'react';
 import { useAnimationStore, VoiceState } from '../store/animationStore';
+import { injectExternalContext } from '@/lib/externalContext';
+import { useExternalDataStore } from '@/store/externalDataStore';
 
 interface VoiceConnectionServiceOptions {
   setVoiceState: (state: VoiceState) => void;
@@ -194,20 +196,47 @@ export const useVoiceConnectionService = ({
               
             case 'external_data_received':
               console.log('📥 External data received:', data.data);
-              // Store external data for voice agent context
+              // Store external data for voice agent context (legacy)
               setExternalData(data.data);
+              // Store in Zustand store for reliable access
+              useExternalDataStore.getState().setExternalData({
+                ...data.data,
+                source: 'api'
+              });
+              // Inject text content directly into active session
+              if (data.data?.text) {
+                injectExternalContext(data.data.text);
+              }
               break;
               
             case 'external_data_processed':
               console.log('✅ External data processed and available for voice discussions:', data.data);
-              // Store external data for voice agent context
+              // Store external data for voice agent context (legacy)
               setExternalData(data.data);
+              // Store in Zustand store for reliable access
+              useExternalDataStore.getState().setExternalData({
+                ...data.data,
+                source: 'api'
+              });
+              // Inject text content directly into active session
+              if (data.data?.text) {
+                injectExternalContext(data.data.text);
+              }
               break;
               
             case 'external_text_available':
               console.log('📝 External text available for voice context:', data.text);
-              // Update external data with text content
+              // Update external data with text content (legacy)
               setExternalData(prev => prev ? { ...prev, text: data.text } : { text: data.text });
+              // Store in Zustand store for reliable access
+              useExternalDataStore.getState().setExternalData({
+                text: data.text,
+                source: 'api'
+              });
+              // Inject text content directly into active session
+              if (data.text) {
+                injectExternalContext(data.text);
+              }
               break;
               
             case 'external_image_available':

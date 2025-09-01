@@ -2,6 +2,8 @@ import { getLanguageInstructions } from '@/lib/languageConfig';
 import { setupSessionEventHandlers } from './voiceSessionEvents';
 import { initializeWebRTCConnection } from './voiceWebRTCConnection';
 import { voiceContextManager } from './voiceContextManager';
+import { setActiveSession, clearActiveSession, injectExternalContext, injectExternalDataFromStore } from '@/lib/externalContext';
+import { useExternalDataStore } from '@/store/externalDataStore';
 
 type VoiceState = 'idle' | 'listening' | 'thinking' | 'speaking' | 'error';
 
@@ -13,6 +15,9 @@ interface VoiceAgentInitializerOptions {
   setSpeechIntensity?: (intensity: number) => void;
   audioContextRef?: React.MutableRefObject<AudioContext | null>;
 }
+
+// Export the injectExternalContext function for use by SSE handlers
+export { injectExternalContext };
 
 export const initializeOpenAIAgent = async (
   sessionData: any,
@@ -35,6 +40,10 @@ export const initializeOpenAIAgent = async (
     // Get current context from voice context manager
     const currentContext = voiceContextManager.getFormattedContext();
     console.log('🔧 Voice agent context:', currentContext ? 'Available' : 'None');
+    
+    // Get current external data from Zustand store
+    const externalDataContext = useExternalDataStore.getState().getFormattedContext();
+    console.log('🔧 External data context:', externalDataContext ? 'Available' : 'None');
     
     // Create agent with proper configuration
     const agent = new RealtimeAgent({
@@ -100,6 +109,13 @@ ${getLanguageInstructions()}`
       return context;
     };
 
+    // Add global function to get latest external data from Zustand
+    (window as any).__hexaGetExternalData = () => {
+      const externalData = useExternalDataStore.getState().getFormattedContext();
+      console.log('📊 Latest external data from Zustand:', externalData);
+      return externalData;
+    };
+
     // Monitor audio element state
     audioEl.addEventListener('loadeddata', () => {
       console.log('🎵 Audio element loaded data');
@@ -127,6 +143,9 @@ ${getLanguageInstructions()}`
     // Create session and connect
     const session = new RealtimeSession(agent);
     
+    // Set as active session for external context injection
+    setActiveSession(session);
+    
     // Debug: Log all session events to understand what's available (excluding transport events)
     const originalEmit = (session as any).emit;
     if (originalEmit) {
@@ -147,6 +166,48 @@ ${getLanguageInstructions()}`
       audioEl,
       audioContextRef,
       setSpeechIntensity
+    });
+    
+    // Subscribe to Zustand changes and automatically inject new external data
+    const unsubscribe = useExternalDataStore.subscribe((state) => {
+      if (state.currentData && session && session.state === "open") {
+        console.log('🔄 New external data detected, injecting into session...');
+        const externalData = state.getFormattedContext();
+        if (externalData) {
+          session.send({
+            type: "conversation.item.create",
+            item: {
+              type: "message",
+              role: "system",
+              content: [{ type: "input_text", text: externalData }]
+            }
+          });
+          console.log('✅ New external data injected into session');
+        }
+      }
+    });
+    
+
+    
+    // Inject external data from Zustand store when session opens
+    (session as any).on('session.created', () => {
+      console.log('🎯 Session created, injecting external data from Zustand store');
+      setTimeout(() => {
+        injectExternalDataFromStore();
+      }, 1000); // Small delay to ensure session is fully ready
+    });
+    
+    // Clear active session when disconnected
+    (session as any).on('disconnected', () => {
+      console.log('🔗 Session disconnected, clearing active session');
+      clearActiveSession();
+      unsubscribe(); // Clean up Zustand subscription
+    });
+    
+    (session as any).on('error', () => {
+      console.log('🔗 Session error, clearing active session');
+      clearActiveSession();
+      unsubscribe(); // Clean up Zustand subscription
     });
     
     // Initialize WebRTC connection and handle streams

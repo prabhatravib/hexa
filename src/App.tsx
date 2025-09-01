@@ -1,21 +1,11 @@
 import { useEffect, useState } from 'react';
 import { AnimatedHexagon } from './components/animated/AnimatedHexagon';
 import { voiceContextManager } from './hooks/voiceContextManager';
-
-// Simple hash function to detect file changes
-const simpleHash = (str: string): string => {
-  let hash = 0;
-  for (let i = 0; i < str.length; i++) {
-    const char = str.charCodeAt(i);
-    hash = ((hash << 5) - hash) + char;
-    hash = hash & hash; // Convert to 32-bit integer
-  }
-  return hash.toString();
-};
+import { useExternalDataStore } from './store/externalDataStore';
+import { injectExternalDataFromStore } from './lib/externalContext';
 
 function App() {
   const [contentLoaded, setContentLoaded] = useState(false);
-  const [lastExternalDataHash, setLastExternalDataHash] = useState<string>('');
 
   useEffect(() => {
     const loadExternalContent = async () => {
@@ -40,87 +30,14 @@ function App() {
         console.error('❌ Error loading infflow.md:', error);
       }
 
-      // Also load external data file (like infflow.md)
-      try {
-        console.log('📄 Loading external-data.md...');
-        const externalResponse = await fetch('/external-data.md');
-        if (externalResponse.ok) {
-          const externalText = await externalResponse.text();
-          
-          // Set initial hash
-          setLastExternalDataHash(simpleHash(externalText));
-          
-          // Check if it's not the default "No external data available" message
-          if (!externalText.includes('No external data available')) {
-            console.log('✅ Successfully loaded external data');
-            console.log('📄 External data preview:', externalText.substring(0, 100) + '...');
-            
-            // Store in voice context manager as external data
-            voiceContextManager.setExternalData({
-              text: externalText,
-              type: 'markdown',
-              prompt: 'External data from file'
-            });
-          } else {
-            console.log('ℹ️ External data file is empty - no context update needed');
-          }
-        } else {
-          console.log('ℹ️ No external data file available yet');
-        }
-      } catch (error) {
-        console.log('ℹ️ External data file not available:', error);
-      }
+      // External data is now handled via SSE events, no need to poll files
       
       setContentLoaded(true);
     };
     
     loadExternalContent();
     
-    // Smart polling for external data (every 5 seconds)
-    const pollForExternalData = async () => {
-      try {
-        // Fetch external data file directly (like infflow.md)
-        const response = await fetch('/external-data.md');
-        if (response.ok) {
-          const externalText = await response.text();
-          
-          // Calculate hash to detect changes
-          const currentHash = simpleHash(externalText);
-          
-          // Only update if file has changed
-          if (currentHash !== lastExternalDataHash) {
-            setLastExternalDataHash(currentHash);
-            
-            // Check if it's not the default "No external data available" message
-            if (!externalText.includes('No external data available')) {
-              console.log('🔄 External data file changed - updating voice context');
-              console.log('📥 External data file updated:', externalText.substring(0, 100) + '...');
-              
-              voiceContextManager.setExternalData({
-                text: externalText,
-                type: 'markdown',
-                prompt: 'External data from file'
-              });
-              
-              console.log('✅ Voice context manager updated with external data file');
-            } else {
-              console.log('📄 External data file is empty - no context update needed');
-            }
-          }
-        }
-      } catch (error) {
-        // Silently fail - external data is optional
-      }
-    };
-    
-    // Initial poll
-    pollForExternalData();
-    
-    // Poll every 5 seconds (more frequent than 10)
-    const interval = setInterval(pollForExternalData, 5000);
-    
-    // Cleanup on unmount
-    return () => clearInterval(interval);
+    // External data is now handled via SSE events, no polling needed
     
   }, []);
 
@@ -128,6 +45,16 @@ function App() {
   useEffect(() => {
     (window as any).__sendExternalData = async (data: any) => {
       try {
+        // Store in Zustand immediately for reliable access
+        useExternalDataStore.getState().setExternalData({
+          ...data,
+          source: 'user_input'
+        });
+        
+        // Also inject into active session if available
+        injectExternalDataFromStore();
+        
+        // Send to worker for SSE broadcast (as backup)
         const response = await fetch('https://hexa-worker.prabhatravib.workers.dev/api/external-data', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -135,13 +62,36 @@ function App() {
         });
         if (response.ok) {
           console.log('✅ External data sent successfully');
-          // The external data will now be available via the external-data.md file
-          // which will be picked up by the polling mechanism
-          console.log('✅ External data will be available via external-data.md file');
+          console.log('✅ External data stored in Zustand and available for voice session');
         }
       } catch (error) {
         console.error('❌ Failed to send external data:', error);
+        // Even if network fails, data is still in Zustand store
+        console.log('ℹ️ External data still available in local store');
       }
+    };
+    
+    // Add global debugging functions
+    (window as any).__getExternalDataFromStore = () => {
+      const store = useExternalDataStore.getState();
+      console.log('📊 Current external data in Zustand store:', store.currentData);
+      return store.currentData;
+    };
+    
+    (window as any).__injectFromStore = () => {
+      console.log('🔧 Manually injecting external data from store...');
+      injectExternalDataFromStore();
+    };
+    
+    (window as any).__clearExternalData = () => {
+      console.log('🗑️ Clearing external data from store...');
+      useExternalDataStore.getState().clearExternalData();
+    };
+    
+    (window as any).__reconnectVoiceAgent = () => {
+      console.log('🔄 Reconnecting voice agent to get latest Zustand data...');
+      // Trigger a page reload to get fresh agent with latest context
+      window.location.reload();
     };
   }, []);
 
