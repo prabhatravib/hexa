@@ -168,6 +168,26 @@ export const useVoiceConnectionService = ({
               }, 1000);
               break;
               
+            case 'external_data_received':
+              console.log('📥 External data received:', data.data);
+              // Handle external data received notification
+              break;
+              
+            case 'external_data_processed':
+              console.log('✅ External data processed and available for voice discussions:', data.data);
+              // Handle external data processed notification
+              break;
+              
+            case 'external_text_available':
+              console.log('📝 External text available for voice context:', data.text);
+              // Handle external text available notification
+              break;
+              
+            case 'external_image_available':
+              console.log('🖼️ External image available for voice context:', data.dataType);
+              // Handle external image available notification
+              break;
+              
             default:
               console.log('Unknown message type:', data.type, data);
           }

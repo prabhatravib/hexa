@@ -1,6 +1,7 @@
 import { getLanguageInstructions } from '@/lib/languageConfig';
 import { setupSessionEventHandlers } from './voiceSessionEvents';
 import { initializeWebRTCConnection } from './voiceWebRTCConnection';
+import { voiceContextManager } from './voiceContextManager';
 
 type VoiceState = 'idle' | 'listening' | 'thinking' | 'speaking' | 'error';
 
@@ -31,10 +32,18 @@ export const initializeOpenAIAgent = async (
     // Import OpenAI Agents Realtime SDK dynamically
     const { RealtimeAgent, RealtimeSession } = await import('@openai/agents-realtime');
     
+    // Get current context from voice context manager
+    const currentContext = voiceContextManager.getFormattedContext();
+    console.log('🔧 Voice agent context:', currentContext ? 'Available' : 'None');
+    
     // Create agent with proper configuration
     const agent = new RealtimeAgent({
       name: 'Hexa, an AI Assistant',
-      instructions: `You are Hexa, a friendly and helpful AI assistant. You have a warm, conversational personality and are always eager to help. You can assist with various tasks, answer questions, and engage in natural conversation. Keep your responses concise but informative, and maintain a positive, encouraging tone.
+      instructions: `You are Hexa, a friendly and helpful AI assistant. You have a warm, conversational personality and are always eager to help.
+
+${currentContext}
+
+You can assist with various tasks, answer questions, and engage in natural conversation. Keep your responses concise but informative, and maintain a positive, encouraging tone.
 
 ${getLanguageInstructions()}`
     });
@@ -71,6 +80,24 @@ ${getLanguageInstructions()}`
       } catch (error) {
         console.error('❌ Reset request failed:', error);
       }
+    };
+
+    // Add global function to update voice agent context
+    (window as any).__hexaUpdateContext = () => {
+      console.log('🔄 Updating voice agent context...');
+      const newContext = voiceContextManager.getFormattedContext();
+      console.log('📝 New context:', newContext ? 'Available' : 'None');
+      
+      // Note: The context is now dynamically loaded when the agent is created
+      // For real-time updates, we would need to recreate the agent or use a different approach
+      console.log('ℹ️ Context will be applied on next agent initialization');
+    };
+
+    // Add global function to view current context
+    (window as any).__hexaViewContext = () => {
+      const context = voiceContextManager.getFormattedContext();
+      console.log('📋 Current voice context:', context);
+      return context;
     };
 
     // Monitor audio element state

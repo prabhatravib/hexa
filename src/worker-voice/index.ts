@@ -26,8 +26,8 @@ export default {
       return durableObject.fetch(request);
     }
     
-    // Handle external data endpoint
-    if (url.pathname === '/api/external-data') {
+    // Handle external data endpoints
+    if (url.pathname === '/api/external-data' || url.pathname === '/api/external-data/status') {
       const durableObjectId = env.VOICE_SESSION.idFromName('global');
       const durableObject = env.VOICE_SESSION.get(durableObjectId);
       

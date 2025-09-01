@@ -1,0 +1,1 @@
+the mission of the company Infflow(inflow ith two f's) is to deliver maximum information using minimum words

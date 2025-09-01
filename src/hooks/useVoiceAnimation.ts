@@ -73,13 +73,13 @@ export const useVoiceAnimation = () => {
       performanceRef.current.lastTarget = target;
       
       if (process.env.NODE_ENV === 'development') {
-        console.log(`🎯 Mouth target updated: ${target.toFixed(3)} (${timeSinceLastUpdate}ms since last update)`);
+        // console.log(`🎯 Mouth target updated: ${target.toFixed(3)} (${timeSinceLastUpdate}ms since last update)`);
         
         // Log performance stats every 10 writes
         if (performanceRef.current.writeCount % 10 === 0) {
           const timeSinceStart = now - performanceRef.current.lastWriteTime;
           const writesPerSecond = (performanceRef.current.writeCount / timeSinceStart) * 1000;
-          console.log(`📊 Performance: ${writesPerSecond.toFixed(1)} writes/sec, Max delta: ${performanceRef.current.maxDelta.toFixed(3)}`);
+          // console.log(`📊 Performance: ${writesPerSecond.toFixed(1)} writes/sec, Max delta: ${performanceRef.current.maxDelta.toFixed(3)}`);
         }
       }
     }
@@ -87,7 +87,7 @@ export const useVoiceAnimation = () => {
 
   const stopFallbackFlap = useCallback(() => {
     if (fallbackFlapRafRef.current) {
-      console.log('🎯 Stopping fallback flap animation');
+      // console.log('🎯 Stopping fallback flap animation');
       cancelAnimationFrame(fallbackFlapRafRef.current);
       fallbackFlapRafRef.current = null;
       // Reset mouth to closed position
@@ -101,7 +101,7 @@ export const useVoiceAnimation = () => {
     // Always stop any existing flap first
     stopFallbackFlap();
     
-    console.log('🎯 Starting fallback flap animation');
+    // console.log('🎯 Starting fallback flap animation');
     
     let frameCount = 0;
     const maxFrames = 1200; // 20 seconds maximum for very long responses
@@ -114,14 +114,14 @@ export const useVoiceAnimation = () => {
       
       // Stop only if voice state changes or we hit max frames
       if (currentState !== 'speaking' || frameCount > maxFrames) {
-        console.log(`🎯 Stopping fallback flap: state=${currentState}, frames=${frameCount}`);
+        // console.log(`🎯 Stopping fallback flap: state=${currentState}, frames=${frameCount}`);
         fallbackFlapRafRef.current = null;
         setMouthTarget(0);
         resetMouth();
         
         // Force stop speaking if we hit max frames
         if (frameCount > maxFrames && currentState === 'speaking') {
-          console.log('🔇 Forcing stop speaking due to timeout');
+          // console.log('🔇 Forcing stop speaking due to timeout');
           useAnimationStore.getState().stopSpeaking();
         }
         return;
@@ -134,7 +134,7 @@ export const useVoiceAnimation = () => {
         const base = 0.35;
         const amp = 0.25;
         const value = base + Math.max(0, Math.sin(t * 6.0)) * amp;
-        console.log(`🎯 Fallback flap setting mouth target: ${value.toFixed(3)}`);
+        // console.log(`🎯 Fallback flap setting mouth target: ${value.toFixed(3)}`);
         setMouthTarget(value);
       }
       
@@ -146,10 +146,10 @@ export const useVoiceAnimation = () => {
 
   // Handle voice state changes for mouth target management
   useEffect(() => {
-    console.log(`🎤 Voice state changed to: ${voiceState}`);
+    // console.log(`🎤 Voice state changed to: ${voiceState}`);
     
     if (voiceState === 'speaking') {
-      console.log('🎤 Starting speaking mode - initializing fallback flap');
+      // console.log('🎤 Starting speaking mode - initializing fallback flap');
       // When speaking starts, ensure EMA accumulator is ready
       if (emaAccumulatorRef.current === 0) {
         emaAccumulatorRef.current = 0.1; // Small initial value to avoid jump
@@ -157,7 +157,7 @@ export const useVoiceAnimation = () => {
       // Begin fallback flapping in case analyser isn't feeding us
       startFallbackFlap();
     } else {
-      console.log('🎤 Not speaking - stopping all mouth animations');
+      // console.log('🎤 Not speaking - stopping all mouth animations');
       // When not speaking, stop everything and reset
       stopFallbackFlap();
       resetMouth();
@@ -166,7 +166,7 @@ export const useVoiceAnimation = () => {
       lastTargetRef.current = 0;
       
       if (process.env.NODE_ENV === 'development') {
-        console.log('🔄 Voice state changed to non-speaking, stopped all animations');
+        // console.log('🔄 Voice state changed to non-speaking, stopped all animations');
       }
     }
     
@@ -178,7 +178,7 @@ export const useVoiceAnimation = () => {
 
   // Enhanced speech intensity handler with mouth target updates
   const handleSpeechIntensity = useCallback((rawIntensity: number) => {
-    console.log(`🎤 handleSpeechIntensity called with: ${rawIntensity.toFixed(3)}`);
+    // console.log(`🎤 handleSpeechIntensity called with: ${rawIntensity.toFixed(3)}`);
     
     // Mark that we received a real analyser update
     lastAnalyzerWriteRef.current = Date.now();
@@ -191,7 +191,7 @@ export const useVoiceAnimation = () => {
     updateMouthTarget(processedIntensity);
     
     if (process.env.NODE_ENV === 'development') {
-      console.log(`🎤 handleSpeechIntensity: raw=${rawIntensity.toFixed(3)}, processed=${processedIntensity.toFixed(3)}`);
+      // console.log(`🎤 handleSpeechIntensity: raw=${rawIntensity.toFixed(3)}, processed=${processedIntensity.toFixed(3)}`);
     }
   }, [setSpeechIntensity, processSpeechIntensity, updateMouthTarget]);
 

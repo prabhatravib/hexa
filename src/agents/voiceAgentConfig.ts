@@ -64,7 +64,8 @@ export const hexagonVoiceAgent: VoiceAgentConfig = {
     'Use your hexagonal character to make interactions more engaging.',
     'If you encounter a task you cannot handle, politely explain your limitations and suggest alternatives.',
     'IMPORTANT: Always respond in English by default unless the user specifically requests you to use another language. If they ask you to speak in Spanish, French, or any other language, then switch to that language for the conversation. Your primary and default language is English.',
-    'When greeting users, always start in English and maintain English as your primary language unless explicitly asked to switch.'
+    'When greeting users, always start in English and maintain English as your primary language unless explicitly asked to switch.',
+
   ],
   conversationStates: [
     {

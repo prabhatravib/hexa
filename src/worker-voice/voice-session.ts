@@ -124,6 +124,8 @@ export class VoiceSession {
         return this.handleReset(request);
       case '/api/external-data':
         return this.handleExternalData(request);
+      case '/api/external-data/status':
+        return this.handleExternalDataStatus(request);
       default:
         return new Response('Not found', { status: 404 });
     }
@@ -445,6 +447,65 @@ export class VoiceSession {
   // Getter for external data
   getExternalData() {
     return this.currentExternalData;
+  }
+
+  // Handle external data status endpoint
+  private async handleExternalDataStatus(request: Request): Promise<Response> {
+    try {
+      if (request.method === 'OPTIONS') {
+        return new Response(null, {
+          status: 200,
+          headers: {
+            'Access-Control-Allow-Origin': '*',
+            'Access-Control-Allow-Methods': 'GET, OPTIONS',
+            'Access-Control-Allow-Headers': 'Content-Type'
+          }
+        });
+      }
+
+      if (request.method !== 'GET') {
+        return new Response(JSON.stringify({
+          success: false,
+          error: 'Method not allowed. Use GET.'
+        }), {
+          status: 405,
+          headers: {
+            'Content-Type': 'application/json',
+            'Access-Control-Allow-Origin': '*'
+          }
+        });
+      }
+
+      const hasExternalData = this.currentExternalData !== null;
+      const dataType = this.currentExternalData?.type || null;
+      const timestamp = this.currentExternalData ? new Date().toISOString() : null;
+
+      return new Response(JSON.stringify({
+        hasExternalData,
+        dataType,
+        timestamp,
+        sessionId: this.sessionId
+      }), {
+        status: 200,
+        headers: {
+          'Content-Type': 'application/json',
+          'Access-Control-Allow-Origin': '*'
+        }
+      });
+
+    } catch (error) {
+      console.error('❌ Failed to handle external data status:', error);
+      return new Response(JSON.stringify({
+        success: false,
+        error: 'Failed to get external data status'
+      }), {
+        status: 500,
+        headers: {
+          'Content-Type': 'application/json',
+          'Access-Control-Allow-Origin': '*'
+        }
+      });
+    }
   }
 
   // Handle external data endpoint

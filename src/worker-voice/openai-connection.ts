@@ -119,7 +119,7 @@ export class OpenAIConnection {
     }
   }
 
-  // Send message to OpenAI via HTTP (for non-audio messages)
+  // Send message to OpenAI via Realtime API (for text messages)
   async sendMessage(message: any): Promise<void> {
     if (!this.sessionId) {
       console.error('❌ No session available');
@@ -127,63 +127,60 @@ export class OpenAIConnection {
     }
 
     try {
-      console.log('📤 Sending message to OpenAI via HTTP:', message.type);
+      console.log('📤 Sending message to OpenAI via Realtime API:', message.type);
       
-      // For text messages, we can use the chat completions API
+      // For text messages, use the Realtime API conversation items
       if (message.type === 'text') {
-        // Build context-aware prompt with external data
-        let enhancedPrompt = message.text;
-        let systemContext = '';
-        
-        if (message.externalData) {
-          const { text, prompt, type, image } = message.externalData;
-          
-          // Create system context from external data
-          if (text || prompt) {
-            systemContext = `You have access to the following external data context:\n`;
-            if (text) systemContext += `- Text content: ${text}\n`;
-            if (prompt) systemContext += `- Context/prompt: ${prompt}\n`;
-            if (type) systemContext += `- Data type: ${type}\n`;
-            if (image) systemContext += `- Image data is also available (base64 encoded)\n`;
-            systemContext += `\nPlease use this context to provide relevant and informed responses to the user's questions.`;
+        // Create conversation item with the user's text message
+        const conversationItem = {
+          type: "conversation.item.create",
+          item: {
+            type: "message",
+            role: "user",
+            content: [
+              {
+                type: "input_text",
+                text: message.text
+              }
+            ]
           }
-        }
-        
-        const messages = [] as Array<{ role: string; content: string }>;
-        
-        // Add system message with context if available
-        if (systemContext) {
-          messages.push({ role: 'system', content: systemContext });
-        }
-        
-        // Add user message
-        messages.push({ role: 'user', content: enhancedPrompt });
-        
-        console.log('📝 Sending message with context:', {
-          hasExternalData: !!message.externalData,
-          systemContext: systemContext ? 'Yes' : 'No',
-          userMessage: enhancedPrompt
-        });
-        
-        const response = await fetch('https://api.openai.com/v1/chat/completions', {
+        };
+
+        // Send the conversation item to Realtime API
+        const response = await fetch(`https://api.openai.com/v1/realtime/sessions/${this.sessionId}/conversation/items`, {
           method: 'POST',
           headers: {
             'Authorization': `Bearer ${this.env.OPENAI_API_KEY}`,
             'Content-Type': 'application/json'
           },
-          body: JSON.stringify({
-            model: 'gpt-4o',
-            messages: messages,
-            stream: false
-          })
+          body: JSON.stringify(conversationItem)
         });
 
         if (response.ok) {
-          const result = await response.json() as any;
-          this.onMessage(JSON.stringify({
-            type: 'response_text',
-            text: result.choices?.[0]?.message?.content || 'No response'
-          }));
+          console.log('✅ Text message sent to Realtime session');
+          
+          // Now trigger a response
+          const responseTrigger = {
+            type: "response.create"
+          };
+          
+          const triggerResponse = await fetch(`https://api.openai.com/v1/realtime/sessions/${this.sessionId}/responses`, {
+            method: 'POST',
+            headers: {
+              'Authorization': `Bearer ${this.env.OPENAI_API_KEY}`,
+              'Content-Type': 'application/json'
+            },
+            body: JSON.stringify(responseTrigger)
+          });
+          
+          if (triggerResponse.ok) {
+            console.log('✅ Response triggered for text message');
+          } else {
+            console.warn('⚠️ Could not trigger response');
+          }
+        } else {
+          const errorText = await response.text();
+          console.error('❌ Failed to send text message to Realtime session:', response.status, errorText);
         }
       }
     } catch (error) {
@@ -195,75 +192,33 @@ export class OpenAIConnection {
     }
   }
 
-  // Inject external data into the current Realtime session
-  async injectExternalDataIntoSession(externalData: {
+  // Store external data for injection via WebRTC events
+  private externalData: {
     image?: string;
     text?: string;
     prompt?: string;
     type?: string;
-  }): Promise<void> {
-    if (!this.sessionId) {
-      console.error('❌ No session available for external data injection');
-      return;
-    }
+  } | null = null;
 
-    try {
-      console.log('🔧 Injecting external data into Realtime session:', externalData);
-      
-      // Create conversation item with external data context
-      const conversationItem = {
-        type: "conversation.item.create",
-        item: {
-          type: "message",
-          role: "user",
-          content: [] as Array<{
-            type: string;
-            text?: string;
-            image_url?: string;
-          }>
-        }
-      };
+  // Set external data to be injected when WebRTC connection is established
+  setExternalData(externalData: {
+    image?: string;
+    text?: string;
+    prompt?: string;
+    type?: string;
+  }): void {
+    this.externalData = externalData;
+    console.log('📝 External data set for WebRTC injection:', externalData);
+  }
 
-      // Add text context if available
-      if (externalData.text || externalData.prompt) {
-        let contextText = '';
-        if (externalData.text) contextText += `Diagram/Code content: ${externalData.text}\n`;
-        if (externalData.prompt) contextText += `Context: ${externalData.prompt}\n`;
-        if (externalData.type) contextText += `Type: ${externalData.type}`;
-        
-        conversationItem.item.content.push({
-          type: "input_text",
-          text: contextText
-        });
-      }
-
-      // Add image if available
-      if (externalData.image) {
-        conversationItem.item.content.push({
-          type: "input_image",
-          image_url: externalData.image
-        });
-      }
-
-      // Send to OpenAI Realtime API
-      const response = await fetch(`https://api.openai.com/v1/realtime/sessions/${this.sessionId}/conversation/items`, {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${this.env.OPENAI_API_KEY}`,
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify(conversationItem)
-      });
-
-      if (response.ok) {
-        console.log('✅ External data successfully injected into Realtime session');
-      } else {
-        const errorText = await response.text();
-        console.error('❌ Failed to inject external data:', response.status, errorText);
-      }
-    } catch (error) {
-      console.error('❌ Error injecting external data:', error);
-    }
+  // Get external data for WebRTC injection
+  getExternalData(): {
+    image?: string;
+    text?: string;
+    prompt?: string;
+    type?: string;
+  } | null {
+    return this.externalData;
   }
 
   isConnected(): boolean {

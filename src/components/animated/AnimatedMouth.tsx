@@ -147,7 +147,7 @@ export const AnimatedMouth: React.FC<AnimatedMouthProps> = ({
     
     // Stop animation if voice state is idle
     if (currentVoiceState === 'idle') {
-      console.log('👄 Voice state is idle, stopping mouth animation');
+      // console.log('👄 Voice state is idle, stopping mouth animation');
       currentOpenness.set(0); // Reset to closed
       if (animationFrameRef.current) {
         cancelAnimationFrame(animationFrameRef.current);
@@ -159,7 +159,7 @@ export const AnimatedMouth: React.FC<AnimatedMouthProps> = ({
     // Use the target from the store (set by analyzer or fallback flap)
     const target = targetRef.current;
     
-    console.log(`👄 Animating mouth: state=${currentVoiceState}, target=${target.toFixed(3)}`);
+    // console.log(`👄 Animating mouth: state=${currentVoiceState}, target=${target.toFixed(3)}`);
     
     // Drive openness directly for clear, visible motion
     currentOpenness.set(target);
@@ -190,13 +190,13 @@ export const AnimatedMouth: React.FC<AnimatedMouthProps> = ({
     if (isSpeaking) {
       // Start animation if not already running
       if (!animationFrameRef.current) {
-        console.log('🚀 Starting mouth animation loop (speaking detected)');
+        // console.log('🚀 Starting mouth animation loop (speaking detected)');
         animationFrameRef.current = requestAnimationFrame(animateMouth);
       }
     } else {
       // Stop animation when not speaking
       if (animationFrameRef.current) {
-        console.log('⏹️ Stopping mouth animation loop (not speaking)');
+        // console.log('⏹️ Stopping mouth animation loop (not speaking)');
         cancelAnimationFrame(animationFrameRef.current);
         animationFrameRef.current = null;
       }
@@ -216,14 +216,14 @@ export const AnimatedMouth: React.FC<AnimatedMouthProps> = ({
   // Force update when target changes to ensure immediate response
   useEffect(() => {
     if (process.env.NODE_ENV === 'development') {
-      console.log(`🎯 Mouth Target Changed: ${mouthOpennessTarget.toFixed(3)}`);
+      // console.log(`🎯 Mouth Target Changed: ${mouthOpennessTarget.toFixed(3)}`);
     }
     
     if (mouthOpennessTarget > 0) { // Allow even tiny targets to trigger updates
       // Force a small update to trigger re-render
       currentOpenness.set(currentOpenness.get() + 0.001);
       if (process.env.NODE_ENV === 'development') {
-        console.log(`🔄 Force update applied to currentOpenness`);
+        // console.log(`🔄 Force update applied to currentOpenness`);
       }
     }
   }, [mouthOpennessTarget, currentOpenness]);
@@ -235,15 +235,15 @@ export const AnimatedMouth: React.FC<AnimatedMouthProps> = ({
   useEffect(() => {
     if (process.env.NODE_ENV === 'development') {
       const unsubscribe = currentOpenness.on('change', (value) => {
-        console.log(`📊 currentOpenness changed to: ${value.toFixed(3)}`);
+        // console.log(`📊 currentOpenness changed to: ${value.toFixed(3)}`);
       });
       
       const unsubscribeSpring = springOpenness.on('change', (value) => {
-        console.log(`🎢 springOpenness changed to: ${value.toFixed(3)}`);
+        // console.log(`🎢 springOpenness changed to: ${value.toFixed(3)}`);
       });
       
       const unsubscribeGated = gatedOpenness.on('change', (value) => {
-        console.log(`🚪 gatedOpenness changed to: ${value.toFixed(3)}`);
+        // console.log(`🚪 gatedOpenness changed to: ${value.toFixed(3)}`);
       });
       
       return () => {
@@ -276,8 +276,8 @@ export const AnimatedMouth: React.FC<AnimatedMouthProps> = ({
   
   // Debug path selection
   if (process.env.NODE_ENV === 'development') {
-    console.log(`🛤️ Path Selection: target=${mouthOpennessTarget.toFixed(3)}, speaking=${isCurrentlySpeaking}, animating=${isAnimating}, usingDynamic=${shouldUseDynamicPath}, pathD=${pathD ? 'set' : 'empty'}`);
-    console.log(`🛤️ Final Path: ${finalPath.substring(0, 50)}...`);
+    // console.log(`🛤️ Path Selection: target=${mouthOpennessTarget.toFixed(3)}, speaking=${isCurrentlySpeaking}, animating=${isAnimating}, usingDynamic=${shouldUseDynamicPath}, pathD=${pathD ? 'set' : 'empty'}`);
+    // console.log(`🛤️ Final Path: ${finalPath.substring(0, 50)}...`);
   }
   
   // Variants for expression-based animations - only control scale/transition, not path

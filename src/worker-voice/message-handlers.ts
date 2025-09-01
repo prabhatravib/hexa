@@ -83,10 +83,10 @@ export class MessageHandlers {
     try {
       console.log('🔧 Audio data received, sending session info to frontend for WebRTC connection...');
       
-      // NEW: Inject external data into the Realtime session if available
+      // NEW: Set external data for WebRTC injection if available
       if (this.currentExternalData) {
-        console.log('🔧 Injecting external data into new voice session:', this.currentExternalData);
-        await this.openaiConnection.injectExternalDataIntoSession(this.currentExternalData);
+        console.log('🔧 Setting external data for WebRTC injection:', this.currentExternalData);
+        this.openaiConnection.setExternalData(this.currentExternalData);
       }
       
       // Instead of trying to process audio in the worker, send session info to frontend
@@ -141,10 +141,28 @@ export class MessageHandlers {
     }
     
     try {
+      // Set external data for WebRTC injection if available
+      if (this.currentExternalData) {
+        console.log('🔧 Setting external data for WebRTC text message:', this.currentExternalData);
+        this.openaiConnection.setExternalData(this.currentExternalData);
+      }
+      
+      // Enhance text input with external data context if available
+      let enhancedText = text;
+      if (this.currentExternalData) {
+        if (this.currentExternalData.text) {
+          enhancedText = `Context: ${this.currentExternalData.text}\n\nUser question: ${text}`;
+        }
+        if (this.currentExternalData.prompt) {
+          enhancedText = `Context: ${this.currentExternalData.prompt}\n\nUser question: ${text}`;
+        }
+        console.log('🔧 Enhanced text with external data context:', enhancedText);
+      }
+      
       // Send text message to OpenAI via HTTP with external data context
       await this.openaiConnection.sendMessage({
         type: 'text',
-        text: text,
+        text: enhancedText,
         externalData: this.currentExternalData
       });
     } catch (error) {
