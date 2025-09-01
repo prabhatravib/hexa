@@ -127,11 +127,14 @@ ${getLanguageInstructions()}`
     // Create session and connect
     const session = new RealtimeSession(agent);
     
-    // Debug: Log all session events to understand what's available
+    // Debug: Log all session events to understand what's available (excluding transport events)
     const originalEmit = (session as any).emit;
     if (originalEmit) {
       (session as any).emit = function(event: string, ...args: any[]) {
-        console.log(`🔍 Session event: ${event}`, args);
+        // Filter out repetitive transport events to reduce console noise
+        if (event !== 'transport_event') {
+          console.log(`🔍 Session event: ${event}`, args);
+        }
         return originalEmit.call(this, event, ...args);
       };
     }

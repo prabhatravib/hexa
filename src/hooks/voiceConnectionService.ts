@@ -98,6 +98,12 @@ export const useVoiceConnectionService = ({
               console.log('Session info received, updating OpenAI Agent...');
               setInitializationProgress(80);
               setSessionInfo(data);
+              
+              // Store session ID for external data synchronization
+              if (data.sessionId) {
+                localStorage.setItem('voiceSessionId', data.sessionId);
+                console.log('📝 Stored voice session ID for external data sync:', data.sessionId);
+              }
               // Update the agent with new session info if needed
               if (openaiAgentRef.current) {
                 console.log('✅ OpenAI Agent already initialized, session info updated');

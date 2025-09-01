@@ -106,14 +106,6 @@ export class VoiceSession {
   async fetch(request: Request): Promise<Response> {
     const url = new URL(request.url);
     
-    // Extract session ID from URL parameters if present
-    const urlSessionId = url.searchParams.get('sessionId');
-    if (urlSessionId && urlSessionId !== this.sessionId) {
-      console.log('🆔 Session ID from URL parameter:', urlSessionId);
-      // For now, we'll use the URL session ID for external data operations
-      // but keep the current session ID for voice operations
-    }
-    
     switch (url.pathname) {
       case '/voice/sse':
         return this.handleSSE(request);
@@ -124,7 +116,6 @@ export class VoiceSession {
           status: 'ok', 
           message: 'Voice service is running',
           sessionId: this.sessionId,
-          urlSessionId: urlSessionId,
           timestamp: new Date().toISOString()
         }), {
           headers: { 'Content-Type': 'application/json' }
@@ -135,6 +126,8 @@ export class VoiceSession {
         return this.handleExternalData(request);
       case '/api/external-data/status':
         return this.handleExternalDataStatus(request);
+      case '/external-data.md':
+        return this.handleExternalDataFile(request);
       default:
         return new Response('Not found', { status: 404 });
     }
@@ -395,6 +388,10 @@ export class VoiceSession {
       await this.state.storage.delete('openai_session');
       await this.state.storage.delete('webrtc_state');
       
+      // Clear external data file on worker restart
+      await this.state.storage.delete('external_data_file');
+      console.log('🧹 Cleared external data file on worker restart');
+      
       // Clear all client connections
       this.clients.clear();
       
@@ -443,6 +440,10 @@ export class VoiceSession {
       // Clear storage
       await this.state.storage.delete('openai_session');
       await this.state.storage.delete('webrtc_state');
+      
+      // Clear external data file on restart
+      await this.state.storage.delete('external_data_file');
+      console.log('🧹 Cleared external data file on restart');
       
       // Clear clients
       this.clients.clear();
@@ -499,6 +500,39 @@ export class VoiceSession {
     }
   }
 
+  // Write external data to markdown file (like infflow.md)
+  private async writeExternalDataFile(externalData: {
+    image?: string;
+    text?: string;
+    prompt?: string;
+    type?: string;
+  }): Promise<void> {
+    try {
+      const timestamp = new Date().toISOString();
+      const content = `# External Data
+
+**Type:** ${externalData.type || 'Unknown'}
+**Prompt:** ${externalData.prompt || 'No prompt provided'}
+**Timestamp:** ${timestamp}
+
+## Content:
+
+${externalData.text || externalData.image || 'No content available'}
+
+---
+
+*This data was automatically generated and is available for voice discussions.*
+*Last updated: ${timestamp}*
+`;
+
+      // Store the markdown content
+      await this.state.storage.put('external_data_file', content);
+      console.log('📄 External data written to external-data.md file');
+    } catch (error) {
+      console.error('❌ Failed to write external data file:', error);
+    }
+  }
+
   // Notify voice session of external data availability
   private async notifyVoiceSession(sessionId: string, eventType: string, data: any): Promise<void> {
     try {
@@ -549,6 +583,67 @@ export class VoiceSession {
     }
   }
 
+  // Handle external data file endpoint (like infflow.md)
+  private async handleExternalDataFile(request: Request): Promise<Response> {
+    try {
+      if (request.method === 'OPTIONS') {
+        return new Response(null, {
+          status: 200,
+          headers: {
+            'Access-Control-Allow-Origin': '*',
+            'Access-Control-Allow-Methods': 'GET, OPTIONS',
+            'Access-Control-Allow-Headers': 'Content-Type'
+          }
+        });
+      }
+
+      if (request.method !== 'GET') {
+        return new Response(JSON.stringify({
+          success: false,
+          error: 'Method not allowed. Use GET.'
+        }), {
+          status: 405,
+          headers: {
+            'Content-Type': 'application/json',
+            'Access-Control-Allow-Origin': '*'
+          }
+        });
+      }
+
+      // Get external data from storage
+      const externalData = await this.state.storage.get('external_data_file') as string;
+      
+      if (!externalData) {
+        // Return empty content if no external data
+        return new Response('# External Data\n\nNo external data available.\n', {
+          status: 200,
+          headers: {
+            'Content-Type': 'text/markdown',
+            'Access-Control-Allow-Origin': '*'
+          }
+        });
+      }
+
+      return new Response(externalData, {
+        status: 200,
+        headers: {
+          'Content-Type': 'text/markdown',
+          'Access-Control-Allow-Origin': '*'
+        }
+      });
+
+    } catch (error) {
+      console.error('❌ Failed to serve external data file:', error);
+      return new Response('# External Data\n\nError loading external data.\n', {
+        status: 500,
+        headers: {
+          'Content-Type': 'text/markdown',
+          'Access-Control-Allow-Origin': '*'
+        }
+      });
+    }
+  }
+
   // Handle external data status endpoint
   private async handleExternalDataStatus(request: Request): Promise<Response> {
     try {
@@ -576,14 +671,11 @@ export class VoiceSession {
         });
       }
 
-      // Extract session ID from query parameters
-      const url = new URL(request.url);
-      const querySessionId = url.searchParams.get('sessionId');
-      const targetSessionId = querySessionId || this.sessionId;
-      
-      console.log('🆔 Status request for session ID:', targetSessionId);
+      // Always use the current voice session ID
+      const targetSessionId = this.sessionId;
+      console.log('🆔 Status request using current session ID:', targetSessionId);
 
-      // Get external data for the specific session
+      // Get external data for the current session
       const externalData = await this.getExternalDataBySessionId(targetSessionId);
       const hasExternalData = externalData !== null;
       const dataType = externalData?.type || null;
@@ -593,7 +685,8 @@ export class VoiceSession {
         hasExternalData,
         dataType,
         timestamp,
-        sessionId: targetSessionId
+        sessionId: targetSessionId,
+        externalData: externalData  // Include the actual data
       }), {
         status: 200,
         headers: {
@@ -649,19 +742,25 @@ export class VoiceSession {
         text?: string;
         prompt?: string;
         type?: string;
-        sessionId?: string;
+        sessionId?: string;  // This is optional and can be ignored
       };
 
       console.log('📥 Received external data:', externalData);
 
-      // Extract session ID from request or use current session
-      const requestSessionId = externalData.sessionId || this.sessionId;
-      console.log('🆔 Using session ID for external data:', requestSessionId);
-      console.log('🆔 Current voice session ID:', this.sessionId);
-      console.log('🆔 Request session ID:', externalData.sessionId);
+      // ALWAYS use the current voice session ID, ignore what was sent
+      const currentSessionId = this.sessionId;
+      console.log('🆔 Using current voice session ID:', currentSessionId);
 
-      // Store the external data with session ID
-      await this.storeExternalData(requestSessionId, {
+      // Write external data to markdown file (like infflow.md)
+      await this.writeExternalDataFile({
+        image: externalData.image,
+        text: externalData.text,
+        prompt: externalData.prompt,
+        type: externalData.type
+      });
+
+      // Store the external data with the CURRENT session ID (for backward compatibility)
+      await this.storeExternalData(currentSessionId, {
         image: externalData.image,
         text: externalData.text,
         prompt: externalData.prompt,
@@ -669,43 +768,41 @@ export class VoiceSession {
         timestamp: new Date().toISOString()
       });
 
-      // If this is for the current session, update current external data
-      if (requestSessionId === this.sessionId) {
-        this.currentExternalData = {
-          image: externalData.image,
-          text: externalData.text,
-          prompt: externalData.prompt,
-          type: externalData.type
-        };
+      // Update current external data
+      this.currentExternalData = {
+        image: externalData.image,
+        text: externalData.text,
+        prompt: externalData.prompt,
+        type: externalData.type
+      };
 
-        // Process the external data through message handlers
-        await this.messageHandlers.handleExternalData(this.currentExternalData, this.sessionId);
-        
-        // Also update the message handlers' external data context directly
-        this.messageHandlers.updateExternalData(this.currentExternalData);
+      // Process the external data through message handlers
+      await this.messageHandlers.handleExternalData(this.currentExternalData, currentSessionId);
+      
+      // Update the message handlers' external data context
+      this.messageHandlers.updateExternalData(this.currentExternalData);
 
-        // Broadcast to connected clients
-        this.broadcastToClients({
-          type: 'external_data_received',
-          data: this.currentExternalData,
-          sessionId: this.sessionId
-        });
-      }
+      // Broadcast to connected clients
+      this.broadcastToClients({
+        type: 'external_data_received',
+        data: this.currentExternalData,
+        sessionId: currentSessionId
+      });
 
-      // Trigger voice context update for the session
-      await this.notifyVoiceSession(requestSessionId, 'external_data_available', {
+      // Trigger voice context update for the CURRENT session
+      await this.notifyVoiceSession(currentSessionId, 'external_data_available', {
         mermaidCode: externalData.text,
         originalPrompt: externalData.prompt,
         diagramType: externalData.type,
         timestamp: new Date().toISOString()
       });
 
-      console.log('✅ External data processing complete for session:', requestSessionId);
+      console.log('✅ External data processing complete for current session:', currentSessionId);
 
       return new Response(JSON.stringify({
         success: true,
         message: 'External data received and context updated',
-        sessionId: requestSessionId
+        sessionId: currentSessionId  // Return the actual session ID used
       }), {
         status: 200,
         headers: {

@@ -128,11 +128,14 @@ export const initializeWebRTCConnection = async (
     }
   });
   
-  // Debug: Monitor all session events
+  // Debug: Monitor all session events (excluding transport events)
   const sessionEvents = ['track', 'stream', 'connectionstatechange', 'iceconnectionstatechange', 'signalingstatechange'];
   sessionEvents.forEach(eventName => {
     session.on(eventName as any, (event: any) => {
-      console.log(`🔍 Session event: ${eventName}`, event);
+      // Filter out repetitive transport events to reduce console noise
+      if (eventName !== 'transport_event') {
+        console.log(`🔍 Session event: ${eventName}`, event);
+      }
     });
   });
   
