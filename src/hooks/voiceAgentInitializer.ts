@@ -185,19 +185,16 @@ ${getLanguageInstructions()}`;
 
     const unsubscribe = useExternalDataStore.subscribe((state) => {
       const data = state.currentData;
-      if (!data || !session || session.state !== "open") return;
+      if (!data || !session) return;
 
       console.log('🔄 New external data detected, updating session instructions...');
       
       const externalContext = formatExternalData(data);
       const updatedInstructions = `${baseInstructions}\n\n${externalContext}`;
       
-      session.send({
-        type: "session.update",
-        session: { instructions: updatedInstructions }
-      });
-      
-      console.log('✅ Session instructions updated with external data');
+      // Note: Frontend session updates are handled by the worker-side implementation
+      // This subscription is kept as a backup for when the session is not connected
+      console.log('📊 External data available for session update:', externalContext);
     });
     
 

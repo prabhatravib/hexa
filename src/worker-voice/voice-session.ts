@@ -405,7 +405,7 @@ export class VoiceSession {
         return;
       }
 
-      const extra = await this.getExternalData();
+      const extra = await this.formatCurrentExternalData();
       
       if (!extra) {
         console.log('ℹ️ No external data to apply to session');
@@ -419,13 +419,13 @@ export class VoiceSession {
       const merged = this.agentManager.getAgentInstructions();
       
       // Update session instructions
-      await this.openaiConnection.send({
+      await this.openaiConnection.sendMessage({
         type: "session.update",
         session: { instructions: merged }
       });
 
       // Add silent system message to keep it in history
-      await this.openaiConnection.send({
+      await this.openaiConnection.sendMessage({
         type: "conversation.item.create",
         item: { 
           type: "message", 
@@ -440,7 +440,7 @@ export class VoiceSession {
     }
   }
 
-  private async getExternalData(): Promise<string | null> {
+  private async formatCurrentExternalData(): Promise<string | null> {
     try {
       if (!this.currentExternalData || !this.currentExternalData.text) {
         return null;
@@ -539,7 +539,7 @@ export class VoiceSession {
   }
 
   // Getter for external data
-  getExternalData() {
+  getCurrentExternalData() {
     return this.currentExternalData;
   }
 
