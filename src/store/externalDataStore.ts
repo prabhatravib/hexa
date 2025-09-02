@@ -38,13 +38,10 @@ export const useExternalDataStore = create<ExternalDataStore>((set, get) => ({
       currentData: timestampedData,
       history: [timestampedData, ...state.history.slice(0, 9)] // Keep last 10 items
     }));
-    
-    console.log('📊 External data updated in Zustand:', timestampedData);
   },
 
   clearExternalData: () => {
     set({ currentData: null });
-    console.log('🗑️ External data cleared from Zustand');
   },
 
   addToHistory: (data: ExternalData) => {

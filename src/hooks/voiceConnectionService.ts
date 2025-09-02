@@ -41,6 +41,19 @@ export const useVoiceConnectionService = ({
     type?: string;
   } | null>(null);
   
+  // Track last processed data to prevent duplicates
+  const lastProcessedDataRef = useRef<string | null>(null);
+  
+  // Helper function to check if data is duplicate
+  const isDuplicateData = (data: any): boolean => {
+    const dataString = JSON.stringify(data);
+    if (lastProcessedDataRef.current === dataString) {
+      return true;
+    }
+    lastProcessedDataRef.current = dataString;
+    return false;
+  };
+  
   // Synthetic flapping loop to guarantee mouth motion when speaking events arrive
   const flapRafRef = useRef<number | null>(null);
   const startSyntheticFlap = () => {
@@ -81,9 +94,7 @@ export const useVoiceConnectionService = ({
       
       eventSource.onmessage = async (event) => {
         try {
-          console.log('Raw SSE message received:', event.data);
           const data = JSON.parse(event.data);
-          console.log('Parsed SSE message:', data);
           
           switch (data.type) {
             case 'connected':
@@ -195,7 +206,10 @@ export const useVoiceConnectionService = ({
               break;
               
             case 'external_data_received':
-              console.log('📥 External data received:', data.data);
+              // Skip if this is duplicate data
+              if (isDuplicateData(data.data)) {
+                break;
+              }
               // Store external data for voice agent context (legacy)
               setExternalData(data.data);
               // Store in Zustand store for reliable access
@@ -210,7 +224,10 @@ export const useVoiceConnectionService = ({
               break;
               
             case 'external_data_processed':
-              console.log('✅ External data processed and available for voice discussions:', data.data);
+              // Skip if this is duplicate data
+              if (isDuplicateData(data.data)) {
+                break;
+              }
               // Store external data for voice agent context (legacy)
               setExternalData(data.data);
               // Store in Zustand store for reliable access
@@ -225,7 +242,10 @@ export const useVoiceConnectionService = ({
               break;
               
             case 'external_text_available':
-              console.log('📝 External text available for voice context:', data.text);
+              // Skip if this is duplicate text data
+              if (isDuplicateData({ text: data.text })) {
+                break;
+              }
               // Update external data with text content (legacy)
               setExternalData(prev => prev ? { ...prev, text: data.text } : { text: data.text });
               // Store in Zustand store for reliable access
