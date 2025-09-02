@@ -224,7 +224,7 @@ export const useVoiceConnectionService = ({
               // Inject text content directly into active session
               if (data.data?.text) {
                 console.log('🔧 Attempting to inject external context:', data.data.text);
-                injectExternalContext(data.data.text);
+                await injectExternalContext(data.data.text);
               }
               break;
               
@@ -242,7 +242,7 @@ export const useVoiceConnectionService = ({
               });
               // Inject text content directly into active session
               if (data.data?.text) {
-                injectExternalContext(data.data.text);
+                await injectExternalContext(data.data.text);
               }
               break;
               
@@ -260,7 +260,7 @@ export const useVoiceConnectionService = ({
               });
               // Inject text content directly into active session
               if (data.text) {
-                injectExternalContext(data.text);
+                await injectExternalContext(data.text);
               }
               break;
               

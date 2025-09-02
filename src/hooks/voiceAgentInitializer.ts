@@ -2,7 +2,7 @@ import { getLanguageInstructions } from '@/lib/languageConfig';
 import { setupSessionEventHandlers } from './voiceSessionEvents';
 import { initializeWebRTCConnection } from './voiceWebRTCConnection';
 import { voiceContextManager } from './voiceContextManager';
-import { setActiveSession, clearActiveSession, injectExternalContext, injectExternalDataFromStore } from '@/lib/externalContext';
+import { setActiveSession, clearActiveSession, injectExternalContext, injectExternalDataFromStore, setBaseInstructions } from '@/lib/externalContext';
 import { useExternalDataStore } from '@/store/externalDataStore';
 
 type VoiceState = 'idle' | 'listening' | 'thinking' | 'speaking' | 'error';
@@ -69,6 +69,9 @@ ${baseInstructions}`;
     baseInstructions += `\n\nYou can assist with various tasks, answer questions, and engage in natural conversation. Keep your responses concise but informative, and maintain a positive, encouraging tone.
 
 ${getLanguageInstructions()}`;
+
+    // Set base instructions for external context injection
+    setBaseInstructions(baseInstructions);
 
     // Create agent with proper configuration
     const agent = new RealtimeAgent({
@@ -164,6 +167,54 @@ ${getLanguageInstructions()}`;
     
     // Set as active session for external context injection
     setActiveSession(session);
+
+    // Add debug updater for session instructions
+    (window as any).__updateSessionInstructions = async (instructions: string) => {
+      const s: any = session;
+      
+      // Verify session state is open
+      if (s?.state !== 'open') return false;
+      
+      // Feature-detect the send method: send → emit → transport.sendEvent
+      const sendMethod = s?.send || s?.emit || s?.transport?.sendEvent;
+      if (!sendMethod) return false;
+      
+      try {
+        // Attach ACK listener before sending
+        const ackPromise = new Promise((resolve) => {
+          const timeout = setTimeout(() => {
+            cleanup();
+            resolve(false);
+          }, 3000);
+
+          const onEvent = (ev: any) => {
+            if (ev?.type === 'session.updated') {
+              cleanup();
+              resolve(true);
+            }
+          };
+
+          const cleanup = () => {
+            clearTimeout(timeout);
+            // Remove all listeners on success, error, and timeout
+            s.off?.('event', onEvent);
+            s.off?.('session.updated', onEvent);
+          };
+
+          // Listen on the generic "event" stream if SDK uses single event bus
+          s.on?.('event', onEvent);
+          s.on?.('session.updated', onEvent);
+        });
+
+        // Send session.update
+        await sendMethod.call(s, { type: 'session.update', session: { instructions } });
+        
+        // Wait for ack
+        return await ackPromise;
+      } catch {
+        return false;
+      }
+    };
 
     // Set base instructions in the worker for session-level updates
     try {

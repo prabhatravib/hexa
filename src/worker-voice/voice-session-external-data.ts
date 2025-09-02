@@ -70,42 +70,7 @@ Use this over prior knowledge. "Infflow" with two f's is the user's company, not
     }
   }
 
-  // Apply external data to session with session-level instructions update
-  async applyExternalDataToSessionWithInstructions(sessionId: string, externalData: any): Promise<void> {
-    try {
-      // Create facts block from external data
-      const facts = this.makeFactsBlock(externalData);
-      
-      // Build new instructions with facts as authoritative context
-      const newInstructions = `${this.baseInstructions || this.agentManager.getAgentInstructions()}
 
-CRITICAL CONTEXT UPDATE:
-The following information is now part of your knowledge. Use it when relevant but DO NOT announce or discuss it unless the user asks:
-
-${facts}
-
-This is authoritative information that overrides any previous knowledge on these topics.`;
-
-      // Get the OpenAI connection from message handlers
-      const openaiConnection = (this.messageHandlers as any).openaiConnection;
-      
-      if (openaiConnection && openaiConnection.updateSessionInstructions) {
-        // Update via the actual OpenAI API connection
-        const success = await openaiConnection.updateSessionInstructions(newInstructions);
-        
-        if (success) {
-          console.log('✅ External context injected silently into session');
-        } else {
-          console.log('⚠️ Failed to update session with external context');
-        }
-      } else {
-        console.log('⚠️ OpenAI connection not available for instruction update');
-      }
-      
-    } catch (error) {
-      console.error('❌ Failed to apply external data to session:', error);
-    }
-  }
 
   // Create facts block from external data
   private makeFactsBlock(externalData: any): string {
@@ -368,14 +333,11 @@ This is authoritative information that overrides any previous knowledge on these
         sessionId: targetSessionId
       });
 
-      // Apply external data to active Realtime session with session-level instructions update
-      await this.applyExternalDataToSessionWithInstructions(targetSessionId, externalData);
-
       console.log('✅ External data processing complete for session:', targetSessionId);
 
       return this.core.createJsonResponse({
         success: true,
-        message: 'External data received and session instructions updated',
+        message: 'External data received and broadcast to clients',
         sessionId: targetSessionId
       });
 

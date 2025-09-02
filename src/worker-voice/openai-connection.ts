@@ -261,45 +261,7 @@ export class OpenAIConnection {
     return this.externalData;
   }
 
-  // Update session instructions dynamically
-  async updateSessionInstructions(instructions: string): Promise<boolean> {
-    if (!this.sessionId) {
-      console.error('❌ No session available for instruction update');
-      return false;
-    }
 
-    try {
-      console.log('📝 Updating session instructions via API...');
-      
-      // Use the OpenAI Realtime API to update session
-      const response = await fetch(`https://api.openai.com/v1/realtime/sessions/${this.sessionId}`, {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${this.env.OPENAI_API_KEY}`,
-          'Content-Type': 'application/json',
-          'OpenAI-Beta': 'realtime=v1'
-        },
-        body: JSON.stringify({
-          type: 'session.update',
-          session: {
-            instructions: instructions
-          }
-        })
-      });
-
-      if (response.ok) {
-        console.log('✅ Session instructions updated successfully');
-        return true;
-      } else {
-        const errorText = await response.text();
-        console.error('❌ Failed to update session instructions:', errorText);
-        return false;
-      }
-    } catch (error) {
-      console.error('❌ Error updating session instructions:', error);
-      return false;
-    }
-  }
 
   isConnected(): boolean {
     // We're connected if we have a session
