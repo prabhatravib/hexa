@@ -59,28 +59,64 @@ export function injectExternalContext(raw: string) {
   }
 
   // If session not ready, log and return (data is still in Zustand for later)
-  if (!activeSession || activeSession.state !== "open") {
-    console.log('⏳ Session not ready, external data remains in Zustand store for later injection');
+  if (!activeSession) {
+    console.log('⏳ No active session, external data remains in Zustand store for later injection');
     return;
   }
 
   try {
     console.log('💉 Injecting external context into active session:', text.substring(0, 50) + '...');
     
-    // Push as system item
-    activeSession.send({
-      type: "conversation.item.create",
-      item: {
+    // For OpenAI Realtime sessions, we need to update the agent's context differently
+    // The session might have a different API or we need to use events
+    
+    // Method 1: Try using emit if available (for event-based communication)
+    if (activeSession.emit && typeof activeSession.emit === 'function') {
+      console.log('📤 Using emit method to inject context');
+      activeSession.emit('conversation.item.create', {
         type: "message",
         role: "system",
-        content: [{ type: "input_text", text: `Context:\n${text}` }]
-      }
-    });
-
-    // Optionally nudge a response
-    activeSession.send({ type: "response.create" });
+        content: [{ 
+          type: "input_text", 
+          text: `IMPORTANT CONTEXT UPDATE: ${text}\n\nPlease acknowledge and use this information in our conversation.`
+        }]
+      });
+      console.log('✅ Context injected via emit');
+      return;
+    }
     
-    console.log('✅ External context injected successfully');
+    // Method 2: Try updating through the session's agent if available
+    if (activeSession.agent && activeSession.agent.instructions) {
+      console.log('📤 Updating agent instructions with context');
+      const currentInstructions = activeSession.agent.instructions || '';
+      const contextSection = `\n\n=== CURRENT EXTERNAL CONTEXT ===\n${text}\n=== END EXTERNAL CONTEXT ===\n`;
+      
+      // Remove old context section if exists
+      const cleanedInstructions = currentInstructions.replace(/\n\n=== CURRENT EXTERNAL CONTEXT ===[\s\S]*?=== END EXTERNAL CONTEXT ===\n/g, '');
+      
+      // Add new context
+      activeSession.agent.instructions = cleanedInstructions + contextSection;
+      console.log('✅ Context injected via agent instructions');
+      return;
+    }
+    
+    // Method 3: Store in session metadata if available
+    if (activeSession.metadata || activeSession.data) {
+      console.log('📤 Storing context in session metadata');
+      const storage = activeSession.metadata || activeSession.data || {};
+      storage.externalContext = text;
+      storage.externalContextTimestamp = Date.now();
+      console.log('✅ Context stored in session metadata');
+      return;
+    }
+    
+    console.warn('⚠️ Session object does not have expected methods for context injection');
+    console.log('Session object properties:', Object.keys(activeSession));
+    
+    // Fallback: Store for manual retrieval
+    (window as any).__pendingExternalContext = text;
+    console.log('💾 Context stored in __pendingExternalContext for manual injection');
+    
   } catch (error) {
     console.error('❌ Failed to inject external context:', error);
   }
@@ -98,26 +134,13 @@ export function injectExternalDataFromStore() {
   
   console.log('📊 Injecting formatted context from Zustand store');
   
-  if (!activeSession || activeSession.state !== "open") {
-    console.log('⏳ Session not ready for injection');
+  if (!activeSession) {
+    console.log('⏳ No active session for injection');
     return;
   }
   
-  try {
-    activeSession.send({
-      type: "conversation.item.create",
-      item: {
-        type: "message",
-        role: "system",
-        content: [{ type: "input_text", text: formattedContext }]
-      }
-    });
-
-    activeSession.send({ type: "response.create" });
-    console.log('✅ External data from store injected successfully');
-  } catch (error) {
-    console.error('❌ Failed to inject external data from store:', error);
-  }
+  // Use the same injection method as injectExternalContext
+  injectExternalContext(formattedContext);
 }
 
 // Global access for debugging

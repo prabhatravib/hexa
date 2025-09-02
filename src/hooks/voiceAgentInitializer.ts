@@ -46,11 +46,17 @@ export const initializeOpenAIAgent = async (
     console.log('🔧 External data context:', externalDataContext ? 'Available' : 'None');
     
     // Create base instructions that will be updated dynamically
-    const baseInstructions = `You are Hexa, a friendly and helpful AI assistant. You have a warm, conversational personality and are always eager to help.
+    let baseInstructions = `You are Hexa, a friendly and helpful AI assistant. You have a warm, conversational personality and are always eager to help.
 
-${currentContext}
+${currentContext}`;
 
-You can assist with various tasks, answer questions, and engage in natural conversation. Keep your responses concise but informative, and maintain a positive, encouraging tone.
+    // Add external data context if available
+    if (externalDataContext) {
+      baseInstructions += `\n\n${externalDataContext}`;
+      console.log('📝 Added external data to initial instructions');
+    }
+
+    baseInstructions += `\n\nYou can assist with various tasks, answer questions, and engage in natural conversation. Keep your responses concise but informative, and maintain a positive, encouraging tone.
 
 ${getLanguageInstructions()}`;
 
@@ -148,6 +154,37 @@ ${getLanguageInstructions()}`;
     
     // Set as active session for external context injection
     setActiveSession(session);
+
+    // Inject any pending external data from Zustand after a short delay
+    setTimeout(() => {
+      console.log('🔄 Checking for pending external data to inject...');
+      injectExternalDataFromStore();
+    }, 500);
+
+    // Also retry after session is fully established
+    (session as any).on('session.created', () => {
+      console.log('🎯 Session created, injecting external data from Zustand store');
+      setTimeout(() => {
+        injectExternalDataFromStore();
+      }, 1000);
+    });
+
+    // Periodically check for new external data and update instructions
+    const contextUpdateInterval = setInterval(() => {
+      const latestContext = useExternalDataStore.getState().getFormattedContext();
+      if (latestContext && agent && agent.instructions && typeof agent.instructions === 'string') {
+        const contextSection = `\n\n=== CURRENT EXTERNAL CONTEXT ===\n${latestContext}\n=== END EXTERNAL CONTEXT ===\n`;
+        
+        // Remove old context section if exists
+        const cleanedInstructions = agent.instructions.replace(/\n\n=== CURRENT EXTERNAL CONTEXT ===[\s\S]*?=== END EXTERNAL CONTEXT ===\n/g, '');
+        
+        // Only update if context has changed
+        if (!cleanedInstructions.includes(latestContext)) {
+          agent.instructions = cleanedInstructions + contextSection;
+          console.log('🔄 Updated agent instructions with new external context');
+        }
+      }
+    }, 5000); // Check every 5 seconds
     
     // Debug: Log all session events to understand what's available (excluding transport events)
     const originalEmit = (session as any).emit;
@@ -210,12 +247,14 @@ ${getLanguageInstructions()}`;
     // Clear active session when disconnected
     (session as any).on('disconnected', () => {
       console.log('🔗 Session disconnected, clearing active session');
+      clearInterval(contextUpdateInterval);
       clearActiveSession();
       unsubscribe(); // Clean up Zustand subscription
     });
     
     (session as any).on('error', () => {
       console.log('🔗 Session error, clearing active session');
+      clearInterval(contextUpdateInterval);
       clearActiveSession();
       unsubscribe(); // Clean up Zustand subscription
     });
