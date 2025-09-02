@@ -165,36 +165,7 @@ ${getLanguageInstructions()}`;
     // Set as active session for external context injection
     setActiveSession(session);
 
-    // Inject any pending external data from Zustand after a short delay
-    setTimeout(() => {
-      console.log('🔄 Checking for pending external data to inject...');
-      injectExternalDataFromStore();
-    }, 500);
-
-    // Also retry after session is fully established
-    (session as any).on('session.created', () => {
-      console.log('🎯 Session created, injecting external data from Zustand store');
-      setTimeout(() => {
-        injectExternalDataFromStore();
-      }, 1000);
-    });
-
-    // Periodically check for new external data and update instructions
-    const contextUpdateInterval = setInterval(() => {
-      const latestContext = useExternalDataStore.getState().getFormattedContext();
-      if (latestContext && agent && agent.instructions && typeof agent.instructions === 'string') {
-        const contextSection = `\n\n=== CURRENT EXTERNAL CONTEXT ===\n${latestContext}\n=== END EXTERNAL CONTEXT ===\n`;
-        
-        // Remove old context section if exists
-        const cleanedInstructions = agent.instructions.replace(/\n\n=== CURRENT EXTERNAL CONTEXT ===[\s\S]*?=== END EXTERNAL CONTEXT ===\n/g, '');
-        
-        // Only update if context has changed
-        if (!cleanedInstructions.includes(latestContext)) {
-          agent.instructions = cleanedInstructions + contextSection;
-          console.log('🔄 Updated agent instructions with new external context');
-        }
-      }
-    }, 5000); // Check every 5 seconds
+    // External data is now handled via Zustand subscription to /api/external-data
     
     // Debug: Log all session events to understand what's available (excluding transport events)
     const originalEmit = (session as any).emit;
@@ -230,41 +201,48 @@ ${getLanguageInstructions()}`;
       }
     };
 
+    // Zustand subscription to POST to /api/external-data on store changes
+    let previousContext: string | null = null;
     const unsubscribe = useExternalDataStore.subscribe((state) => {
-      const data = state.currentData;
-      if (!data || !session) return;
-
-      console.log('🔄 New external data detected, updating session instructions...');
+      const currentContext = state.getFormattedContext();
+      if (!currentContext || currentContext === previousContext) return;
       
-      const externalContext = formatExternalData(data);
-      const updatedInstructions = `${baseInstructions}\n\n${externalContext}`;
+      previousContext = currentContext;
+      console.log('🔄 External data changed, posting to server...');
       
-      // Note: Frontend session updates are handled by the worker-side implementation
-      // This subscription is kept as a backup for when the session is not connected
-      console.log('📊 External data available for session update:', externalContext);
+      // POST to /api/external-data with current context
+      fetch('/api/external-data', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          text: state.currentData?.text || '',
+          type: state.currentData?.type || 'text',
+          sessionId: sessionData.sessionId // Use the session ID from the worker
+        })
+      }).then(response => {
+        if (response.ok) {
+          console.log('✅ External data posted to server successfully');
+        } else {
+          console.error('❌ Failed to post external data to server');
+        }
+      }).catch(error => {
+        console.error('❌ Error posting external data to server:', error);
+      });
     });
     
 
     
-    // Inject external data from Zustand store when session opens
-    (session as any).on('session.created', () => {
-      console.log('🎯 Session created, injecting external data from Zustand store');
-      setTimeout(() => {
-        injectExternalDataFromStore();
-      }, 1000); // Small delay to ensure session is fully ready
-    });
+    // External data injection is now handled via Zustand subscription
     
     // Clear active session when disconnected
     (session as any).on('disconnected', () => {
       console.log('🔗 Session disconnected, clearing active session');
-      clearInterval(contextUpdateInterval);
       clearActiveSession();
       unsubscribe(); // Clean up Zustand subscription
     });
     
     (session as any).on('error', () => {
       console.log('🔗 Session error, clearing active session');
-      clearInterval(contextUpdateInterval);
       clearActiveSession();
       unsubscribe(); // Clean up Zustand subscription
     });

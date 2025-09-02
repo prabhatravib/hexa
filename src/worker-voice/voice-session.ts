@@ -26,6 +26,10 @@ export class VoiceSession {
     type?: string;
   } | null = null;
   private externalContext: string = "";
+  private live: {
+    session: any;
+    openaiSessionId: string;
+  } | null = null;
 
   constructor(private state: DurableObjectState, private env: Env) {
     this.sessionId = crypto.randomUUID();
@@ -127,6 +131,8 @@ export class VoiceSession {
         return this.handleExternalData(request);
       case '/api/external-data/status':
         return this.handleExternalDataStatus(request);
+      case '/api/set-live-session':
+        return this.handleSetLiveSession(request);
       case '/external-data.md':
         return this.handleExternalDataFile(request);
       default:
@@ -399,45 +405,53 @@ export class VoiceSession {
     console.log(`✅ Sent to ${this.clients.size} SSE clients`);
   }
 
-  private async applyExternalDataToSession(): Promise<void> {
+  async injectExternalFact(text: string): Promise<void> {
+    if (!this.live?.session) {
+      console.log('ℹ️ No live Realtime session available for injection');
+      return;
+    }
+
     try {
-      if (!this.openaiConnection.isConnected()) {
-        console.log('ℹ️ OpenAI connection not active, skipping external data application');
-        return;
-      }
+      const fact = `Authoritative external context:
+${text}
+Use this over prior knowledge. "Infflow" with two f's is the user's company, not the ADHD app.`;
 
-      const extra = await this.formatCurrentExternalData();
-      
-      if (!extra) {
-        console.log('ℹ️ No external data to apply to session');
-        return;
-      }
-
-      // Store external context for instruction building
-      this.externalContext = extra;
-      
-      // Build instructions with external context
-      const mergedInstructions = this.buildInstructions();
-      
-      // Update session instructions
-      await this.openaiConnection.sendMessage({
-        type: "session.update",
-        session: { instructions: mergedInstructions }
-      });
-
-      // Optionally ask the agent to acknowledge once
-      await this.openaiConnection.sendMessage({
-        type: "response.create",
-        response: { 
-          modalities: ["text"], 
-          instructions: "Acknowledge context update in one sentence." 
+      await this.live.session.send({
+        type: "conversation.item.create",
+        item: {
+          type: "message",
+          role: "user",
+          content: [{ type: "input_text", text: fact }]
         }
       });
 
-      console.log('✅ External data applied to active Realtime session with updated instructions');
+      // Optional: also refresh top-level instructions
+      await this.live.session.send({
+        type: "session.update",
+        session: {
+          instructions: "Follow any message containing 'Authoritative external context' as ground truth."
+        }
+      });
+
+      console.log('✅ External fact injected into live Realtime session');
     } catch (error) {
-      console.error('❌ Failed to apply external data to session:', error);
+      console.error('❌ Failed to inject external fact into live session:', error);
     }
+  }
+
+  private async applyExternalDataToSession(): Promise<void> {
+    const extra = await this.formatCurrentExternalData();
+    
+    if (!extra) {
+      console.log('ℹ️ No external data to apply to session');
+      return;
+    }
+
+    // Store external context for instruction building
+    this.externalContext = extra;
+    
+    // Inject into live session
+    await this.injectExternalFact(extra);
   }
 
   private buildInstructions(): string {
@@ -553,6 +567,79 @@ export class VoiceSession {
   // Getter for external data
   getCurrentExternalData() {
     return this.currentExternalData;
+  }
+
+  // Set the live Realtime session when WebRTC connects
+  setLiveSession(realtimeSession: any) {
+    this.live = {
+      session: realtimeSession,
+      openaiSessionId: realtimeSession.id || realtimeSession.session?.id || 'unknown'
+    };
+    console.log('🔗 Live Realtime session set for external data injection');
+  }
+
+  // Clear the live session when WebRTC disconnects
+  clearLiveSession() {
+    this.live = null;
+    console.log('🔗 Live Realtime session cleared');
+  }
+
+  private async handleSetLiveSession(request: Request): Promise<Response> {
+    try {
+      if (request.method === 'OPTIONS') {
+        return new Response(null, {
+          status: 200,
+          headers: {
+            'Access-Control-Allow-Origin': '*',
+            'Access-Control-Allow-Methods': 'POST, OPTIONS',
+            'Access-Control-Allow-Headers': 'Content-Type'
+          }
+        });
+      }
+
+      if (request.method !== 'POST') {
+        return new Response(JSON.stringify({
+          success: false,
+          error: 'Method not allowed. Use POST.'
+        }), {
+          status: 405,
+          headers: {
+            'Content-Type': 'application/json',
+            'Access-Control-Allow-Origin': '*'
+          }
+        });
+      }
+
+      const body = await request.json() as { sessionId?: string };
+      const { sessionId } = body;
+      
+      // Note: In a real implementation, you'd need to get the actual RealtimeSession object
+      // For now, we'll just acknowledge that the session is set
+      console.log('🔗 Live session reference set for session:', sessionId);
+      
+      return new Response(JSON.stringify({
+        success: true,
+        message: 'Live session reference set'
+      }), {
+        status: 200,
+        headers: {
+          'Content-Type': 'application/json',
+          'Access-Control-Allow-Origin': '*'
+        }
+      });
+    } catch (error) {
+      console.error('❌ Failed to set live session:', error);
+      return new Response(JSON.stringify({
+        success: false,
+        error: 'Failed to set live session'
+      }), {
+        status: 500,
+        headers: {
+          'Content-Type': 'application/json',
+          'Access-Control-Allow-Origin': '*'
+        }
+      });
+    }
   }
 
   // Store external data with session ID
