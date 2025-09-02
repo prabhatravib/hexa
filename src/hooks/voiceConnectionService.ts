@@ -109,6 +109,7 @@ export const useVoiceConnectionService = ({
               
             case 'session_info':
               console.log('Session info received, updating OpenAI Agent...');
+              console.log('🔍 Received session_info with sessionId:', data.sessionId);
               setInitializationProgress(80);
               setSessionInfo(data);
               
@@ -116,6 +117,7 @@ export const useVoiceConnectionService = ({
               if (data.sessionId) {
                 localStorage.setItem('voiceSessionId', data.sessionId);
                 console.log('📝 Stored voice session ID for external data sync:', data.sessionId);
+                console.log('🔍 localStorage now contains:', localStorage.getItem('voiceSessionId'));
               }
               // Update the agent with new session info if needed
               if (openaiAgentRef.current) {
@@ -206,8 +208,10 @@ export const useVoiceConnectionService = ({
               break;
               
             case 'external_data_received':
+              console.log('🔍 Received external_data_received event:', data);
               // Skip if this is duplicate data
               if (isDuplicateData(data.data)) {
+                console.log('⏭️ Skipping duplicate external data');
                 break;
               }
               // Store external data for voice agent context (legacy)
@@ -219,6 +223,7 @@ export const useVoiceConnectionService = ({
               });
               // Inject text content directly into active session
               if (data.data?.text) {
+                console.log('🔧 Attempting to inject external context:', data.data.text);
                 injectExternalContext(data.data.text);
               }
               break;

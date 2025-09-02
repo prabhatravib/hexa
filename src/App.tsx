@@ -56,14 +56,24 @@ function App() {
           source: 'user_input'
         });
         
+        // Store globally so it persists across all future sessions
+        if (data.text) {
+          const { setGlobalExternalData } = await import('./lib/externalContext');
+          setGlobalExternalData(data.text);
+          console.log('🌍 Global external data stored:', data.text);
+        }
+        
         // Get current session ID
         const sessionId = getActiveSessionId();
+        console.log('🔍 Current session ID from localStorage:', sessionId);
+        
+        // Don't send external data if no session ID is available
         if (!sessionId) {
-          console.error('❌ No active session ID found');
+          console.error('❌ No active session ID found - cannot send external data');
           return;
         }
         
-        // Send to worker with session ID - do not trigger response.create
+        // Send to worker with the current session ID
         const response = await fetch('/api/external-data', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -93,6 +103,62 @@ function App() {
     (window as any).__injectFromStore = () => {
       console.log('🔧 Manually injecting external data from store...');
       injectExternalDataFromStore();
+    };
+    
+    // Add global external data management
+    (window as any).__setGlobalExternalData = async (text: string) => {
+      const { setGlobalExternalData } = await import('./lib/externalContext');
+      setGlobalExternalData(text);
+    };
+    
+    (window as any).__getGlobalExternalData = async () => {
+      const { getGlobalExternalData } = await import('./lib/externalContext');
+      return getGlobalExternalData();
+    };
+    
+    (window as any).__clearGlobalExternalData = async () => {
+      const { setGlobalExternalData } = await import('./lib/externalContext');
+      setGlobalExternalData('');
+    };
+    
+    // Manual injection function for testing
+    (window as any).__injectGlobalData = async () => {
+      const { injectGlobalExternalData } = await import('./lib/externalContext');
+      injectGlobalExternalData();
+    };
+    
+    // Also add it to the global scope immediately
+    (window as any).__injectGlobalData = async () => {
+      const { injectGlobalExternalData } = await import('./lib/externalContext');
+      injectGlobalExternalData();
+    };
+    
+    // Add a simple test function
+    (window as any).__testInjection = async () => {
+      console.log('🧪 Testing injection...');
+      const { getGlobalExternalData, injectGlobalExternalData } = await import('./lib/externalContext');
+      const globalData = getGlobalExternalData();
+      console.log('🌍 Global data:', globalData);
+      if (globalData) {
+        injectGlobalExternalData();
+      } else {
+        console.log('❌ No global data to inject');
+      }
+    };
+    
+    // Add a function to manually inject external data
+    (window as any).__injectExternalData = async (text: string) => {
+      console.log('🔧 Manually injecting external data:', text);
+      const { setGlobalExternalData, injectGlobalExternalData } = await import('./lib/externalContext');
+      setGlobalExternalData(text);
+      injectGlobalExternalData();
+    };
+    
+    // Add a function to test injection directly
+    (window as any).__testInjection = async (text: string) => {
+      console.log('🧪 Testing direct injection:', text);
+      const { injectExternalContext } = await import('./lib/externalContext');
+      injectExternalContext(text);
     };
     
     (window as any).__clearExternalData = () => {

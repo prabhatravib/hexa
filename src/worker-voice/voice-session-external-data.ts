@@ -27,6 +27,15 @@ export class VoiceSessionExternalData {
     private agentManager: AgentManager
   ) {}
 
+  // Get the current OpenAI session ID from the live session
+  private getCurrentOpenAISessionId(): string {
+    if (this.live?.openaiSessionId) {
+      return this.live.openaiSessionId;
+    }
+    // Fallback to core session ID if no live session
+    return this.core.getSessionId();
+  }
+
   async injectExternalFact(text: string): Promise<void> {
     if (!this.live?.session) {
       console.log('ℹ️ No live Realtime session available for injection');
@@ -63,31 +72,38 @@ Use this over prior knowledge. "Infflow" with two f's is the user's company, not
 
   // Apply external data to session with session-level instructions update
   async applyExternalDataToSessionWithInstructions(sessionId: string, externalData: any): Promise<void> {
-    if (!this.live?.session) {
-      console.log('ℹ️ No live Realtime session available for instructions update');
-      return;
-    }
-
     try {
       // Create facts block from external data
       const facts = this.makeFactsBlock(externalData);
       
-      // Build new instructions with facts appended
-      const newInstructions = `${this.baseInstructions}\n\n### Facts for this session\n${facts}\n\nObey these facts over prior knowledge.`;
+      // Build new instructions with facts as authoritative context
+      const newInstructions = `${this.baseInstructions || this.agentManager.getAgentInstructions()}
 
-      // Send session.update to the live session
-      await this.live.session.send({
-        type: 'session.update',
-        session: { instructions: newInstructions }
-      });
+CRITICAL CONTEXT UPDATE:
+The following information is now part of your knowledge. Use it when relevant but DO NOT announce or discuss it unless the user asks:
 
-      console.log('✅ Session instructions updated with external data facts');
+${facts}
+
+This is authoritative information that overrides any previous knowledge on these topics.`;
+
+      // Get the OpenAI connection from message handlers
+      const openaiConnection = (this.messageHandlers as any).openaiConnection;
       
-      // Wait for session.updated acknowledgment (optional - the session will handle this)
-      // The session will automatically acknowledge the update
+      if (openaiConnection && openaiConnection.updateSessionInstructions) {
+        // Update via the actual OpenAI API connection
+        const success = await openaiConnection.updateSessionInstructions(newInstructions);
+        
+        if (success) {
+          console.log('✅ External context injected silently into session');
+        } else {
+          console.log('⚠️ Failed to update session with external context');
+        }
+      } else {
+        console.log('⚠️ OpenAI connection not available for instruction update');
+      }
       
     } catch (error) {
-      console.error('❌ Failed to update session instructions:', error);
+      console.error('❌ Failed to apply external data to session:', error);
     }
   }
 
@@ -120,6 +136,35 @@ Use this over prior knowledge. "Infflow" with two f's is the user's company, not
     }
     
     return parts.filter(Boolean).join("\n\n");
+  }
+
+  private buildShortSystemNote(externalData: any): string {
+    const fact = (externalData?.text || "").trim();
+    if (!fact) return "";
+    return `System note: ${fact}`;
+  }
+
+  // Inject as a system message into the live conversation
+  async injectSystemNote(externalData: any): Promise<void> {
+    if (!this.live?.session) {
+      console.log('ℹ️ No live Realtime session available for system note');
+      return;
+    }
+    const note = this.buildShortSystemNote(externalData);
+    if (!note) return;
+
+    // 1) append a short system message to the conversation
+    await this.live.session.send({
+      type: "conversation.item.create",
+      item: {
+        type: "message",
+        role: "system",
+        content: [{ type: "input_text", text: note }]
+      }
+    });
+
+    // 2) let the model read the new item immediately
+    await this.live.session.send({ type: "response.create" });
   }
 
   private async formatCurrentExternalData(): Promise<string | null> {
@@ -244,8 +289,8 @@ Use this over prior knowledge. "Infflow" with two f's is the user's company, not
         return this.core.createErrorResponse('Method not allowed. Use GET.', 405);
       }
 
-      // Always use the current voice session ID
-      const targetSessionId = this.core.getSessionId();
+      // Always use the current OpenAI session ID
+      const targetSessionId = this.getCurrentOpenAISessionId();
       console.log('🆔 Status request using current session ID:', targetSessionId);
 
       // Get external data for the current session
@@ -292,8 +337,8 @@ Use this over prior knowledge. "Infflow" with two f's is the user's company, not
 
       console.log('📥 Received external data:', externalData);
 
-      // Use the sessionId from the request if provided, otherwise use current session
-      const targetSessionId = externalData.sessionId || this.core.getSessionId();
+      // Use the sessionId from the request if provided, otherwise use current OpenAI session
+      const targetSessionId = externalData.sessionId || this.getCurrentOpenAISessionId();
       console.log('🆔 Using session ID:', targetSessionId);
 
       // Update current external data

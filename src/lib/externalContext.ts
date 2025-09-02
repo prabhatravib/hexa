@@ -26,10 +26,48 @@ export function stripCodeFences(raw: string): string {
 let activeSession: any = null;
 
 export function setActiveSession(session: any) {
+  console.log('🔗 Setting active session:', session);
   activeSession = session;
   
-  // Immediately inject any current external data from Zustand store
-  injectCurrentExternalData();
+  // Wait for session to be fully ready, then inject external data
+  setTimeout(() => {
+    console.log('⏰ Timeout reached, injecting external data...');
+    // Inject global external data first (persistent across sessions)
+    injectGlobalExternalData();
+  }, 2000); // Wait for session to be ready
+}
+
+// Store global external data that persists across sessions
+let globalExternalData: string | null = null;
+
+export function setGlobalExternalData(data: string) {
+  globalExternalData = data;
+  console.log('🌍 Global external data set:', data);
+  
+  // If there's an active session, inject immediately
+  if (activeSession) {
+    console.log('🔄 Active session found, injecting immediately');
+    injectExternalContext(data);
+  } else {
+    console.log('ℹ️ No active session, will inject when session becomes available');
+  }
+}
+
+export function getGlobalExternalData(): string | null {
+  return globalExternalData;
+}
+
+// Automatically inject global external data when session becomes active
+export function injectGlobalExternalData() {
+  if (globalExternalData && activeSession) {
+    console.log('🔄 Injecting global external data into new session:', globalExternalData);
+    injectExternalContext(globalExternalData);
+  } else {
+    console.log('ℹ️ No global external data or no active session:', { 
+      hasGlobalData: !!globalExternalData, 
+      hasActiveSession: !!activeSession 
+    });
+  }
 }
 
 export function clearActiveSession() {
@@ -53,46 +91,13 @@ export function injectExternalContext(raw: string) {
     return;
   }
 
-  // If session not ready, return (data is still in Zustand for later)
-  if (!activeSession) {
-    return;
-  }
-
-  try {
-    // For OpenAI Realtime sessions, we need to update the agent's context differently
-    // The session might have a different API or we need to use events
-    
-    // Note: Client-side emit is no longer authoritative
-    // Server-side session.update via /api/external-data is the source of truth
-    return;
-    
-    // Method 2: Try updating through the session's agent if available
-    if (activeSession.agent && activeSession.agent.instructions) {
-      const currentInstructions = activeSession.agent.instructions || '';
-      const contextSection = `\n\n=== CURRENT EXTERNAL CONTEXT ===\n${text}\n=== END EXTERNAL CONTEXT ===\n`;
-      
-      // Remove old context section if exists
-      const cleanedInstructions = currentInstructions.replace(/\n\n=== CURRENT EXTERNAL CONTEXT ===[\s\S]*?=== END EXTERNAL CONTEXT ===\n/g, '');
-      
-      // Add new context
-      activeSession.agent.instructions = cleanedInstructions + contextSection;
-      return;
-    }
-    
-    // Method 3: Store in session metadata if available
-    if (activeSession.metadata || activeSession.data) {
-      const storage = activeSession.metadata || activeSession.data || {};
-      storage.externalContext = text;
-      storage.externalContextTimestamp = Date.now();
-      return;
-    }
-    
-    // Fallback: Store for manual retrieval
-    (window as any).__pendingExternalContext = text;
-    
-  } catch (error) {
-    console.error('❌ Failed to inject external context:', error);
-  }
+  // Store locally for reference
+  (window as any).__pendingExternalContext = text;
+  
+  console.log('📝 External context stored locally. It will be sent with the next server request.');
+  
+  // The actual injection happens server-side via /api/external-data
+  // No need to try client-side session manipulation
 }
 
 // Function to inject external data from Zustand store on demand

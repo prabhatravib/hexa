@@ -8,7 +8,7 @@ export interface Env {
 }
 
 export class MessageHandlers {
-  private openaiConnection: any;
+  public openaiConnection: any;  // Changed from private to public
   private broadcastToClients: (message: any) => void;
   private isAgentResponding: boolean = false;
   private currentExternalData: {
