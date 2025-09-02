@@ -48,49 +48,8 @@ function App() {
 
   // Add global function to send external data for testing
   useEffect(() => {
-    (window as any).__sendExternalData = async (data: any) => {
-      try {
-        // Store in Zustand immediately for reliable access
-        useExternalDataStore.getState().setExternalData({
-          ...data,
-          source: 'user_input'
-        });
-        
-        // Store globally so it persists across all future sessions
-        if (data.text) {
-          const { setGlobalExternalData } = await import('./lib/externalContext');
-          setGlobalExternalData(data.text);
-          console.log('🌍 Global external data stored:', data.text);
-        }
-        
-        // Get current session ID
-        const sessionId = getActiveSessionId();
-        console.log('🔍 Current session ID from localStorage:', sessionId);
-        
-        // Don't send external data if no session ID is available
-        if (!sessionId) {
-          console.error('❌ No active session ID found - cannot send external data');
-          return;
-        }
-        
-        // Send to worker with the current session ID
-        const response = await fetch('/api/external-data', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            sessionId: sessionId,
-            type: data.type || 'text',
-            text: data.text,
-            prompt: data.prompt // optional
-          })
-        });
-        
-        if (!response.ok) {
-          console.error('❌ Failed to send external data to server');
-        }
-      } catch (error) {
-        console.error('❌ Failed to send external data:', error);
-      }
+    (window as any).__sendExternalData = (data: any) => {
+      useExternalDataStore.getState().setExternalData({ ...data, source: 'user_input' });
     };
     
     // Add global debugging functions

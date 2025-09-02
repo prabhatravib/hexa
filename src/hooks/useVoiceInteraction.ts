@@ -4,6 +4,7 @@ import { useVoiceConnectionService } from './voiceConnectionService';
 import { useVoiceControlService } from './voiceControlService';
 import { useVoiceAnimation } from './useVoiceAnimation';
 import { getSupportedLanguageCodes, DEFAULT_LANGUAGE } from '@/lib/languageConfig';
+import { useExternalDataStore } from '@/store/externalDataStore';
 
 interface UseVoiceInteractionOptions {
   wakeWord?: string;
@@ -68,6 +69,20 @@ export const useVoiceInteraction = (options: UseVoiceInteractionOptions = {}) =>
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const audioQueueRef = useRef<ArrayBuffer[]>([]);
   const isPlayingRef = useRef(false);
+
+  // External data management with guards
+  const currentData = useExternalDataStore((s) => s.currentData);
+  const lastHashRef = useRef<string | null>(null);
+  const lastSessionRef = useRef<string | null>(null);
+
+  function isRealtimeReady() {
+    const s: any = (window as any).activeSession;
+    if (!s) return false;
+    const hasSend = !!(s.send || s.emit || s.transport?.sendEvent);
+    const pc = s._pc?.connectionState;
+    const rtcOk = !s._pc || pc === 'connected' || pc === 'completed';
+    return hasSend && rtcOk;
+  }
 
   const { connect: connectToVoice, externalData } = useVoiceConnectionService({
     setVoiceState,
@@ -183,6 +198,37 @@ export const useVoiceInteraction = (options: UseVoiceInteractionOptions = {}) =>
       onError?.('Failed to interrupt response');
     }
   }, [interruptControl, onError]);
+
+  // Guarded external data POST with deduplication and session management
+  useEffect(() => {
+    const sid = sessionInfo?.sessionId;
+    if (!currentData || !sid || !isConnected || !isRealtimeReady()) return;
+
+    // reset dedupe when session changes
+    if (sid !== lastSessionRef.current) {
+      lastSessionRef.current = sid;
+      lastHashRef.current = null;
+    }
+
+    const body = JSON.stringify({
+      sessionId: sid,
+      type: currentData.type || 'text',
+      text: currentData.text,
+      prompt: currentData.prompt,
+    });
+
+    crypto.subtle.digest('SHA-256', new TextEncoder().encode(body)).then((buf) => {
+      const hash = Array.from(new Uint8Array(buf)).map(b => b.toString(16).padStart(2,'0')).join('');
+      if (hash === lastHashRef.current) return;
+
+      lastHashRef.current = hash;
+      fetch('/api/external-data', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body,
+      }).catch(() => { lastHashRef.current = null; });
+    });
+  }, [currentData, isConnected, sessionInfo]);
    
   // Clean up
   useEffect(() => {

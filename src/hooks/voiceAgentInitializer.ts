@@ -263,34 +263,9 @@ ${getLanguageInstructions()}`;
       }
     };
 
-    // Zustand subscription to POST to /api/external-data on store changes
-    let previousContext: string | null = null;
-    let lastPostTime = 0;
-    const POST_DEBOUNCE_MS = 1000; // Prevent posting more than once per second
-    
-    const unsubscribe = useExternalDataStore.subscribe((state) => {
-      const currentContext = state.getFormattedContext();
-      if (!currentContext || currentContext === previousContext) return;
-      
-      // Debounce posts to prevent rapid successive calls
-      const now = Date.now();
-      if (now - lastPostTime < POST_DEBOUNCE_MS) return;
-      
-      previousContext = currentContext;
-      lastPostTime = now;
-      
-      // POST to /api/external-data with current context
-      fetch('/api/external-data', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          text: state.currentData?.text || '',
-          type: state.currentData?.type || 'text',
-          sessionId: sessionData.sessionId // Use the session ID from the worker
-        })
-      }).catch(error => {
-        console.error('❌ Error posting external data to server:', error);
-      });
+    // External data is now handled via the new useEffect in useVoiceInteraction
+    const unsubscribe = useExternalDataStore.subscribe(() => {
+      // No longer posting directly - handled by the new guarded approach
     });
     
 

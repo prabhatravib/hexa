@@ -29,6 +29,8 @@ let lastInjectedHash = '';
 
 export function setActiveSession(session: any) {
   activeSession = session;
+  // Reset dedupe hash when session changes
+  lastInjectedHash = '';
   const pending = (window as any).__pendingExternalContext;
   if (pending) {
     (window as any).__pendingExternalContext = null;
