@@ -19,7 +19,7 @@ export default {
     }
     
     // Handle SSE and HTTP message endpoints
-    if (url.pathname === '/voice/sse' || url.pathname === '/voice/message' || url.pathname === '/voice/test') {
+    if (url.pathname === '/voice/sse' || url.pathname === '/voice/message' || url.pathname === '/voice/test' || url.pathname === '/voice/reset') {
       const durableObjectId = env.VOICE_SESSION.idFromName('global');
       const durableObject = env.VOICE_SESSION.get(durableObjectId);
       
@@ -27,7 +27,7 @@ export default {
     }
     
     // Handle external data endpoints
-    if (url.pathname === '/api/external-data' || url.pathname === '/api/external-data/status' || url.pathname === '/api/set-base-instructions') {
+    if (url.pathname === '/api/external-data' || url.pathname === '/api/external-data/status' || url.pathname === '/api/set-base-instructions' || url.pathname === '/api/set-live-session' || url.pathname === '/external-data.md') {
       const durableObjectId = env.VOICE_SESSION.idFromName('global');
       const durableObject = env.VOICE_SESSION.get(durableObjectId);
       

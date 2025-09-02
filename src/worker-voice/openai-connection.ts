@@ -111,6 +111,10 @@ export class OpenAIConnection {
     if (response.status === 200) {
       const sessionData = await response.json() as any;
       console.log('✅ Session created successfully:', sessionData);
+      
+      // Image support is handled directly via conversation.item.create events
+      // No session-level configuration needed
+      
       return sessionData;
     } else {
       const errorText = await response.text();
@@ -118,6 +122,9 @@ export class OpenAIConnection {
       throw new Error(`Failed to create session: ${response.status} - ${errorText}`);
     }
   }
+
+  // Image support is handled directly via conversation.item.create events
+  // No session-level configuration needed
 
   // Send message to OpenAI via Realtime API (for various message types)
   async sendMessage(message: any): Promise<void> {
@@ -151,6 +158,8 @@ export class OpenAIConnection {
 
       // Handle conversation.item.create messages
       if (message.type === 'conversation.item.create') {
+        console.log('🔧 Processing conversation.item.create:', JSON.stringify(message, null, 2));
+        
         const response = await fetch(`https://api.openai.com/v1/realtime/sessions/${this.sessionId}/conversation/items`, {
           method: 'POST',
           headers: {
@@ -165,6 +174,15 @@ export class OpenAIConnection {
         } else {
           const errorText = await response.text();
           console.error('❌ Failed to create conversation item:', response.status, errorText);
+          console.error('❌ Request body was:', JSON.stringify(message, null, 2));
+          
+          // Try to parse error details
+          try {
+            const errorData = JSON.parse(errorText);
+            console.error('❌ Parsed error:', errorData);
+          } catch (e) {
+            console.error('❌ Raw error text:', errorText);
+          }
         }
         return;
       }
