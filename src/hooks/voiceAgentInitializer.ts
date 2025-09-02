@@ -203,12 +203,19 @@ ${getLanguageInstructions()}`;
 
     // Zustand subscription to POST to /api/external-data on store changes
     let previousContext: string | null = null;
+    let lastPostTime = 0;
+    const POST_DEBOUNCE_MS = 1000; // Prevent posting more than once per second
+    
     const unsubscribe = useExternalDataStore.subscribe((state) => {
       const currentContext = state.getFormattedContext();
       if (!currentContext || currentContext === previousContext) return;
       
+      // Debounce posts to prevent rapid successive calls
+      const now = Date.now();
+      if (now - lastPostTime < POST_DEBOUNCE_MS) return;
+      
       previousContext = currentContext;
-      console.log('🔄 External data changed, posting to server...');
+      lastPostTime = now;
       
       // POST to /api/external-data with current context
       fetch('/api/external-data', {
@@ -219,12 +226,6 @@ ${getLanguageInstructions()}`;
           type: state.currentData?.type || 'text',
           sessionId: sessionData.sessionId // Use the session ID from the worker
         })
-      }).then(response => {
-        if (response.ok) {
-          console.log('✅ External data posted to server successfully');
-        } else {
-          console.error('❌ Failed to post external data to server');
-        }
       }).catch(error => {
         console.error('❌ Error posting external data to server:', error);
       });

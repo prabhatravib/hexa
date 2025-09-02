@@ -60,14 +60,8 @@ function App() {
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(data)  // No need to include session ID
         });
-        if (response.ok) {
-          console.log('✅ External data sent successfully');
-          console.log('✅ External data stored in Zustand and available for voice session');
-        }
       } catch (error) {
         console.error('❌ Failed to send external data:', error);
-        // Even if network fails, data is still in Zustand store
-        console.log('ℹ️ External data still available in local store');
       }
     };
     
