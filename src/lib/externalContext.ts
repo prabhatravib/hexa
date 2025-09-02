@@ -24,23 +24,20 @@ export function stripCodeFences(raw: string): string {
 
 // Global reference to the active session
 let activeSession: any = null;
-
-// Base instructions holder and setter
-let baseInstructions: string | null = null;
-export function setBaseInstructions(instructions: string) {
-  baseInstructions = instructions || '';
-}
+let baseInstructions = '';
+let lastInjectedHash = '';
 
 export function setActiveSession(session: any) {
-  console.log('🔗 Setting active session:', session);
   activeSession = session;
-  
-  // Wait for session to be fully ready, then inject external data
-  setTimeout(() => {
-    console.log('⏰ Timeout reached, injecting external data...');
-    // Inject global external data first (persistent across sessions)
-    injectGlobalExternalData();
-  }, 2000); // Wait for session to be ready
+  const pending = (window as any).__pendingExternalContext;
+  if (pending) {
+    (window as any).__pendingExternalContext = null;
+    injectExternalContext(pending); // fire-and-forget
+  }
+}
+
+export function setBaseInstructions(instr: string) {
+  baseInstructions = instr || '';
 }
 
 // Store global external data that persists across sessions
@@ -53,7 +50,7 @@ export function setGlobalExternalData(data: string) {
   // If there's an active session, inject immediately
   if (activeSession) {
     console.log('🔄 Active session found, injecting immediately');
-    injectExternalContext(data);
+    injectExternalContext(data); // fire-and-forget
   } else {
     console.log('ℹ️ No active session, will inject when session becomes available');
   }
@@ -64,10 +61,10 @@ export function getGlobalExternalData(): string | null {
 }
 
 // Automatically inject global external data when session becomes active
-export function injectGlobalExternalData() {
+export async function injectGlobalExternalData() {
   if (globalExternalData && activeSession) {
     console.log('🔄 Injecting global external data into new session:', globalExternalData);
-    injectExternalContext(globalExternalData);
+    await injectExternalContext(globalExternalData);
   } else {
     console.log('ℹ️ No global external data or no active session:', { 
       hasGlobalData: !!globalExternalData, 
@@ -88,88 +85,54 @@ export function injectCurrentExternalData() {
     return;
   }
   
-  injectExternalContext(currentData.text);
+  injectExternalContext(currentData.text); // fire-and-forget
 }
 
-export async function injectExternalContext(raw: string) {
-  const text = stripCodeFences(raw);
-  if (!text) return;
+export async function injectExternalContext(text: string): Promise<boolean> {
+  const stripped = stripCodeFences(text);
+  if (!stripped) return false;
 
-  if (!activeSession) {
-    (window as any).__pendingExternalContext = text;
-    return;
+  const s: any = activeSession;
+  const sendFn = s?.send || s?.emit || s?.transport?.sendEvent;
+  const rtcOk = !s?._pc || ['connected','completed'].includes(s._pc?.connectionState);
+
+  // Queue if not ready
+  if (!sendFn || !rtcOk) {
+    (window as any).__pendingExternalContext = stripped;
+    return false;
   }
 
-  const prefix = baseInstructions ? `${baseInstructions}\n\n` : '';
-  const updated = `${prefix}CRITICAL CONTEXT UPDATE:
-The following information is now part of your knowledge. Use it when relevant but DO NOT announce it:
+  // Dedupe
+  const hash = await cryptoDigest(stripped);
+  if (hash === lastInjectedHash) return true;
+  lastInjectedHash = hash;
 
-${text}
+  // Size cap (adjust if your model allows more)
+  const MAX = 8000;
+  const body = stripped.length > MAX ? stripped.slice(0, MAX) : stripped;
 
-This is authoritative and overrides previous knowledge on these topics.`;
+  const updated =
+    (baseInstructions ? baseInstructions + '\n\n' : '') +
+    'CRITICAL CONTEXT UPDATE:\n' +
+    'Use when relevant. Do not announce it.\n\n' +
+    body;
 
   try {
-    const s: any = activeSession;
-    const hasTransport = !!(s?.send || s?.emit || s?.transport?.sendEvent);
-    const pcState = s?._pc?.connectionState; // optional
-    const rtcOk = !s?._pc || pcState === 'connected' || pcState === 'completed';
-
-    if (!hasTransport || !rtcOk) {
-      // not ready yet, queue for later
-      (window as any).__pendingExternalContext = text;
-      return;
-    }
-
-    // Feature-detect the send method: send → emit → transport.sendEvent
-    const sendMethod = (activeSession as any).send || (activeSession as any).emit || (activeSession as any).transport?.sendEvent;
-    if (!sendMethod) {
-      throw new Error('No send method available on session');
-    }
-
-    // Attach ACK listener before sending
-    const ackPromise = new Promise((resolve, reject) => {
-      const timeout = setTimeout(() => {
-        cleanup();
-        reject(new Error('update timeout'));
-      }, 3000);
-
-      const onEvent = (e: any) => {
-        if (e?.type === 'session.updated') {
-          cleanup();
-          resolve(true);
-        } else if (e?.type === 'error') {
-          cleanup();
-          reject(new Error(e?.error?.message || 'update failed'));
-        }
-      };
-
-      const cleanup = () => {
-        clearTimeout(timeout);
-        // Remove all listeners on success, error, and timeout
-        (activeSession as any).off?.('event', onEvent);
-        (activeSession as any).off?.('session.updated', onEvent);
-        (activeSession as any).off?.('error', onEvent);
-      };
-
-      // Listen on the generic "event" stream if SDK uses single event bus
-      (activeSession as any).on?.('event', onEvent);
-      (activeSession as any).on?.('session.updated', onEvent);
-      (activeSession as any).on?.('error', onEvent);
-    });
-
-    // Send session.update over the existing WebRTC transport
-    await sendMethod.call(activeSession, {
-      type: 'session.update',
-      session: { instructions: updated }
-    });
-
-    // Wait for ack
-    await ackPromise;
-    console.log('✅ External context injected into session');
-  } catch (err) {
-    console.error('❌ Failed to inject external context:', err);
-    (window as any).__pendingExternalContext = text;
+    // Fire-and-forget: do not wait for session.updated
+    sendFn.call(s, { type: 'session.update', session: { instructions: updated } });
+    return true;
+  } catch (e) {
+    // Fallback to queue
+    (window as any).__pendingExternalContext = stripped;
+    return false;
   }
+}
+
+// Simple browser crypto hash
+async function cryptoDigest(s: string): Promise<string> {
+  const enc = new TextEncoder().encode(s);
+  const buf = await crypto.subtle.digest('SHA-256', enc);
+  return Array.from(new Uint8Array(buf)).map(b => b.toString(16).padStart(2, '0')).join('');
 }
 
 // Function to inject external data from Zustand store on demand
@@ -186,7 +149,7 @@ export function injectExternalDataFromStore() {
   }
   
   // Use the same injection method as injectExternalContext
-  injectExternalContext(formattedContext);
+  injectExternalContext(formattedContext); // fire-and-forget
 }
 
 // Global access for debugging

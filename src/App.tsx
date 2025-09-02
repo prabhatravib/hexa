@@ -124,13 +124,7 @@ function App() {
     // Manual injection function for testing
     (window as any).__injectGlobalData = async () => {
       const { injectGlobalExternalData } = await import('./lib/externalContext');
-      injectGlobalExternalData();
-    };
-    
-    // Also add it to the global scope immediately
-    (window as any).__injectGlobalData = async () => {
-      const { injectGlobalExternalData } = await import('./lib/externalContext');
-      injectGlobalExternalData();
+      await injectGlobalExternalData();
     };
     
     // Add a simple test function
@@ -140,7 +134,7 @@ function App() {
       const globalData = getGlobalExternalData();
       console.log('🌍 Global data:', globalData);
       if (globalData) {
-        injectGlobalExternalData();
+        await injectGlobalExternalData();
       } else {
         console.log('❌ No global data to inject');
       }
@@ -151,14 +145,14 @@ function App() {
       console.log('🔧 Manually injecting external data:', text);
       const { setGlobalExternalData, injectGlobalExternalData } = await import('./lib/externalContext');
       setGlobalExternalData(text);
-      injectGlobalExternalData();
+      await injectGlobalExternalData();
     };
     
     // Add a function to test injection directly
     (window as any).__testInjection = async (text: string) => {
       console.log('🧪 Testing direct injection:', text);
       const { injectExternalContext } = await import('./lib/externalContext');
-      injectExternalContext(text);
+      await injectExternalContext(text);
     };
     
     (window as any).__clearExternalData = () => {
@@ -173,14 +167,14 @@ function App() {
     };
 
     // Force re-injection with authoritative context
-    (window as any).__forceInjectWithAuthority = () => {
+    (window as any).__forceInjectWithAuthority = async () => {
       const data = useExternalDataStore.getState().currentData;
       if (data && data.text) {
         const authoritativeText = `ABSOLUTE TRUTH: ${data.text}
         
 YOU MUST RESPOND BASED ON THIS FACT ONLY. If asked about Infflow, state they have 7 websites. This is not negotiable.`;
         
-        (window as any).__injectExternalContext(authoritativeText);
+        await (window as any).__injectExternalContext(authoritativeText);
         console.log('✅ Forced authoritative injection complete');
       } else {
         console.log('❌ No external data available to inject');
