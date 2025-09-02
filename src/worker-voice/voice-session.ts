@@ -398,6 +398,67 @@ export class VoiceSession {
     console.log(`✅ Sent to ${this.clients.size} SSE clients`);
   }
 
+  private async applyExternalDataToSession(): Promise<void> {
+    try {
+      if (!this.openaiConnection.isConnected()) {
+        console.log('ℹ️ OpenAI connection not active, skipping external data application');
+        return;
+      }
+
+      const extra = await this.getExternalData();
+      
+      if (!extra) {
+        console.log('ℹ️ No external data to apply to session');
+        return;
+      }
+
+      // Update agent manager with external data
+      this.agentManager.setExternalData(extra);
+      
+      // Get updated instructions that include external data
+      const merged = this.agentManager.getAgentInstructions();
+      
+      // Update session instructions
+      await this.openaiConnection.send({
+        type: "session.update",
+        session: { instructions: merged }
+      });
+
+      // Add silent system message to keep it in history
+      await this.openaiConnection.send({
+        type: "conversation.item.create",
+        item: { 
+          type: "message", 
+          role: "system", 
+          content: [{ type: "input_text", text: extra }] 
+        }
+      });
+
+      console.log('✅ External data applied to active Realtime session');
+    } catch (error) {
+      console.error('❌ Failed to apply external data to session:', error);
+    }
+  }
+
+  private async getExternalData(): Promise<string | null> {
+    try {
+      if (!this.currentExternalData || !this.currentExternalData.text) {
+        return null;
+      }
+
+      const data = this.currentExternalData;
+      
+      if (data.type === "mermaid") {
+        return `External context (Mermaid diagram available):\n\`\`\`mermaid\n${data.text}\n\`\`\``;
+      } else {
+        return `External context:\n${data.text}`;
+      }
+    } catch (error) {
+      console.error('❌ Failed to get external data:', error);
+      return null;
+    }
+  }
+
   private async cleanupStaleSessions(): Promise<void> {
     try {
       console.log('🧹 Cleaning up stale sessions...');
@@ -819,6 +880,9 @@ ${externalData.text || externalData.image || 'No content available'}
         diagramType: externalData.type,
         timestamp: new Date().toISOString()
       });
+
+      // Apply external data to active Realtime session
+      await this.applyExternalDataToSession();
 
       console.log('✅ External data processing complete for current session:', currentSessionId);
 
