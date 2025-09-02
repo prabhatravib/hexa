@@ -41,6 +41,11 @@ function App() {
     
   }, []);
 
+  // Add global function to get active session ID
+  const getActiveSessionId = () => {
+    return localStorage.getItem('voiceSessionId') || null;
+  };
+
   // Add global function to send external data for testing
   useEffect(() => {
     (window as any).__sendExternalData = async (data: any) => {
@@ -51,15 +56,28 @@ function App() {
           source: 'user_input'
         });
         
-        // Also inject into active session if available
-        injectExternalDataFromStore();
+        // Get current session ID
+        const sessionId = getActiveSessionId();
+        if (!sessionId) {
+          console.error('❌ No active session ID found');
+          return;
+        }
         
-        // Send to worker for SSE broadcast (as backup)
-        const response = await fetch('https://hexa-worker.prabhatravib.workers.dev/api/external-data', {
+        // Send to worker with session ID - do not trigger response.create
+        const response = await fetch('/api/external-data', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(data)  // No need to include session ID
+          body: JSON.stringify({
+            sessionId: sessionId,
+            type: data.type || 'text',
+            text: data.text,
+            prompt: data.prompt // optional
+          })
         });
+        
+        if (!response.ok) {
+          console.error('❌ Failed to send external data to server');
+        }
       } catch (error) {
         console.error('❌ Failed to send external data:', error);
       }

@@ -165,6 +165,20 @@ ${getLanguageInstructions()}`;
     // Set as active session for external context injection
     setActiveSession(session);
 
+    // Set base instructions in the worker for session-level updates
+    try {
+      await fetch('/api/set-base-instructions', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          sessionId: sessionData.sessionId,
+          instructions: baseInstructions
+        })
+      });
+    } catch (error) {
+      console.error('❌ Failed to set base instructions:', error);
+    }
+
     // External data is now handled via Zustand subscription to /api/external-data
     
     // Debug: Log all session events to understand what's available (excluding transport events)

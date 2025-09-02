@@ -26,6 +26,7 @@ export class VoiceSession {
     type?: string;
   } | null = null;
   private externalContext: string = "";
+  private baseInstructions: string = "";
   private live: {
     session: any;
     openaiSessionId: string;
@@ -133,6 +134,8 @@ export class VoiceSession {
         return this.handleExternalDataStatus(request);
       case '/api/set-live-session':
         return this.handleSetLiveSession(request);
+      case '/api/set-base-instructions':
+        return this.handleSetBaseInstructions(request);
       case '/external-data.md':
         return this.handleExternalDataFile(request);
       default:
@@ -454,6 +457,55 @@ Use this over prior knowledge. "Infflow" with two f's is the user's company, not
     await this.injectExternalFact(extra);
   }
 
+  // Apply external data to session with session-level instructions update
+  private async applyExternalDataToSessionWithInstructions(sessionId: string, externalData: any): Promise<void> {
+    if (!this.live?.session) {
+      console.log('ℹ️ No live Realtime session available for instructions update');
+      return;
+    }
+
+    try {
+      // Create facts block from external data
+      const facts = this.makeFactsBlock(externalData);
+      
+      // Build new instructions with facts appended
+      const newInstructions = `${this.baseInstructions}\n\n### Facts for this session\n${facts}\n\nObey these facts over prior knowledge.`;
+
+      // Send session.update to the live session
+      await this.live.session.send({
+        type: 'session.update',
+        session: { instructions: newInstructions }
+      });
+
+      console.log('✅ Session instructions updated with external data facts');
+      
+      // Wait for session.updated acknowledgment (optional - the session will handle this)
+      // The session will automatically acknowledge the update
+      
+    } catch (error) {
+      console.error('❌ Failed to update session instructions:', error);
+    }
+  }
+
+  // Create facts block from external data
+  private makeFactsBlock(externalData: any): string {
+    const facts: string[] = [];
+    
+    if (externalData.text) {
+      // Convert text into bullet points
+      const textLines = externalData.text.split('\n').filter((line: string) => line.trim());
+      textLines.forEach((line: string) => {
+        facts.push(`- ${line.trim()}`);
+      });
+    }
+    
+    if (externalData.prompt && externalData.prompt !== externalData.text) {
+      facts.push(`- ${externalData.prompt}`);
+    }
+    
+    return facts.join('\n');
+  }
+
   private buildInstructions(): string {
     const agentProfile = this.agentManager.getAgentInstructions();
     const externalCtx = this.externalContext.trim();
@@ -578,6 +630,12 @@ Use this over prior knowledge. "Infflow" with two f's is the user's company, not
     console.log('🔗 Live Realtime session set for external data injection');
   }
 
+  // Set base instructions for the session
+  setBaseInstructions(instructions: string) {
+    this.baseInstructions = instructions;
+    console.log('📝 Base instructions set for session');
+  }
+
   // Clear the live session when WebRTC disconnects
   clearLiveSession() {
     this.live = null;
@@ -632,6 +690,77 @@ Use this over prior knowledge. "Infflow" with two f's is the user's company, not
       return new Response(JSON.stringify({
         success: false,
         error: 'Failed to set live session'
+      }), {
+        status: 500,
+        headers: {
+          'Content-Type': 'application/json',
+          'Access-Control-Allow-Origin': '*'
+        }
+      });
+    }
+  }
+
+  private async handleSetBaseInstructions(request: Request): Promise<Response> {
+    try {
+      if (request.method === 'OPTIONS') {
+        return new Response(null, {
+          status: 200,
+          headers: {
+            'Access-Control-Allow-Origin': '*',
+            'Access-Control-Allow-Methods': 'POST, OPTIONS',
+            'Access-Control-Allow-Headers': 'Content-Type'
+          }
+        });
+      }
+
+      if (request.method !== 'POST') {
+        return new Response(JSON.stringify({
+          success: false,
+          error: 'Method not allowed. Use POST.'
+        }), {
+          status: 405,
+          headers: {
+            'Content-Type': 'application/json',
+            'Access-Control-Allow-Origin': '*'
+          }
+        });
+      }
+
+      const body = await request.json() as { sessionId?: string; instructions?: string };
+      const { sessionId, instructions } = body;
+      
+      if (!instructions) {
+        return new Response(JSON.stringify({
+          success: false,
+          error: 'Instructions are required'
+        }), {
+          status: 400,
+          headers: {
+            'Content-Type': 'application/json',
+            'Access-Control-Allow-Origin': '*'
+          }
+        });
+      }
+      
+      // Set base instructions for the session
+      this.setBaseInstructions(instructions);
+      console.log('📝 Base instructions set for session:', sessionId);
+      
+      return new Response(JSON.stringify({
+        success: true,
+        message: 'Base instructions set successfully'
+      }), {
+        status: 200,
+        headers: {
+          'Content-Type': 'application/json',
+          'Access-Control-Allow-Origin': '*'
+        }
+      });
+    } catch (error) {
+      console.error('❌ Failed to set base instructions:', error);
+      return new Response(JSON.stringify({
+        success: false,
+        error: 'Failed to set base instructions'
       }), {
         status: 500,
         headers: {
@@ -925,31 +1054,14 @@ ${externalData.text || externalData.image || 'No content available'}
         text?: string;
         prompt?: string;
         type?: string;
-        sessionId?: string;  // This is optional and can be ignored
+        sessionId?: string;
       };
 
       console.log('📥 Received external data:', externalData);
 
-      // ALWAYS use the current voice session ID, ignore what was sent
-      const currentSessionId = this.sessionId;
-      console.log('🆔 Using current voice session ID:', currentSessionId);
-
-      // Write external data to markdown file (like infflow.md)
-      await this.writeExternalDataFile({
-        image: externalData.image,
-        text: externalData.text,
-        prompt: externalData.prompt,
-        type: externalData.type
-      });
-
-      // Store the external data with the CURRENT session ID (for backward compatibility)
-      await this.storeExternalData(currentSessionId, {
-        image: externalData.image,
-        text: externalData.text,
-        prompt: externalData.prompt,
-        type: externalData.type,
-        timestamp: new Date().toISOString()
-      });
+      // Use the sessionId from the request if provided, otherwise use current session
+      const targetSessionId = externalData.sessionId || this.sessionId;
+      console.log('🆔 Using session ID:', targetSessionId);
 
       // Update current external data
       this.currentExternalData = {
@@ -959,9 +1071,15 @@ ${externalData.text || externalData.image || 'No content available'}
         type: externalData.type
       };
 
-      // Process the external data through message handlers
-      await this.messageHandlers.handleExternalData(this.currentExternalData, currentSessionId);
-      
+      // Store the external data with the target session ID
+      await this.storeExternalData(targetSessionId, {
+        image: externalData.image,
+        text: externalData.text,
+        prompt: externalData.prompt,
+        type: externalData.type,
+        timestamp: new Date().toISOString()
+      });
+
       // Update the message handlers' external data context
       this.messageHandlers.updateExternalData(this.currentExternalData);
 
@@ -969,26 +1087,18 @@ ${externalData.text || externalData.image || 'No content available'}
       this.broadcastToClients({
         type: 'external_data_received',
         data: this.currentExternalData,
-        sessionId: currentSessionId
+        sessionId: targetSessionId
       });
 
-      // Trigger voice context update for the CURRENT session
-      await this.notifyVoiceSession(currentSessionId, 'external_data_available', {
-        mermaidCode: externalData.text,
-        originalPrompt: externalData.prompt,
-        diagramType: externalData.type,
-        timestamp: new Date().toISOString()
-      });
+      // Apply external data to active Realtime session with session-level instructions update
+      await this.applyExternalDataToSessionWithInstructions(targetSessionId, externalData);
 
-      // Apply external data to active Realtime session
-      await this.applyExternalDataToSession();
-
-      console.log('✅ External data processing complete for current session:', currentSessionId);
+      console.log('✅ External data processing complete for session:', targetSessionId);
 
       return new Response(JSON.stringify({
         success: true,
-        message: 'External data received and context updated',
-        sessionId: currentSessionId  // Return the actual session ID used
+        message: 'External data received and session instructions updated',
+        sessionId: targetSessionId
       }), {
         status: 200,
         headers: {
