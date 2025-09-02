@@ -22,7 +22,7 @@ export class AgentManager {
   private openaiConnection: any;
   private broadcastToClients: (message: any) => void;
   private currentAgent: string = 'hexagon';
-  private externalData: string | null = null;
+  // External data is now handled at the session level, not here
 
   constructor(openaiConnection: any, broadcastToClients: (message: any) => void) {
     this.openaiConnection = openaiConnection;
@@ -63,17 +63,10 @@ export class AgentManager {
         baseInstructions = `You are a helpful AI assistant. You can assist with various tasks, answer questions, and engage in natural conversation. ${LANGUAGE_INSTRUCTIONS}`;
     }
 
-    // Append external data if available
-    if (this.externalData) {
-      baseInstructions += `\n\n### Session External Data\n${this.externalData}`;
-    }
-
     return baseInstructions;
   }
 
-  setExternalData(externalData: string | null): void {
-    this.externalData = externalData;
-  }
+  // External data is now handled at the session level
 
   getAvailableAgents(): string[] {
     return ['hexagon', 'customer-support', 'language-tutor'];

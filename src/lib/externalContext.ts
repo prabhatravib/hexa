@@ -70,26 +70,11 @@ export function injectExternalContext(raw: string) {
     // For OpenAI Realtime sessions, we need to update the agent's context differently
     // The session might have a different API or we need to use events
     
-    // Method 1: Try using emit if available (for event-based communication)
-    if (activeSession.emit && typeof activeSession.emit === 'function') {
-      console.log('📤 Using emit method to inject context');
-      activeSession.emit('conversation.item.create', {
-        type: "message",
-        role: "system",
-        content: [{ 
-          type: "input_text", 
-          text: `CRITICAL UPDATE - YOU MUST USE THIS INFORMATION:
-
-${text}
-
-MANDATORY: From this point forward, when asked about any topic mentioned above, you MUST ONLY use the information provided here. This overrides any previous knowledge. For example, if asked about Infflow, you must state they have 7 websites as specified above, not any other number.
-
-Acknowledge this update by using this information in your next response.`
-        }]
-      });
-      console.log('✅ Context injected via emit with strong enforcement');
-      return;
-    }
+    // Note: Client-side emit is no longer authoritative
+    // Server-side session.update via /api/external-data is the source of truth
+    console.log('📊 External context available - server will handle authoritative injection via /api/external-data');
+    console.log('ℹ️ Client-side injection disabled - server is the single source of truth');
+    return;
     
     // Method 2: Try updating through the session's agent if available
     if (activeSession.agent && activeSession.agent.instructions) {

@@ -97,7 +97,7 @@ export class MessageHandlers {
         type: 'session_info',
         sessionId: sessionInfo.sessionId,
         clientSecret: sessionInfo.clientSecret,
-        apiKey: sessionInfo.apiKey,
+        // Keep clientSecret for WebRTC connection, remove apiKey only
         audioData: audioData // Pass the audio data to frontend
       });
       

@@ -25,6 +25,7 @@ export class VoiceSession {
     prompt?: string;
     type?: string;
   } | null = null;
+  private externalContext: string = "";
 
   constructor(private state: DurableObjectState, private env: Env) {
     this.sessionId = crypto.randomUUID();
@@ -249,7 +250,7 @@ export class VoiceSession {
               type: 'session_info',
               sessionId: sessionInfo.sessionId,
               clientSecret: sessionInfo.clientSecret,
-              apiKey: sessionInfo.apiKey
+              // Keep clientSecret for WebRTC connection, remove apiKey only
             });
           } else {
             // If not connected, try to connect first
@@ -265,7 +266,7 @@ export class VoiceSession {
                 type: 'session_info',
                 sessionId: sessionInfo.sessionId,
                 clientSecret: sessionInfo.clientSecret,
-                apiKey: sessionInfo.apiKey
+                // Keep clientSecret for WebRTC connection, remove apiKey only
               });
             } catch (error) {
               console.error('❌ Failed to connect to OpenAI:', error);
@@ -412,32 +413,43 @@ export class VoiceSession {
         return;
       }
 
-      // Update agent manager with external data
-      this.agentManager.setExternalData(extra);
+      // Store external context for instruction building
+      this.externalContext = extra;
       
-      // Get updated instructions that include external data
-      const merged = this.agentManager.getAgentInstructions();
+      // Build instructions with external context
+      const mergedInstructions = this.buildInstructions();
       
       // Update session instructions
       await this.openaiConnection.sendMessage({
         type: "session.update",
-        session: { instructions: merged }
+        session: { instructions: mergedInstructions }
       });
 
-      // Add silent system message to keep it in history
+      // Optionally ask the agent to acknowledge once
       await this.openaiConnection.sendMessage({
-        type: "conversation.item.create",
-        item: { 
-          type: "message", 
-          role: "system", 
-          content: [{ type: "input_text", text: extra }] 
+        type: "response.create",
+        response: { 
+          modalities: ["text"], 
+          instructions: "Acknowledge context update in one sentence." 
         }
       });
 
-      console.log('✅ External data applied to active Realtime session');
+      console.log('✅ External data applied to active Realtime session with updated instructions');
     } catch (error) {
       console.error('❌ Failed to apply external data to session:', error);
     }
+  }
+
+  private buildInstructions(): string {
+    const agentProfile = this.agentManager.getAgentInstructions();
+    const externalCtx = this.externalContext.trim();
+    
+    const parts = [agentProfile];
+    if (externalCtx) {
+      parts.push(`Authoritative external context:\n${externalCtx}\nAlways use it.`);
+    }
+    
+    return parts.filter(Boolean).join("\n\n");
   }
 
   private async formatCurrentExternalData(): Promise<string | null> {
