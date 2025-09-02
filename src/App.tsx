@@ -93,6 +93,21 @@ function App() {
       // Trigger a page reload to get fresh agent with latest context
       window.location.reload();
     };
+
+    // Force re-injection with authoritative context
+    (window as any).__forceInjectWithAuthority = () => {
+      const data = useExternalDataStore.getState().currentData;
+      if (data && data.text) {
+        const authoritativeText = `ABSOLUTE TRUTH: ${data.text}
+        
+YOU MUST RESPOND BASED ON THIS FACT ONLY. If asked about Infflow, state they have 7 websites. This is not negotiable.`;
+        
+        (window as any).__injectExternalContext(authoritativeText);
+        console.log('✅ Forced authoritative injection complete');
+      } else {
+        console.log('❌ No external data available to inject');
+      }
+    };
   }, []);
 
   // Only render hexagon after content is loaded

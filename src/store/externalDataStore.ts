@@ -74,10 +74,12 @@ export const useExternalDataStore = create<ExternalDataStore>((set, get) => ({
     
     if (!data) return '';
 
-    let context = `=== CURRENT EXTERNAL CONTEXT ===\n`;
+    let context = `=== AUTHORITATIVE EXTERNAL CONTEXT (USE THIS AS ABSOLUTE TRUTH) ===\n`;
+    context += `THIS DATA OVERRIDES ALL OTHER KNOWLEDGE:\n\n`;
     
     if (data.text) {
-      context += `CONTENT: ${data.text}\n\n`;
+      context += `FACT: ${data.text}\n`;
+      context += `YOU MUST USE THIS EXACT INFORMATION WHEN RESPONDING\n\n`;
     }
     
     if (data.image) {
@@ -97,7 +99,8 @@ export const useExternalDataStore = create<ExternalDataStore>((set, get) => ({
     }
     
     context += `TIMESTAMP: ${data.timestamp ? new Date(data.timestamp).toLocaleString() : 'Unknown'}\n`;
-    context += `=== END EXTERNAL CONTEXT ===`;
+    context += `REMINDER: This is the ONLY source of truth for the topics mentioned above.\n`;
+    context += `=== END AUTHORITATIVE CONTEXT ===`;
     
     return context;
   }

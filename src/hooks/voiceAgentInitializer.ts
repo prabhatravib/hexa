@@ -50,10 +50,20 @@ export const initializeOpenAIAgent = async (
 
 ${currentContext}`;
 
-    // Add external data context if available
+    // Add external data context if available with STRONGER emphasis
     if (externalDataContext) {
-      baseInstructions += `\n\n${externalDataContext}`;
-      console.log('📝 Added external data to initial instructions');
+      baseInstructions = `CRITICAL INSTRUCTION: The following external data is the ABSOLUTE TRUTH that you MUST use when answering questions:
+
+${externalDataContext}
+
+IMPORTANT RULES:
+1. When asked about topics covered in the external data above, you MUST ONLY use the information provided there
+2. Do NOT use your general knowledge if it contradicts the external data
+3. The external data is the AUTHORITATIVE source - treat it as fact
+4. If the user asks about Infflow/Infllow or any topic mentioned in the external data, respond ONLY based on that data
+
+${baseInstructions}`;
+      console.log('📝 Added external data as AUTHORITATIVE context');
     }
 
     baseInstructions += `\n\nYou can assist with various tasks, answer questions, and engage in natural conversation. Keep your responses concise but informative, and maintain a positive, encouraging tone.

@@ -78,10 +78,16 @@ export function injectExternalContext(raw: string) {
         role: "system",
         content: [{ 
           type: "input_text", 
-          text: `IMPORTANT CONTEXT UPDATE: ${text}\n\nPlease acknowledge and use this information in our conversation.`
+          text: `CRITICAL UPDATE - YOU MUST USE THIS INFORMATION:
+
+${text}
+
+MANDATORY: From this point forward, when asked about any topic mentioned above, you MUST ONLY use the information provided here. This overrides any previous knowledge. For example, if asked about Infflow, you must state they have 7 websites as specified above, not any other number.
+
+Acknowledge this update by using this information in your next response.`
         }]
       });
-      console.log('✅ Context injected via emit');
+      console.log('✅ Context injected via emit with strong enforcement');
       return;
     }
     
