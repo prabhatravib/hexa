@@ -1,0 +1,368 @@
+/// <reference types="@cloudflare/workers-types" />
+
+import { VoiceSessionCore } from './voice-session-core';
+import { MessageHandlers } from './message-handlers';
+import { AgentManager } from './agent-manager';
+
+export interface ExternalData {
+  image?: string;
+  text?: string;
+  prompt?: string;
+  type?: string;
+}
+
+export class VoiceSessionExternalData {
+  private currentExternalData: ExternalData | null = null;
+  private externalContext: string = "";
+  private baseInstructions: string = "";
+  private live: {
+    session: any;
+    openaiSessionId: string;
+  } | null = null;
+
+  constructor(
+    private core: VoiceSessionCore,
+    private state: DurableObjectState,
+    private messageHandlers: MessageHandlers,
+    private agentManager: AgentManager
+  ) {}
+
+  async injectExternalFact(text: string): Promise<void> {
+    if (!this.live?.session) {
+      console.log('ℹ️ No live Realtime session available for injection');
+      return;
+    }
+
+    try {
+      const fact = `Authoritative external context:
+${text}
+Use this over prior knowledge. "Infflow" with two f's is the user's company, not the ADHD app.`;
+
+      await this.live.session.send({
+        type: "conversation.item.create",
+        item: {
+          type: "message",
+          role: "user",
+          content: [{ type: "input_text", text: fact }]
+        }
+      });
+
+      // Optional: also refresh top-level instructions
+      await this.live.session.send({
+        type: "session.update",
+        session: {
+          instructions: "Follow any message containing 'Authoritative external context' as ground truth."
+        }
+      });
+
+      console.log('✅ External fact injected into live Realtime session');
+    } catch (error) {
+      console.error('❌ Failed to inject external fact into live session:', error);
+    }
+  }
+
+  // Apply external data to session with session-level instructions update
+  async applyExternalDataToSessionWithInstructions(sessionId: string, externalData: any): Promise<void> {
+    if (!this.live?.session) {
+      console.log('ℹ️ No live Realtime session available for instructions update');
+      return;
+    }
+
+    try {
+      // Create facts block from external data
+      const facts = this.makeFactsBlock(externalData);
+      
+      // Build new instructions with facts appended
+      const newInstructions = `${this.baseInstructions}\n\n### Facts for this session\n${facts}\n\nObey these facts over prior knowledge.`;
+
+      // Send session.update to the live session
+      await this.live.session.send({
+        type: 'session.update',
+        session: { instructions: newInstructions }
+      });
+
+      console.log('✅ Session instructions updated with external data facts');
+      
+      // Wait for session.updated acknowledgment (optional - the session will handle this)
+      // The session will automatically acknowledge the update
+      
+    } catch (error) {
+      console.error('❌ Failed to update session instructions:', error);
+    }
+  }
+
+  // Create facts block from external data
+  private makeFactsBlock(externalData: any): string {
+    const facts: string[] = [];
+    
+    if (externalData.text) {
+      // Convert text into bullet points
+      const textLines = externalData.text.split('\n').filter((line: string) => line.trim());
+      textLines.forEach((line: string) => {
+        facts.push(`- ${line.trim()}`);
+      });
+    }
+    
+    if (externalData.prompt && externalData.prompt !== externalData.text) {
+      facts.push(`- ${externalData.prompt}`);
+    }
+    
+    return facts.join('\n');
+  }
+
+  private buildInstructions(): string {
+    const agentProfile = this.agentManager.getAgentInstructions();
+    const externalCtx = this.externalContext.trim();
+    
+    const parts = [agentProfile];
+    if (externalCtx) {
+      parts.push(`Authoritative external context:\n${externalCtx}\nAlways use it.`);
+    }
+    
+    return parts.filter(Boolean).join("\n\n");
+  }
+
+  private async formatCurrentExternalData(): Promise<string | null> {
+    try {
+      if (!this.currentExternalData || !this.currentExternalData.text) {
+        return null;
+      }
+
+      const data = this.currentExternalData;
+      
+      if (data.type === "mermaid") {
+        return `External context (Mermaid diagram available):\n\`\`\`mermaid\n${data.text}\n\`\`\``;
+      } else {
+        return `External context:\n${data.text}`;
+      }
+    } catch (error) {
+      console.error('❌ Failed to get external data:', error);
+      return null;
+    }
+  }
+
+  // Store external data with session ID
+  private async storeExternalData(sessionId: string, data: {
+    image?: string;
+    text?: string;
+    prompt?: string;
+    type?: string;
+    timestamp: string;
+  }): Promise<void> {
+    try {
+      const storageKey = `external_data_${sessionId}`;
+      await this.state.storage.put(storageKey, data);
+      console.log('💾 Stored external data for session:', sessionId);
+    } catch (error) {
+      console.error('❌ Failed to store external data:', error);
+    }
+  }
+
+  // Get external data by session ID
+  private async getExternalDataBySessionId(sessionId: string): Promise<{
+    image?: string;
+    text?: string;
+    prompt?: string;
+    type?: string;
+    timestamp: string;
+  } | null> {
+    try {
+      const storageKey = `external_data_${sessionId}`;
+      const data = await this.state.storage.get(storageKey) as {
+        image?: string;
+        text?: string;
+        prompt?: string;
+        type?: string;
+        timestamp: string;
+      } | null;
+      return data || null;
+    } catch (error) {
+      console.error('❌ Failed to get external data:', error);
+      return null;
+    }
+  }
+
+  // Handle external data file endpoint (like infflow.md)
+  async handleExternalDataFile(request: Request): Promise<Response> {
+    try {
+      if (request.method === 'OPTIONS') {
+        return new Response(null, {
+          status: 200,
+          headers: this.core.getCorsHeaders()
+        });
+      }
+
+      if (request.method !== 'GET') {
+        return this.core.createErrorResponse('Method not allowed. Use GET.', 405);
+      }
+
+      // Get external data from storage
+      const externalData = await this.state.storage.get('external_data_file') as string;
+      
+      if (!externalData) {
+        // Return empty content if no external data
+        return new Response('# External Data\n\nNo external data available.\n', {
+          status: 200,
+          headers: {
+            'Content-Type': 'text/markdown',
+            ...this.core.getCorsHeaders()
+          }
+        });
+      }
+
+      return new Response(externalData, {
+        status: 200,
+        headers: {
+          'Content-Type': 'text/markdown',
+          ...this.core.getCorsHeaders()
+        }
+      });
+
+    } catch (error) {
+      console.error('❌ Failed to serve external data file:', error);
+      return new Response('# External Data\n\nError loading external data.\n', {
+        status: 500,
+        headers: {
+          'Content-Type': 'text/markdown',
+          ...this.core.getCorsHeaders()
+        }
+      });
+    }
+  }
+
+  // Handle external data status endpoint
+  async handleExternalDataStatus(request: Request): Promise<Response> {
+    try {
+      if (request.method === 'OPTIONS') {
+        return new Response(null, {
+          status: 200,
+          headers: this.core.getCorsHeaders()
+        });
+      }
+
+      if (request.method !== 'GET') {
+        return this.core.createErrorResponse('Method not allowed. Use GET.', 405);
+      }
+
+      // Always use the current voice session ID
+      const targetSessionId = this.core.getSessionId();
+      console.log('🆔 Status request using current session ID:', targetSessionId);
+
+      // Get external data for the current session
+      const externalData = await this.getExternalDataBySessionId(targetSessionId);
+      const hasExternalData = externalData !== null;
+      const dataType = externalData?.type || null;
+      const timestamp = externalData?.timestamp || null;
+
+      return this.core.createJsonResponse({
+        hasExternalData,
+        dataType,
+        timestamp,
+        sessionId: targetSessionId,
+        externalData: externalData  // Include the actual data
+      });
+
+    } catch (error) {
+      console.error('❌ Failed to handle external data status:', error);
+      return this.core.createErrorResponse('Failed to get external data status', 500);
+    }
+  }
+
+  // Handle external data endpoint
+  async handleExternalData(request: Request): Promise<Response> {
+    try {
+      if (request.method === 'OPTIONS') {
+        return new Response(null, {
+          status: 200,
+          headers: this.core.getCorsHeaders()
+        });
+      }
+
+      if (request.method !== 'POST') {
+        return this.core.createErrorResponse('Method not allowed. Use POST.', 405);
+      }
+
+      const externalData = await request.json() as {
+        image?: string;
+        text?: string;
+        prompt?: string;
+        type?: string;
+        sessionId?: string;
+      };
+
+      console.log('📥 Received external data:', externalData);
+
+      // Use the sessionId from the request if provided, otherwise use current session
+      const targetSessionId = externalData.sessionId || this.core.getSessionId();
+      console.log('🆔 Using session ID:', targetSessionId);
+
+      // Update current external data
+      this.currentExternalData = {
+        image: externalData.image,
+        text: externalData.text,
+        prompt: externalData.prompt,
+        type: externalData.type
+      };
+
+      // Store the external data with the target session ID
+      await this.storeExternalData(targetSessionId, {
+        image: externalData.image,
+        text: externalData.text,
+        prompt: externalData.prompt,
+        type: externalData.type,
+        timestamp: new Date().toISOString()
+      });
+
+      // Update the message handlers' external data context
+      this.messageHandlers.updateExternalData(this.currentExternalData);
+
+      // Broadcast to connected clients
+      this.core.broadcastToClients({
+        type: 'external_data_received',
+        data: this.currentExternalData,
+        sessionId: targetSessionId
+      });
+
+      // Apply external data to active Realtime session with session-level instructions update
+      await this.applyExternalDataToSessionWithInstructions(targetSessionId, externalData);
+
+      console.log('✅ External data processing complete for session:', targetSessionId);
+
+      return this.core.createJsonResponse({
+        success: true,
+        message: 'External data received and session instructions updated',
+        sessionId: targetSessionId
+      });
+
+    } catch (error) {
+      console.error('❌ Failed to handle external data:', error);
+      return this.core.createErrorResponse('Failed to process external data', 500);
+    }
+  }
+
+  // Getter for external data
+  getCurrentExternalData(): ExternalData | null {
+    return this.currentExternalData;
+  }
+
+  // Set the live Realtime session when WebRTC connects
+  setLiveSession(realtimeSession: any): void {
+    this.live = {
+      session: realtimeSession,
+      openaiSessionId: realtimeSession.id || realtimeSession.session?.id || 'unknown'
+    };
+    console.log('🔗 Live Realtime session set for external data injection');
+  }
+
+  // Set base instructions for the session
+  setBaseInstructions(instructions: string): void {
+    this.baseInstructions = instructions;
+    console.log('📝 Base instructions set for session');
+  }
+
+  // Clear the live session when WebRTC disconnects
+  clearLiveSession(): void {
+    this.live = null;
+    console.log('🔗 Live Realtime session cleared');
+  }
+}
