@@ -119,7 +119,7 @@ export class OpenAIConnection {
     }
   }
 
-  // Send message to OpenAI via Realtime API (for text messages)
+  // Send message to OpenAI via Realtime API (for various message types)
   async sendMessage(message: any): Promise<void> {
     if (!this.sessionId) {
       console.error('❌ No session available');
@@ -128,6 +128,46 @@ export class OpenAIConnection {
 
     try {
       console.log('📤 Sending message to OpenAI via Realtime API:', message.type);
+      
+      // Handle session.update messages
+      if (message.type === 'session.update') {
+        const response = await fetch(`https://api.openai.com/v1/realtime/sessions/${this.sessionId}`, {
+          method: 'PATCH',
+          headers: {
+            'Authorization': `Bearer ${this.env.OPENAI_API_KEY}`,
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify(message.session)
+        });
+
+        if (response.ok) {
+          console.log('✅ Session updated successfully');
+        } else {
+          const errorText = await response.text();
+          console.error('❌ Failed to update session:', response.status, errorText);
+        }
+        return;
+      }
+
+      // Handle conversation.item.create messages
+      if (message.type === 'conversation.item.create') {
+        const response = await fetch(`https://api.openai.com/v1/realtime/sessions/${this.sessionId}/conversation/items`, {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${this.env.OPENAI_API_KEY}`,
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify(message)
+        });
+
+        if (response.ok) {
+          console.log('✅ Conversation item created successfully');
+        } else {
+          const errorText = await response.text();
+          console.error('❌ Failed to create conversation item:', response.status, errorText);
+        }
+        return;
+      }
       
       // For text messages, use the Realtime API conversation items
       if (message.type === 'text') {
