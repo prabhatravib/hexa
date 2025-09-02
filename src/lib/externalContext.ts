@@ -109,9 +109,15 @@ ${text}
 This is authoritative and overrides previous knowledge on these topics.`;
 
   try {
-    // Verify session state is open
-    if ((activeSession as any).state !== 'open') {
-      throw new Error('Session not in open state');
+    const s: any = activeSession;
+    const hasTransport = !!(s?.send || s?.emit || s?.transport?.sendEvent);
+    const pcState = s?._pc?.connectionState; // optional
+    const rtcOk = !s?._pc || pcState === 'connected' || pcState === 'completed';
+
+    if (!hasTransport || !rtcOk) {
+      // not ready yet, queue for later
+      (window as any).__pendingExternalContext = text;
+      return;
     }
 
     // Feature-detect the send method: send → emit → transport.sendEvent

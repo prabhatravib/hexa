@@ -164,9 +164,6 @@ ${getLanguageInstructions()}`;
     
     // Create session and connect
     const session = new RealtimeSession(agent);
-    
-    // Set as active session for external context injection
-    setActiveSession(session);
 
     // Add debug updater for session instructions
     (window as any).__updateSessionInstructions = async (instructions: string) => {
@@ -313,17 +310,22 @@ ${getLanguageInstructions()}`;
       unsubscribe(); // Clean up Zustand subscription
     });
     
-    // Initialize WebRTC connection and handle streams
-    const connectionResult = await initializeWebRTCConnection(session, sessionData, {
-      audioEl,
-      setVoiceState,
-      startSpeaking,
-      stopSpeaking,
-      setSpeechIntensity,
-      audioContextRef
+    const ok = await initializeWebRTCConnection(session, sessionData, {
+      audioEl, setVoiceState, startSpeaking, stopSpeaking, setSpeechIntensity, audioContextRef
     });
+
+    if (ok) {
+      setActiveSession(session);
+      
+      // Flush any pending external context
+      if ((window as any).__pendingExternalContext) {
+        const pending = (window as any).__pendingExternalContext;
+        (window as any).__pendingExternalContext = null;
+        await injectExternalContext(pending);
+      }
+    }
     
-    if (connectionResult) {
+    if (ok) {
       console.log('✅ OpenAI Agent initialized and connected with WebRTC');
       setVoiceState('idle');
       return session;

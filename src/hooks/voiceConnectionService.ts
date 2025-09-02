@@ -224,7 +224,16 @@ export const useVoiceConnectionService = ({
               // Inject text content directly into active session
               if (data.data?.text) {
                 console.log('🔧 Attempting to inject external context:', data.data.text);
-                await injectExternalContext(data.data.text);
+                
+                const s: any = (window as any).activeSession;
+                const ready = !!(s?.send || s?.emit || s?.transport?.sendEvent) &&
+                              (!s?._pc || ['connected','completed'].includes(s._pc.connectionState));
+
+                if (ready) {
+                  await injectExternalContext(data.data.text);
+                } else {
+                  (window as any).__pendingExternalContext = data.data.text;
+                }
               }
               break;
               
