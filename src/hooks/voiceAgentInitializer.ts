@@ -45,16 +45,19 @@ export const initializeOpenAIAgent = async (
     const externalDataContext = useExternalDataStore.getState().getFormattedContext();
     console.log('🔧 External data context:', externalDataContext ? 'Available' : 'None');
     
-    // Create agent with proper configuration
-    const agent = new RealtimeAgent({
-      name: 'Hexa, an AI Assistant',
-      instructions: `You are Hexa, a friendly and helpful AI assistant. You have a warm, conversational personality and are always eager to help.
+    // Create base instructions that will be updated dynamically
+    const baseInstructions = `You are Hexa, a friendly and helpful AI assistant. You have a warm, conversational personality and are always eager to help.
 
 ${currentContext}
 
 You can assist with various tasks, answer questions, and engage in natural conversation. Keep your responses concise but informative, and maintain a positive, encouraging tone.
 
-${getLanguageInstructions()}`
+${getLanguageInstructions()}`;
+
+    // Create agent with proper configuration
+    const agent = new RealtimeAgent({
+      name: 'Hexa, an AI Assistant',
+      instructions: baseInstructions
     });
 
     // Create a dedicated audio element for the Realtime session and expose it globally for debugging
@@ -168,23 +171,33 @@ ${getLanguageInstructions()}`
       setSpeechIntensity
     });
     
-    // Subscribe to Zustand changes and automatically inject new external data
-    const unsubscribe = useExternalDataStore.subscribe((state) => {
-      if (state.currentData && session && session.state === "open") {
-        console.log('🔄 New external data detected, injecting into session...');
-        const externalData = state.getFormattedContext();
-        if (externalData) {
-          session.send({
-            type: "conversation.item.create",
-            item: {
-              type: "message",
-              role: "system",
-              content: [{ type: "input_text", text: externalData }]
-            }
-          });
-          console.log('✅ New external data injected into session');
-        }
+    // Subscribe to Zustand changes and automatically update session instructions
+
+    const formatExternalData = (data: any) => {
+      if (!data) return '';
+      
+      if (data.type === "mermaid") {
+        return `External context (Mermaid diagram available):\n\`\`\`mermaid\n${data.text}\n\`\`\``;
+      } else {
+        return `External context:\n${data.text}`;
       }
+    };
+
+    const unsubscribe = useExternalDataStore.subscribe((state) => {
+      const data = state.currentData;
+      if (!data || !session || session.state !== "open") return;
+
+      console.log('🔄 New external data detected, updating session instructions...');
+      
+      const externalContext = formatExternalData(data);
+      const updatedInstructions = `${baseInstructions}\n\n${externalContext}`;
+      
+      session.send({
+        type: "session.update",
+        session: { instructions: updatedInstructions }
+      });
+      
+      console.log('✅ Session instructions updated with external data');
     });
     
 
