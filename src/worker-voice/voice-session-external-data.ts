@@ -292,54 +292,44 @@ Use this over prior knowledge. "Infflow" with two f's is the user's company, not
         return this.core.createErrorResponse('Method not allowed. Use POST.', 405);
       }
 
-      const externalData = await request.json() as {
-        image?: string;
-        text?: string;
-        prompt?: string;
-        type?: string;
-        sessionId?: string;
-      };
+      const body = await request.json() as { text?: string };
+      const text = (body.text || '').trim();
+      if (!text) {
+        return this.core.createErrorResponse('no_text', 400);
+      }
 
-      console.log('📥 Received external data:', externalData);
+      if (!this.live?.session?.transport?.sendEvent) {
+        return this.core.createErrorResponse('session_not_ready', 409);
+      }
 
-      // Use the sessionId from the request if provided, otherwise use current OpenAI session
-      const targetSessionId = externalData.sessionId || this.getCurrentOpenAISessionId();
-      console.log('🆔 Using session ID:', targetSessionId);
+      console.log('📥 Received external data for live session injection:', text);
 
-      // Update current external data
-      this.currentExternalData = {
-        image: externalData.image,
-        text: externalData.text,
-        prompt: externalData.prompt,
-        type: externalData.type
-      };
-
-      // Store the external data with the target session ID
-      await this.storeExternalData(targetSessionId, {
-        image: externalData.image,
-        text: externalData.text,
-        prompt: externalData.prompt,
-        type: externalData.type,
-        timestamp: new Date().toISOString()
+      // 2a) Ephemeral context for the next turn
+      this.live.session.transport.sendEvent({
+        type: 'conversation.item.create',
+        item: {
+          type: 'message',
+          role: 'system',
+          content: [{ type: 'input_text', text }]
+        }
       });
 
-      // Update the message handlers' external data context
-      this.messageHandlers.updateExternalData(this.currentExternalData);
+      // 2b) Optional: persist priority by updating instructions now
+      const merged = [
+        this.baseInstructions?.trim?.() || '',
+        '',
+        '### Live context',
+        text
+      ].join('\n').trim();
 
-      // Broadcast to connected clients
-      this.core.broadcastToClients({
-        type: 'external_data_received',
-        data: this.currentExternalData,
-        sessionId: targetSessionId
+      this.live.session.transport.sendEvent({
+        type: 'session.update',
+        session: { instructions: merged }
       });
 
-      console.log('✅ External data processing complete for session:', targetSessionId);
+      console.log('✅ External data injected into live OpenAI session');
 
-      return this.core.createJsonResponse({
-        success: true,
-        message: 'External data received and broadcast to clients',
-        sessionId: targetSessionId
-      });
+      return this.core.createJsonResponse({ ok: true });
 
     } catch (error) {
       console.error('❌ Failed to handle external data:', error);
