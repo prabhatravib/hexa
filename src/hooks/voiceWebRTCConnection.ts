@@ -36,6 +36,10 @@ export const initializeWebRTCConnection = async (
   try {
     await session.connect(connectionOptions);
     console.log('✅ WebRTC connection successful with client secret');
+    
+    // Set session state to 'open' after successful connection
+    session.state = 'open';
+    console.log('🔧 Session state set to open');
   } catch (error) {
     console.error('❌ WebRTC connection failed:', error);
     

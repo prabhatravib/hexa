@@ -299,6 +299,7 @@ Use this over prior knowledge. "Infflow" with two f's is the user's company, not
         type?: string;
         mermaidCode?: string;
         diagramImage?: string;
+        sessionId?: string;
       };
 
       // Handle different input formats from external websites
@@ -306,96 +307,51 @@ Use this over prior knowledge. "Infflow" with two f's is the user's company, not
       const image = body.image || body.diagramImage || '';
       const prompt = body.prompt || '';
       const type = body.type || '';
+      const sessionId = body.sessionId || this.core.getSessionId();
 
       if (!text && !image) {
         return this.core.createErrorResponse('no_text_or_image', 400);
       }
 
-      if (!this.isSessionReady()) {
-        // Store external data for later injection with UUID key
-        const storageKey = crypto.randomUUID();
-        await this.storeExternalData(storageKey, {
-          text,
-          image,
-          prompt,
-          type,
-          timestamp: new Date().toISOString()
-        });
-        
-        console.log('💾 External data stored for later injection when session is ready');
-        
-        // Try to auto-inject if session becomes ready shortly after
-        setTimeout(async () => {
-          await this.tryAutoInjectStoredData();
-        }, 1000);
-        
-        // Also try again after a longer delay
-        setTimeout(async () => {
-          await this.tryAutoInjectStoredData();
-        }, 5000);
-        
-        return this.core.createJsonResponse({ 
-          success: true, 
-          message: "Data stored for later injection when session is ready",
-          storageKey,
-          stored: true
-        });
-      }
+      console.log('📥 Received external data:', { 
+        text: text.substring(0, 100), 
+        hasImage: !!image, 
+        prompt, 
+        type,
+        sessionId 
+      });
 
-      console.log('📥 Received external data for live session injection:', { text: text.substring(0, 100), hasImage: !!image, prompt, type });
+      // Store the external data
+      const externalData = {
+        text,
+        image,
+        prompt,
+        type,
+        timestamp: new Date().toISOString()
+      };
 
-      // Prepare content array for injection
-      const content: any[] = [];
+      await this.storeExternalData(sessionId, externalData);
+      console.log('💾 Stored external data for session:', sessionId);
 
-      // Add text content if provided
-      if (text) {
-        content.push({ type: 'input_text', text });
-      }
+      // Update message handlers with the external data
+      this.messageHandlers.updateExternalData(externalData);
+      console.log('📝 Updated message handlers with external data');
 
-      // Add image content if provided
-      if (image) {
-        content.push({ type: 'input_image', image_url: image });
-      }
+      // IMPORTANT: Broadcast to frontend for injection via WebRTC
+      // The frontend will use transport.sendEvent() which actually works
+      this.core.broadcastToClients({
+        type: 'external_data_received',
+        data: externalData,
+        sessionId: sessionId,
+        message: 'External data received - injecting into voice session'
+      });
+      console.log('📡 Broadcasted external data to frontend for WebRTC injection');
 
-      // Add prompt as additional text if provided and different from main text
-      if (prompt && prompt !== text) {
-        content.push({ type: 'input_text', text: `Prompt: ${prompt}` });
-      }
-
-      // Inject as system message using the worker's sendMessage method
-      if (this.isSessionReady()) {
-        const core = this.core as any;
-        const connection = core.openaiConnection;
-        
-        // Send the system message
-        await connection.sendMessage({
-          type: 'conversation.item.create',
-          item: {
-            type: 'message',
-            role: 'system',
-            content: content
-          }
-        });
-
-        // Update session instructions with text content (if any)
-        if (text) {
-          const merged = [
-            this.baseInstructions?.trim?.() || '',
-            '',
-            '### Live context',
-            text
-          ].join('\n').trim();
-
-          await connection.sendMessage({
-            type: 'session.update',
-            session: { instructions: merged }
-          });
-        }
-      }
-
-      console.log('✅ External data injected into live OpenAI session');
-
-      return this.core.createJsonResponse({ ok: true });
+      return this.core.createJsonResponse({ 
+        success: true,
+        message: 'External data received and broadcasted for injection',
+        sessionId: sessionId
+      });
 
     } catch (error) {
       console.error('❌ Failed to handle external data:', error);
@@ -416,131 +372,16 @@ Use this over prior knowledge. "Infflow" with two f's is the user's company, not
     };
     console.log('🔗 Live Realtime session set for external data injection');
     
-    // Auto-inject any stored external data
-    await this.injectStoredExternalData();
-  }
-
-  // Try to auto-inject stored data if session becomes ready
-  private async tryAutoInjectStoredData(): Promise<void> {
-    // Check if we have any stored data first
-    const allKeys = await this.state.storage.list({ prefix: 'external_data_' });
-    if (allKeys.size === 0) {
-      console.log('ℹ️ No stored external data to inject');
-      return;
-    }
-
-    if (this.isSessionReady()) {
-      console.log('🔄 Session ready, attempting auto-injection');
-      await this.injectStoredExternalData();
-    } else {
-      console.log('⏳ Session not ready yet, will retry later');
-    }
-  }
-
-  // Check if the OpenAI connection is ready to send messages
-  private isSessionReady(): boolean {
-    const core = this.core as any;
-    const connection = core.openaiConnection;
-    
-    // Simple check: if we have a connection and sessionId, we're ready
-    return !!(connection && connection.sessionId);
+    // Auto-injection now handled by frontend via broadcast
   }
 
   // Public method to trigger auto-injection when session is ready
+  // This is now handled by broadcasting to frontend instead of direct injection
   async triggerAutoInjectionIfReady(): Promise<void> {
-    await this.tryAutoInjectStoredData();
+    console.log('🔄 Auto-injection now handled by frontend via broadcast');
   }
 
-  // Auto-inject stored external data when session becomes ready
-  private async injectStoredExternalData(): Promise<void> {
-    try {
-      // Get all stored external data and find the latest one by timestamp
-      const allKeys = await this.state.storage.list({ prefix: 'external_data_' });
-      
-      if (allKeys.size > 0) {
-        // Find the latest data by timestamp
-        let latestData: {
-          image?: string;
-          text?: string;
-          prompt?: string;
-          type?: string;
-          timestamp: string;
-        } | null = null;
-        let latestTimestamp = '';
-        
-        for (const [key, data] of allKeys) {
-          const typedData = data as {
-            image?: string;
-            text?: string;
-            prompt?: string;
-            type?: string;
-            timestamp: string;
-          };
-          if (typedData.timestamp > latestTimestamp) {
-            latestTimestamp = typedData.timestamp;
-            latestData = typedData;
-          }
-        }
-        
-        if (latestData) {
-          console.log('🔄 Auto-injecting latest stored external data');
-          
-          // Prepare content array for injection
-          const content: any[] = [];
-          
-          // Add text content if provided
-          if (latestData.text) {
-            content.push({ type: 'input_text', text: latestData.text });
-          }
-          
-          // Add image content if provided
-          if (latestData.image) {
-            content.push({ type: 'input_image', image_url: latestData.image });
-          }
-          
-          // Add prompt as additional text if provided and different from main text
-          if (latestData.prompt && latestData.prompt !== latestData.text) {
-            content.push({ type: 'input_text', text: `Prompt: ${latestData.prompt}` });
-          }
-          
-          // Inject as system message using the worker's sendMessage method
-          if (this.isSessionReady()) {
-            const core = this.core as any;
-            const connection = core.openaiConnection;
-            
-            // Send the system message
-            await connection.sendMessage({
-              type: 'conversation.item.create',
-              item: {
-                type: 'message',
-                role: 'system',
-                content: content
-              }
-            });
-            
-            // Update session instructions with text content (if any)
-            if (latestData.text) {
-              const merged = [
-                this.baseInstructions?.trim?.() || '',
-                '',
-                '### Live context',
-                latestData.text
-              ].join('\n').trim();
-              
-              await connection.sendMessage({
-                type: 'session.update',
-                session: { instructions: merged }
-              });
-            }
-          }
-          
-          console.log('✅ Latest stored external data auto-injected into live session');
-        }
-      }
-    } catch (error) {
-      console.error('❌ Failed to auto-inject stored external data:', error);
-    }
-  }
+
 
   // Set base instructions for the session
   setBaseInstructions(instructions: string): void {

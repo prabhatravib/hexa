@@ -40,7 +40,14 @@ export function setActiveSession(session: any) {
 
 function isRealtimeReady() {
   const s = (window as any).activeSession || activeSession;
-  return !!s && s.state === 'open' && s.transport?.sendEvent;
+  const ready = !!s && s.state === 'open' && s.transport?.sendEvent;
+  console.log('🔍 Realtime ready check:', { 
+    hasSession: !!s, 
+    state: s?.state, 
+    hasTransport: !!s?.transport?.sendEvent,
+    result: ready 
+  });
+  return ready;
 }
 
 export function setBaseInstructions(instr: string) {
@@ -98,25 +105,42 @@ export function injectCurrentExternalData() {
 export async function injectExternalContext(data: { text: string } | string): Promise<boolean> {
   // Handle both object and string formats for backward compatibility
   const text = typeof data === 'string' ? data : data?.text;
-  if (!text) return false;
+  if (!text) {
+    console.log('❌ No text to inject');
+    return false;
+  }
   
   const stripped = stripCodeFences(text);
-  if (!stripped) return false;
+  if (!stripped) {
+    console.log('❌ Text became empty after stripping');
+    return false;
+  }
 
   if (!isRealtimeReady()) {
+    console.log('⏳ Session not ready, queuing external context for later injection');
     (window as any).__pendingExternalContext = stripped;
     return false;
   }
 
   const s = (window as any).activeSession || activeSession;
+  
+  if (!s) {
+    console.log('❌ No active session found');
+    (window as any).__pendingExternalContext = stripped;
+    return false;
+  }
 
   // de-dupe (optional)
   const hash = await cryptoDigest(stripped);
-  if (hash === lastInjectedHash) return true;
+  if (hash === lastInjectedHash) {
+    console.log('⏭️ Skipping duplicate injection (same content already injected)');
+    return true;
+  }
   lastInjectedHash = hash;
 
   // Silent system context. No response.create here.
   try {
+    console.log('📤 Injecting external context via transport.sendEvent...');
     s.transport.sendEvent({
       type: 'conversation.item.create',
       item: {
@@ -125,8 +149,11 @@ export async function injectExternalContext(data: { text: string } | string): Pr
         content: [{ type: 'input_text', text: stripped }]
       }
     });
+    console.log('✅ External context successfully injected into voice session!');
+    console.log('📝 Injected text:', stripped.substring(0, 200) + '...');
     return true;
   } catch (e) {
+    console.error('❌ Failed to inject external context:', e);
     // Fallback to queue
     (window as any).__pendingExternalContext = stripped;
     return false;
