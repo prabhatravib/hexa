@@ -201,6 +201,11 @@ export class VoiceSessionHandlers {
   onOpenAIConnected(): void {
     console.log('✅ OpenAI connection established');
     this.core.broadcastToClients({ type: 'openai_connected' });
+    
+    // Trigger auto-injection of stored external data when voice session is ready
+    setTimeout(async () => {
+      await this.core.triggerAutoInjectionIfReady();
+    }, 2000);
   }
 
   onOpenAIDisconnected(): void {

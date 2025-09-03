@@ -93,6 +93,11 @@ export class VoiceSession {
         return this.handlers.handleSetLiveSession(request);
       case '/api/set-base-instructions':
         return this.handlers.handleSetBaseInstructions(request);
+      case '/api/trigger-auto-injection':
+        await this.triggerAutoInjectionIfReady();
+        return new Response(JSON.stringify({ success: true }), {
+          headers: { 'Content-Type': 'application/json' }
+        });
       case '/external-data.md':
         return this.externalData.handleExternalDataFile(request);
       default:
@@ -115,5 +120,9 @@ export class VoiceSession {
 
   clearLiveSession() {
     this.externalData.clearLiveSession();
+  }
+
+  async triggerAutoInjectionIfReady() {
+    await this.externalData.triggerAutoInjectionIfReady();
   }
 }

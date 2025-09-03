@@ -311,10 +311,10 @@ Use this over prior knowledge. "Infflow" with two f's is the user's company, not
         return this.core.createErrorResponse('no_text_or_image', 400);
       }
 
-      if (!this.live?.session?.transport?.sendEvent) {
-        // Store data for later injection when session becomes ready
-        const sessionId = this.getCurrentOpenAISessionId();
-        await this.storeExternalData(sessionId, {
+      if (!this.isSessionReady()) {
+        // Store external data for later injection with UUID key
+        const storageKey = crypto.randomUUID();
+        await this.storeExternalData(storageKey, {
           text,
           image,
           prompt,
@@ -324,10 +324,20 @@ Use this over prior knowledge. "Infflow" with two f's is the user's company, not
         
         console.log('💾 External data stored for later injection when session is ready');
         
+        // Try to auto-inject if session becomes ready shortly after
+        setTimeout(async () => {
+          await this.tryAutoInjectStoredData();
+        }, 1000);
+        
+        // Also try again after a longer delay
+        setTimeout(async () => {
+          await this.tryAutoInjectStoredData();
+        }, 5000);
+        
         return this.core.createJsonResponse({ 
           success: true, 
           message: "Data stored for later injection when session is ready",
-          sessionId,
+          storageKey,
           stored: true
         });
       }
@@ -352,29 +362,35 @@ Use this over prior knowledge. "Infflow" with two f's is the user's company, not
         content.push({ type: 'input_text', text: `Prompt: ${prompt}` });
       }
 
-      // Inject as system message
-      this.live.session.transport.sendEvent({
-        type: 'conversation.item.create',
-        item: {
-          type: 'message',
-          role: 'system',
-          content: content
-        }
-      });
-
-      // Update session instructions with text content (if any)
-      if (text) {
-        const merged = [
-          this.baseInstructions?.trim?.() || '',
-          '',
-          '### Live context',
-          text
-        ].join('\n').trim();
-
-        this.live.session.transport.sendEvent({
-          type: 'session.update',
-          session: { instructions: merged }
+      // Inject as system message using the worker's sendMessage method
+      if (this.isSessionReady()) {
+        const core = this.core as any;
+        const connection = core.openaiConnection;
+        
+        // Send the system message
+        await connection.sendMessage({
+          type: 'conversation.item.create',
+          item: {
+            type: 'message',
+            role: 'system',
+            content: content
+          }
         });
+
+        // Update session instructions with text content (if any)
+        if (text) {
+          const merged = [
+            this.baseInstructions?.trim?.() || '',
+            '',
+            '### Live context',
+            text
+          ].join('\n').trim();
+
+          await connection.sendMessage({
+            type: 'session.update',
+            session: { instructions: merged }
+          });
+        }
       }
 
       console.log('✅ External data injected into live OpenAI session');
@@ -404,64 +420,122 @@ Use this over prior knowledge. "Infflow" with two f's is the user's company, not
     await this.injectStoredExternalData();
   }
 
+  // Try to auto-inject stored data if session becomes ready
+  private async tryAutoInjectStoredData(): Promise<void> {
+    // Check if we have any stored data first
+    const allKeys = await this.state.storage.list({ prefix: 'external_data_' });
+    if (allKeys.size === 0) {
+      console.log('ℹ️ No stored external data to inject');
+      return;
+    }
+
+    if (this.isSessionReady()) {
+      console.log('🔄 Session ready, attempting auto-injection');
+      await this.injectStoredExternalData();
+    } else {
+      console.log('⏳ Session not ready yet, will retry later');
+    }
+  }
+
+  // Check if the OpenAI connection is ready to send messages
+  private isSessionReady(): boolean {
+    const core = this.core as any;
+    const connection = core.openaiConnection;
+    
+    // Simple check: if we have a connection and sessionId, we're ready
+    return !!(connection && connection.sessionId);
+  }
+
+  // Public method to trigger auto-injection when session is ready
+  async triggerAutoInjectionIfReady(): Promise<void> {
+    await this.tryAutoInjectStoredData();
+  }
+
   // Auto-inject stored external data when session becomes ready
   private async injectStoredExternalData(): Promise<void> {
     try {
-      const sessionId = this.getCurrentOpenAISessionId();
-      const storedData = await this.getExternalDataBySessionId(sessionId);
+      // Get all stored external data and find the latest one by timestamp
+      const allKeys = await this.state.storage.list({ prefix: 'external_data_' });
       
-      if (storedData) {
-        console.log('🔄 Auto-injecting stored external data for session:', sessionId);
+      if (allKeys.size > 0) {
+        // Find the latest data by timestamp
+        let latestData: {
+          image?: string;
+          text?: string;
+          prompt?: string;
+          type?: string;
+          timestamp: string;
+        } | null = null;
+        let latestTimestamp = '';
         
-        // Prepare content array for injection
-        const content: any[] = [];
-        
-        // Add text content if provided
-        if (storedData.text) {
-          content.push({ type: 'input_text', text: storedData.text });
-        }
-        
-        // Add image content if provided
-        if (storedData.image) {
-          content.push({ type: 'input_image', image_url: storedData.image });
-        }
-        
-        // Add prompt as additional text if provided and different from main text
-        if (storedData.prompt && storedData.prompt !== storedData.text) {
-          content.push({ type: 'input_text', text: `Prompt: ${storedData.prompt}` });
-        }
-        
-        // Inject as system message
-        if (this.live?.session?.transport?.sendEvent) {
-          this.live.session.transport.sendEvent({
-            type: 'conversation.item.create',
-            item: {
-              type: 'message',
-              role: 'system',
-              content: content
-            }
-          });
-          
-          // Update session instructions with text content (if any)
-          if (storedData.text) {
-            const merged = [
-              this.baseInstructions?.trim?.() || '',
-              '',
-              '### Live context',
-              storedData.text
-            ].join('\n').trim();
-            
-            this.live.session.transport.sendEvent({
-              type: 'session.update',
-              session: { instructions: merged }
-            });
+        for (const [key, data] of allKeys) {
+          const typedData = data as {
+            image?: string;
+            text?: string;
+            prompt?: string;
+            type?: string;
+            timestamp: string;
+          };
+          if (typedData.timestamp > latestTimestamp) {
+            latestTimestamp = typedData.timestamp;
+            latestData = typedData;
           }
         }
         
-        console.log('✅ Stored external data auto-injected into live session');
-        
-        // Optional: Clear the stored data after successful injection
-        // await this.clearStoredExternalData(sessionId);
+        if (latestData) {
+          console.log('🔄 Auto-injecting latest stored external data');
+          
+          // Prepare content array for injection
+          const content: any[] = [];
+          
+          // Add text content if provided
+          if (latestData.text) {
+            content.push({ type: 'input_text', text: latestData.text });
+          }
+          
+          // Add image content if provided
+          if (latestData.image) {
+            content.push({ type: 'input_image', image_url: latestData.image });
+          }
+          
+          // Add prompt as additional text if provided and different from main text
+          if (latestData.prompt && latestData.prompt !== latestData.text) {
+            content.push({ type: 'input_text', text: `Prompt: ${latestData.prompt}` });
+          }
+          
+          // Inject as system message using the worker's sendMessage method
+          if (this.isSessionReady()) {
+            const core = this.core as any;
+            const connection = core.openaiConnection;
+            
+            // Send the system message
+            await connection.sendMessage({
+              type: 'conversation.item.create',
+              item: {
+                type: 'message',
+                role: 'system',
+                content: content
+              }
+            });
+            
+            // Update session instructions with text content (if any)
+            if (latestData.text) {
+              const merged = [
+                this.baseInstructions?.trim?.() || '',
+                '',
+                '### Live context',
+                latestData.text
+              ].join('\n').trim();
+              
+              await connection.sendMessage({
+                type: 'session.update',
+                session: { instructions: merged }
+              });
+            }
+          }
+          
+          console.log('✅ Latest stored external data auto-injected into live session');
+        }
       }
     } catch (error) {
       console.error('❌ Failed to auto-inject stored external data:', error);

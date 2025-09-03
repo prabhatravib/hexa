@@ -327,6 +327,11 @@ export class VoiceSessionCore {
     return this.state;
   }
 
+  async triggerAutoInjectionIfReady() {
+    // This will be implemented by the external data handler
+    console.log('🔄 Triggering auto-injection check');
+  }
+
   getEnv(): Env {
     return this.env;
   }
