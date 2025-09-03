@@ -207,6 +207,17 @@ export const useVoiceConnectionService = ({
               }, 1000);
               break;
               
+            case 'session_idle_reset':
+              console.log('🔄 Session idle reset detected:', data.message);
+              setVoiceState('retrying');
+              setInitializationState('connecting');
+              setInitializationProgress(30);
+              // Reinitialize the connection with the new session after idle reset
+              setTimeout(() => {
+                initializeOpenAIAgentFromWorker();
+              }, 1000);
+              break;
+              
             case 'external_data_received':
               console.log('🔍 Received external_data_received event:', data);
               // Skip if this is duplicate data

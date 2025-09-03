@@ -12,12 +12,18 @@ export class VoiceSessionCore {
   private clients: Set<any> = new Set();
   private isActive: boolean = true;
   private autoRestartInterval: number | null = null;
+  private lastActivity: number = Date.now();
+  private idleCheckInterval: number | null = null;
+  private handlers: any = null; // Will be set by VoiceSession
 
   constructor(private state: DurableObjectState, private env: Env) {
     this.sessionId = crypto.randomUUID();
     
-    // Auto-restart worker every 30 minutes to prevent stale connections
+    // Auto-restart worker every 15 minutes to prevent session expiration
     this.startAutoRestart();
+    
+    // Start idle detection for smart resets
+    this.startIdleDetection();
 
     // Add cleanup on worker restart
     this.state.blockConcurrencyWhile(async () => {
@@ -54,11 +60,76 @@ export class VoiceSessionCore {
   }
 
   private startAutoRestart(): void {
-    // Restart every 30 minutes (30 * 60 * 1000 ms)
+    // Restart every 15 minutes to prevent OpenAI session expiration (15 * 60 * 1000 ms)
+    // OpenAI sessions typically expire after 15-30 minutes of inactivity
     this.autoRestartInterval = setInterval(() => {
-      console.log('🔄 Auto-restarting worker after 30 minutes to prevent stale connections...');
+      console.log('🔄 Auto-restarting worker after 15 minutes to prevent session expiration...');
       this.performAutoRestart();
-    }, 30 * 60 * 1000) as unknown as number;
+    }, 15 * 60 * 1000) as unknown as number;
+  }
+
+  private startIdleDetection(): void {
+    // Check for idle state every 2 minutes
+    this.idleCheckInterval = setInterval(() => {
+      // Safety check: Don't run idle detection if session is not active
+      if (!this.isActive) {
+        return;
+      }
+
+      const now = Date.now();
+      const idleTime = now - this.lastActivity;
+      
+      // If idle for more than 5 minutes, reset the session
+      if (idleTime > 5 * 60 * 1000) {
+        console.log('🔄 Session idle for 5+ minutes, performing smart reset...');
+        this.performSmartReset();
+      }
+    }, 2 * 60 * 1000) as unknown as number;
+  }
+
+  private async performSmartReset(): Promise<void> {
+    try {
+      // Safety check: Only reset if no clients are connected (truly idle)
+      if (this.clients.size > 0) {
+        console.log('⏭️ Skipping reset - clients still connected');
+        return;
+      }
+
+      // Additional safety check: Don't reset if we're in the middle of an operation
+      if (!this.isActive) {
+        console.log('⏭️ Skipping reset - session is not active');
+        return;
+      }
+
+      console.log('🧹 Performing smart reset due to inactivity...');
+      
+      // Notify any remaining clients about the reset (though there shouldn't be any)
+      this.broadcastToClients({
+        type: 'session_idle_reset',
+        message: 'Session reset due to inactivity',
+        sessionId: this.sessionId
+      });
+
+      // Clean up existing connections
+      await this.performCleanup('idle');
+      
+      // Reset session ID
+      this.sessionId = crypto.randomUUID();
+      
+      // Reset activity timer
+      this.lastActivity = Date.now();
+      
+      // Also reset the OpenAI connection through handlers if available
+      if (this.handlers) {
+        this.handlers.resetSession();
+      }
+      
+      console.log('✅ Smart reset completed - OpenAI session will be refreshed on next connection');
+      
+    } catch (error) {
+      console.error('❌ Smart reset failed:', error);
+      // Don't throw - this is a background operation that shouldn't break the session
+    }
   }
 
   private async performAutoRestart(): Promise<void> {
@@ -156,6 +227,9 @@ export class VoiceSessionCore {
         
         this.clients.add(client);
         
+        // Update activity timestamp on new connection
+        this.lastActivity = Date.now();
+        
         // Send initial connection message
         client.send({ type: 'connected', sessionId: this.sessionId });
         
@@ -192,14 +266,20 @@ export class VoiceSessionCore {
     });
   }
 
-  private async performCleanup(reason: 'restart' | 'stale'): Promise<void> {
+  private async performCleanup(reason: 'restart' | 'stale' | 'idle'): Promise<void> {
     try {
       console.log(`🧹 Cleaning up for ${reason}...`);
       
-      // Stop the auto-restart interval if it's a restart
-      if (reason === 'restart' && this.autoRestartInterval !== null) {
-        clearInterval(this.autoRestartInterval);
-        this.autoRestartInterval = null;
+      // Stop intervals if it's a restart
+      if (reason === 'restart') {
+        if (this.autoRestartInterval !== null) {
+          clearInterval(this.autoRestartInterval);
+          this.autoRestartInterval = null;
+        }
+        if (this.idleCheckInterval !== null) {
+          clearInterval(this.idleCheckInterval);
+          this.idleCheckInterval = null;
+        }
       }
       
       // Clear any stored session state
@@ -251,8 +331,16 @@ export class VoiceSessionCore {
     return this.env;
   }
 
+  setHandlers(handlers: any): void {
+    this.handlers = handlers;
+  }
+
   broadcastToClients(message: any): void {
     console.log('📤 Broadcasting message to clients:', message);
+    
+    // Update activity timestamp on any message broadcast
+    this.lastActivity = Date.now();
+    
     const clientsToRemove: any[] = [];
     
     this.clients.forEach(client => {

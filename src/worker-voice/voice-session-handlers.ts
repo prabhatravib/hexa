@@ -209,10 +209,18 @@ export class VoiceSessionHandlers {
   }
 
   // Helper methods that need to be delegated to external data component
-  private resetSession(): void {
+  public resetSession(): void {
+    console.log('🔄 Resetting session...');
+    
+    // Disconnect OpenAI connection to force recreation
+    if (this.openaiConnection) {
+      this.openaiConnection.disconnect();
+      console.log('🔌 Disconnected OpenAI connection for reset');
+    }
+    
     if (this.externalData) {
       // Reset session through external data component
-      console.log('🔄 Resetting session...');
+      console.log('🔄 Resetting external data...');
     }
   }
 

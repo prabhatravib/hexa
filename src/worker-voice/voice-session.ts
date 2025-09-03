@@ -66,6 +66,9 @@ export class VoiceSession {
     // Wire up handlers with external data
     this.handlers.setExternalData(this.externalData);
 
+    // Set handlers reference in core for smart reset functionality
+    this.core.setHandlers(this.handlers);
+
     console.log('🔧 VoiceSession initialized with composition pattern');
   }
 
@@ -102,8 +105,8 @@ export class VoiceSession {
     return this.externalData.getCurrentExternalData();
   }
 
-  setLiveSession(realtimeSession: any) {
-    this.externalData.setLiveSession(realtimeSession);
+  async setLiveSession(realtimeSession: any) {
+    await this.externalData.setLiveSession(realtimeSession);
   }
 
   setBaseInstructions(instructions: string) {

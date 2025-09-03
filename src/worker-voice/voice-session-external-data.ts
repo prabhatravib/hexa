@@ -292,40 +292,90 @@ Use this over prior knowledge. "Infflow" with two f's is the user's company, not
         return this.core.createErrorResponse('Method not allowed. Use POST.', 405);
       }
 
-      const body = await request.json() as { text?: string };
-      const text = (body.text || '').trim();
-      if (!text) {
-        return this.core.createErrorResponse('no_text', 400);
+      const body = await request.json() as { 
+        text?: string; 
+        image?: string; 
+        prompt?: string; 
+        type?: string;
+        mermaidCode?: string;
+        diagramImage?: string;
+      };
+
+      // Handle different input formats from external websites
+      const text = (body.text || body.mermaidCode || '').trim();
+      const image = body.image || body.diagramImage || '';
+      const prompt = body.prompt || '';
+      const type = body.type || '';
+
+      if (!text && !image) {
+        return this.core.createErrorResponse('no_text_or_image', 400);
       }
 
       if (!this.live?.session?.transport?.sendEvent) {
-        return this.core.createErrorResponse('session_not_ready', 409);
+        // Store data for later injection when session becomes ready
+        const sessionId = this.getCurrentOpenAISessionId();
+        await this.storeExternalData(sessionId, {
+          text,
+          image,
+          prompt,
+          type,
+          timestamp: new Date().toISOString()
+        });
+        
+        console.log('💾 External data stored for later injection when session is ready');
+        
+        return this.core.createJsonResponse({ 
+          success: true, 
+          message: "Data stored for later injection when session is ready",
+          sessionId,
+          stored: true
+        });
       }
 
-      console.log('📥 Received external data for live session injection:', text);
+      console.log('📥 Received external data for live session injection:', { text: text.substring(0, 100), hasImage: !!image, prompt, type });
 
-      // 2a) Ephemeral context for the next turn
+      // Prepare content array for injection
+      const content: any[] = [];
+
+      // Add text content if provided
+      if (text) {
+        content.push({ type: 'input_text', text });
+      }
+
+      // Add image content if provided
+      if (image) {
+        content.push({ type: 'input_image', image_url: image });
+      }
+
+      // Add prompt as additional text if provided and different from main text
+      if (prompt && prompt !== text) {
+        content.push({ type: 'input_text', text: `Prompt: ${prompt}` });
+      }
+
+      // Inject as system message
       this.live.session.transport.sendEvent({
         type: 'conversation.item.create',
         item: {
           type: 'message',
           role: 'system',
-          content: [{ type: 'input_text', text }]
+          content: content
         }
       });
 
-      // 2b) Optional: persist priority by updating instructions now
-      const merged = [
-        this.baseInstructions?.trim?.() || '',
-        '',
-        '### Live context',
-        text
-      ].join('\n').trim();
+      // Update session instructions with text content (if any)
+      if (text) {
+        const merged = [
+          this.baseInstructions?.trim?.() || '',
+          '',
+          '### Live context',
+          text
+        ].join('\n').trim();
 
-      this.live.session.transport.sendEvent({
-        type: 'session.update',
-        session: { instructions: merged }
-      });
+        this.live.session.transport.sendEvent({
+          type: 'session.update',
+          session: { instructions: merged }
+        });
+      }
 
       console.log('✅ External data injected into live OpenAI session');
 
@@ -343,12 +393,79 @@ Use this over prior knowledge. "Infflow" with two f's is the user's company, not
   }
 
   // Set the live Realtime session when WebRTC connects
-  setLiveSession(realtimeSession: any): void {
+  async setLiveSession(realtimeSession: any): Promise<void> {
     this.live = {
       session: realtimeSession,
       openaiSessionId: realtimeSession.id || realtimeSession.session?.id || 'unknown'
     };
     console.log('🔗 Live Realtime session set for external data injection');
+    
+    // Auto-inject any stored external data
+    await this.injectStoredExternalData();
+  }
+
+  // Auto-inject stored external data when session becomes ready
+  private async injectStoredExternalData(): Promise<void> {
+    try {
+      const sessionId = this.getCurrentOpenAISessionId();
+      const storedData = await this.getExternalDataBySessionId(sessionId);
+      
+      if (storedData) {
+        console.log('🔄 Auto-injecting stored external data for session:', sessionId);
+        
+        // Prepare content array for injection
+        const content: any[] = [];
+        
+        // Add text content if provided
+        if (storedData.text) {
+          content.push({ type: 'input_text', text: storedData.text });
+        }
+        
+        // Add image content if provided
+        if (storedData.image) {
+          content.push({ type: 'input_image', image_url: storedData.image });
+        }
+        
+        // Add prompt as additional text if provided and different from main text
+        if (storedData.prompt && storedData.prompt !== storedData.text) {
+          content.push({ type: 'input_text', text: `Prompt: ${storedData.prompt}` });
+        }
+        
+        // Inject as system message
+        if (this.live?.session?.transport?.sendEvent) {
+          this.live.session.transport.sendEvent({
+            type: 'conversation.item.create',
+            item: {
+              type: 'message',
+              role: 'system',
+              content: content
+            }
+          });
+          
+          // Update session instructions with text content (if any)
+          if (storedData.text) {
+            const merged = [
+              this.baseInstructions?.trim?.() || '',
+              '',
+              '### Live context',
+              storedData.text
+            ].join('\n').trim();
+            
+            this.live.session.transport.sendEvent({
+              type: 'session.update',
+              session: { instructions: merged }
+            });
+          }
+        }
+        
+        console.log('✅ Stored external data auto-injected into live session');
+        
+        // Optional: Clear the stored data after successful injection
+        // await this.clearStoredExternalData(sessionId);
+      }
+    } catch (error) {
+      console.error('❌ Failed to auto-inject stored external data:', error);
+    }
   }
 
   // Set base instructions for the session
