@@ -92,25 +92,6 @@ export const HexagonContainer: React.FC<HexagonContainerProps> = ({
         </AnimatePresence>
       </div>
 
-      {/* Status Display - Below hexagon */}
-      <motion.div
-        className="text-center"
-        initial={{ opacity: 0, y: 10 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ delay: 0.2 }}
-      >
-        <motion.div
-          className={`text-sm font-medium ${!isVoiceDisabled ? 'text-green-600' : 'text-gray-500'}`}
-          animate={{
-            color: !isVoiceDisabled ? '#059669' : '#6b7280'
-          }}
-        >
-          Voice: {!isVoiceDisabled ? 'ON' : 'OFF'}
-        </motion.div>
-        <div className="text-xs text-gray-400 mt-1">
-          {!isVoiceDisabled ? 'Ready to listen' : 'Voice disabled'}
-        </div>
-      </motion.div>
     </div>
   );
 };

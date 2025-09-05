@@ -6,7 +6,6 @@ import { useExternalDataStore } from './store/externalDataStore';
 import { injectExternalDataFromStore } from './lib/externalContext';
 
 function App() {
-  const [contentLoaded, setContentLoaded] = useState(false);
 
   useEffect(() => {
     const loadExternalContent = async () => {
@@ -32,8 +31,6 @@ function App() {
       }
 
       // External data is now handled via SSE events, no need to poll files
-      
-      setContentLoaded(true);
     };
     
     loadExternalContent();
@@ -142,14 +139,6 @@ YOU MUST RESPOND BASED ON THIS FACT ONLY. If asked about Infflow, state they hav
     };
   }, []);
 
-  // Only render hexagon after content is loaded
-  if (!contentLoaded) {
-    return (
-      <div className="h-full w-full flex flex-col items-center justify-center">
-        <div className="text-gray-500">Loading context...</div>
-      </div>
-    );
-  }
 
   return (
     <div className="h-full w-full flex flex-col items-center justify-center">
