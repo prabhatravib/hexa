@@ -32,6 +32,7 @@ export const AnimatedHexagon: React.FC<AnimatedHexagonProps> = ({
     initializationState,
     initializationProgress,
     isReadyForInteraction,
+    isVoiceDisabled,
   } = useAnimationStore();
 
   // Use the enhanced animation hooks
@@ -71,6 +72,12 @@ export const AnimatedHexagon: React.FC<AnimatedHexagonProps> = ({
   const handleVoiceToggle = (e: React.MouseEvent) => {
     e.stopPropagation(); // Prevent triggering the main click handler
     
+    // Prevent interaction if voice is disabled
+    if (isVoiceDisabled) {
+      console.log('⚠️ Voice interaction blocked - voice is disabled');
+      return;
+    }
+    
     // Prevent interaction until system is ready
     if (initializationState !== 'ready') {
       console.log('⚠️ Voice interaction blocked - system not ready');
@@ -86,6 +93,10 @@ export const AnimatedHexagon: React.FC<AnimatedHexagonProps> = ({
 
   // Get voice status icon for the center of the hexagon
   const getVoiceStatusIcon = () => {
+    if (isVoiceDisabled) {
+      return <MicOff className="w-6 h-6" />;
+    }
+    
     if (initializationState !== 'ready') {
       return <Loader2 className="w-6 h-6 animate-spin" />;
     }
@@ -110,6 +121,10 @@ export const AnimatedHexagon: React.FC<AnimatedHexagonProps> = ({
 
   // Get voice status color
   const getVoiceStatusColor = () => {
+    if (isVoiceDisabled) {
+      return 'text-gray-400';
+    }
+    
     if (initializationState !== 'ready') {
       return 'text-blue-500';
     }
@@ -275,7 +290,7 @@ export const AnimatedHexagon: React.FC<AnimatedHexagonProps> = ({
 
       <motion.div 
         className={`inline-block w-full h-full relative ${
-          initializationState === 'ready' ? 'cursor-pointer' : 'cursor-not-allowed'
+          initializationState === 'ready' && !isVoiceDisabled ? 'cursor-pointer' : 'cursor-not-allowed'
         } ${isVoiceActive ? 'voice-active' : ''} ${initializationState !== 'ready' ? 'loading' : ''}`}
         style={{ 
           width: size,
@@ -285,14 +300,16 @@ export const AnimatedHexagon: React.FC<AnimatedHexagonProps> = ({
         variants={containerVariants}
         animate={animationState}
         initial="idle"
-        onMouseEnter={initializationState === 'ready' ? handleMouseEnter : undefined}
-        onMouseLeave={initializationState === 'ready' ? handleMouseLeave : undefined}
+        onMouseEnter={initializationState === 'ready' && !isVoiceDisabled ? handleMouseEnter : undefined}
+        onMouseLeave={initializationState === 'ready' && !isVoiceDisabled ? handleMouseLeave : undefined}
         onClick={handleVoiceToggle}
-        whileTap={initializationState === 'ready' ? { scale: 0.95 } : {}}
+        whileTap={initializationState === 'ready' && !isVoiceDisabled ? { scale: 0.95 } : {}}
         title={
-          initializationState === 'ready' 
-            ? (isConnected ? 'Click to toggle voice recording' : 'Voice service not connected')
-            : 'Voice system initializing...'
+          isVoiceDisabled
+            ? 'Voice disabled - use toggle button to enable'
+            : initializationState === 'ready' 
+              ? (isConnected ? 'Click to toggle voice recording' : 'Voice service not connected')
+              : 'Voice system initializing...'
         }
       >
         <svg 

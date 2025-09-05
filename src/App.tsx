@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
-import { AnimatedHexagon } from './components/animated/AnimatedHexagon';
+import { HexagonContainer } from './components/HexagonContainer';
+import { VoiceToggleDemo } from './components/VoiceToggleDemo';
 import { voiceContextManager } from './hooks/voiceContextManager';
 import { useExternalDataStore } from './store/externalDataStore';
 import { injectExternalDataFromStore } from './lib/externalContext';
@@ -153,8 +154,11 @@ YOU MUST RESPOND BASED ON THIS FACT ONLY. If asked about Infflow, state they hav
   return (
     <div className="h-full w-full flex flex-col items-center justify-center">
       <div className="flex flex-col items-center gap-6">
-        <AnimatedHexagon size={300} />
+        <HexagonContainer size={300} />
       </div>
+      
+      {/* Demo component for testing - only show in development */}
+      {process.env.NODE_ENV === 'development' && <VoiceToggleDemo />}
     </div>
   );
 }

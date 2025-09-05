@@ -3,7 +3,7 @@ import { TIMING, getRandomBlinkDelay } from '@/animations/constants';
 
 export type AnimationState = 'idle' | 'hover' | 'active';
 export type ExpressionState = 'happy' | 'neutral' | 'curious' | 'excited';
-export type VoiceState = 'idle' | 'listening' | 'thinking' | 'speaking' | 'error' | 'retrying';
+export type VoiceState = 'idle' | 'listening' | 'thinking' | 'speaking' | 'error' | 'retrying' | 'disabled';
 export type InitializationState = 'initializing' | 'connecting' | 'ready' | 'error';
 
 interface AnimationStore {
@@ -18,6 +18,7 @@ interface AnimationStore {
   isVoiceActive: boolean;
   isSpeaking: boolean;
   speechIntensity: number; // 0-1 for mouth animation
+  isVoiceDisabled: boolean; // New state for voice toggle
   
   // Initialization state
   initializationState: InitializationState;
@@ -44,6 +45,7 @@ interface AnimationStore {
   setVoiceActive: (active: boolean) => void;
   setSpeaking: (speaking: boolean) => void;
   setSpeechIntensity: (intensity: number) => void;
+  setVoiceDisabled: (disabled: boolean) => void;
   
   // Initialization state setters
   setInitializationState: (state: InitializationState) => void;
@@ -93,6 +95,7 @@ export const useAnimationStore = create<AnimationStore>((set, get) => ({
   isVoiceActive: false,
   isSpeaking: false,
   speechIntensity: 0,
+  isVoiceDisabled: false,
   
   // Initialization state
   initializationState: 'initializing',
@@ -116,6 +119,7 @@ export const useAnimationStore = create<AnimationStore>((set, get) => ({
   setVoiceActive: (active) => set({ isVoiceActive: active }),
   setSpeaking: (speaking) => set({ isSpeaking: speaking }),
   setSpeechIntensity: (intensity) => set({ speechIntensity: intensity }),
+  setVoiceDisabled: (disabled) => set({ isVoiceDisabled: disabled }),
   
   // Initialization state setters
   setInitializationState: (state) => set({ initializationState: state }),
