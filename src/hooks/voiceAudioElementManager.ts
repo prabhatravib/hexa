@@ -1,4 +1,5 @@
 import { initializeAudioAnalysis } from './voiceAudioAnalysis';
+import { useAnimationStore } from '@/store/animationStore';
 
 type VoiceState = 'idle' | 'listening' | 'thinking' | 'speaking' | 'error';
 
@@ -22,6 +23,13 @@ export const setupAudioElementHandlers = (
   
   // Fallback: ensure analyser is running even if remote_track isn't emitted
   audioEl.addEventListener('playing', async () => {
+    if (useAnimationStore.getState().isVoiceDisabled) {
+      console.log('🔇 Voice disabled: pausing audio element on playing');
+      try { (audioEl as any).muted = true; if (!audioEl.paused) audioEl.pause(); } catch {}
+      (window as any).__currentVoiceState = 'idle';
+      setVoiceState('idle');
+      return;
+    }
     console.log('🎵 Audio playing - ensuring analyser is running and mouth animating');
     console.log('🎵 Audio element state during playing:', {
       srcObject: audioEl.srcObject,
@@ -52,6 +60,13 @@ export const setupAudioElementHandlers = (
   
   // Also handle play event
   audioEl.addEventListener('play', () => {
+    if (useAnimationStore.getState().isVoiceDisabled) {
+      console.log('🔇 Voice disabled: pausing audio element on play');
+      try { (audioEl as any).muted = true; if (!audioEl.paused) audioEl.pause(); } catch {}
+      (window as any).__currentVoiceState = 'idle';
+      setVoiceState('idle');
+      return;
+    }
     console.log('🎵 Audio play event - starting mouth animation');
     audioPlaying = true;
     if (startSpeaking) {

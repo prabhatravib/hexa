@@ -97,6 +97,32 @@ export const useVoiceConnectionService = ({
           const data = JSON.parse(event.data);
           
           switch (data.type) {
+            case 'control': {
+              if (data.command === 'interrupt') {
+                console.log('🛑 Interrupt command received from worker');
+                try {
+                  const s: any = (window as any).activeSession;
+                  const send = s?.send || s?.emit || s?.transport?.sendEvent;
+                  if (send) {
+                    await send.call(s, { type: 'response.cancel' });
+                    await send.call(s, { type: 'response.cancel_all' });
+                    await send.call(s, { type: 'input_audio_buffer.clear' });
+                    await send.call(s, { type: 'output_audio_buffer.clear' });
+                  }
+                } catch {}
+                const audioEl: HTMLAudioElement | undefined = (window as any).__hexaAudioEl;
+                try {
+                  if (audioEl) { audioEl.muted = true; if (!audioEl.paused) audioEl.pause(); }
+                  // Hard-stop any audio elements on page
+                  const els = Array.from(document.querySelectorAll('audio')) as HTMLAudioElement[];
+                  els.forEach(el => { try { el.muted = true; if (!el.paused) el.pause(); } catch {} });
+                } catch {}
+                setSpeechIntensity?.(0);
+                stopSyntheticFlap();
+                setVoiceState('idle');
+              }
+              break;
+            }
             case 'connected':
               console.log('SSE connection established');
               setInitializationProgress(40);
@@ -153,20 +179,42 @@ export const useVoiceConnectionService = ({
               break;
               
             case 'agent_start':
-            case 'audio_delta':
-              console.log('Audio delta received - voice is playing');
-              setVoiceState('speaking');
-              startSpeaking?.();
-              // Ensure visible mouth motion even if analyser isn’t available
-              startSyntheticFlap();
+            case 'audio_delta': {
+              const disabled = useAnimationStore.getState().isVoiceDisabled;
+              if (disabled) {
+                console.log('🔇 Voice disabled: silencing incoming audio event');
+                // Mute any existing audio element and keep UI idle
+                try {
+                  const audioEl: HTMLAudioElement | undefined = (window as any).__hexaAudioEl;
+                  if (audioEl) {
+                    audioEl.muted = true;
+                    if (!audioEl.paused) audioEl.pause();
+                  }
+                } catch {}
+                setSpeechIntensity?.(0);
+                stopSyntheticFlap();
+                setVoiceState('idle');
+              } else {
+                console.log('Audio delta received - voice is playing');
+                setVoiceState('speaking');
+                startSpeaking?.();
+                // Ensure visible mouth motion even if analyser isn’t available
+                startSyntheticFlap();
+              }
               break;
+            }
               
             case 'audio_done':
-            case 'agent_end':
+            case 'agent_end': {
               console.log('Audio done received - voice stopped');
               // Force immediate stop
               setSpeechIntensity?.(0);
               stopSyntheticFlap();
+              const audioEl: HTMLAudioElement | undefined = (window as any).__hexaAudioEl;
+              const disabled = useAnimationStore.getState().isVoiceDisabled;
+              if (audioEl && disabled) {
+                try { audioEl.muted = true; if (!audioEl.paused) audioEl.pause(); } catch {}
+              }
               
               // Use a small delay to ensure audio element has finished
               setTimeout(() => {
@@ -181,6 +229,7 @@ export const useVoiceConnectionService = ({
                 }
               }, 100);
               break;
+            }
               
             case 'error':
               console.error('Voice error received:', data);

@@ -98,6 +98,15 @@ export const initializeWebRTCConnection = async (
       // Create a new MediaStream with the audio track
       const stream = new MediaStream([event.track]);
       audioEl.srcObject = stream;
+
+      // Respect global voice disabled toggle immediately
+      try {
+        const disabled = (await import('../store/animationStore')).useAnimationStore.getState().isVoiceDisabled;
+        if (disabled) {
+          console.log('🔇 Voice disabled: muting and pausing remote audio track');
+          try { (audioEl as any).muted = true; if (!audioEl.paused) audioEl.pause(); } catch {}
+        }
+      } catch {}
       
       // Start audio analysis immediately on remote_track
       await initializeAudioAnalysis(stream, audioEl, {

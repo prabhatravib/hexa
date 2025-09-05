@@ -47,6 +47,7 @@ export const AnimatedHexagon: React.FC<AnimatedHexagonProps> = ({
     response,
     startRecording,
     stopRecording,
+    interrupt,
   } = useVoiceInteraction({
     autoStart: true,
     onTranscription: (text) => {
@@ -67,6 +68,50 @@ export const AnimatedHexagon: React.FC<AnimatedHexagonProps> = ({
     startIdleAnimation();
     return () => stopIdleAnimation();
   }, []);
+
+  // Silence/unsilence the realtime audio when the voice toggle changes
+  useEffect(() => {
+    const audioEl: HTMLAudioElement | undefined = (window as any).__hexaAudioEl;
+    if (isVoiceDisabled) {
+      // Stop any active capture and interrupt ongoing TTS
+      try { stopRecording(); } catch {}
+      try { interrupt?.(); } catch {}
+      // Hard mute: pause all audio elements in case SDK owns one internally
+      try {
+        const els = Array.from(document.querySelectorAll('audio')) as HTMLAudioElement[];
+        els.forEach(el => { try { el.muted = true; if (!el.paused) el.pause(); } catch {} });
+      } catch {}
+      if (audioEl) { try { audioEl.muted = true; if (!audioEl.paused) audioEl.pause(); } catch {} }
+
+      // Ask the session to stop and not auto-create responses
+      try {
+        const s: any = (window as any).activeSession;
+        const send = s?.send || s?.emit || s?.transport?.sendEvent;
+        if (send) {
+          send.call(s, { type: 'response.cancel' });
+          send.call(s, { type: 'response.cancel_all' });
+          send.call(s, { type: 'input_audio_buffer.clear' });
+          send.call(s, { type: 'output_audio_buffer.clear' });
+          // Disable server auto-response while muted
+          send.call(s, { type: 'session.update', session: { turn_detection: { create_response: false } } });
+        }
+      } catch {}
+    } else {
+      // Re-enable audio output (no auto start)
+      try {
+        const audioEl2: HTMLAudioElement | undefined = (window as any).__hexaAudioEl;
+        if (audioEl2) audioEl2.muted = false;
+      } catch {}
+      // Restore server auto-response capability
+      try {
+        const s: any = (window as any).activeSession;
+        const send = s?.send || s?.emit || s?.transport?.sendEvent;
+        if (send) {
+          send.call(s, { type: 'session.update', session: { turn_detection: { create_response: true } } });
+        }
+      } catch {}
+    }
+  }, [isVoiceDisabled]);
 
   // Handle voice toggle - now the entire hexagon is the voice interface
   const handleVoiceToggle = (e: React.MouseEvent) => {

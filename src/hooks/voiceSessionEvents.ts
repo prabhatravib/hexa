@@ -1,4 +1,5 @@
 type VoiceState = 'idle' | 'listening' | 'thinking' | 'speaking' | 'error';
+import { useAnimationStore } from '@/store/animationStore';
 
 interface SessionEventHandlersOptions {
   setVoiceState: (state: VoiceState) => void;
@@ -93,6 +94,14 @@ export const setupSessionEventHandlers = (
 
   // Prefer high-level lifecycle events from the session when available
   session.on('agent_start' as any, () => {
+    const disabled = useAnimationStore.getState().isVoiceDisabled;
+    if (disabled) {
+      console.log('🔇 Voice disabled: ignoring agent_start and silencing audio');
+      try { (audioEl as any).muted = true; if (!audioEl.paused) audioEl.pause(); } catch {}
+      (window as any).__currentVoiceState = 'idle';
+      setVoiceState('idle');
+      return;
+    }
     console.log('📢 agent_start - entering speaking state');
     if (!isCurrentlySpeaking) {
       isCurrentlySpeaking = true;
@@ -133,6 +142,14 @@ export const setupSessionEventHandlers = (
   const possibleAudioEvents = ['audio', 'response.audio.delta', 'response.audio', 'conversation.item.audio'];
   possibleAudioEvents.forEach(eventName => {
     session.on(eventName as any, (audioData: any) => {
+      const disabled = useAnimationStore.getState().isVoiceDisabled;
+      if (disabled) {
+        console.log(`🔇 Voice disabled: ignoring ${eventName} and pausing audio`);
+        try { (audioEl as any).muted = true; if (!audioEl.paused) audioEl.pause(); } catch {}
+        (window as any).__currentVoiceState = 'idle';
+        setVoiceState('idle');
+        return;
+      }
       console.log(`🎵 Event ${eventName} fired - starting mouth animation`);
       if (!isCurrentlySpeaking) {
         isCurrentlySpeaking = true;

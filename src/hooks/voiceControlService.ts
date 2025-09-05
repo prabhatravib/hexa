@@ -225,19 +225,34 @@ export const useVoiceControlService = ({
   // Interrupt current response
   const interrupt = useCallback(async () => {
     try {
-      // The RealtimeSession handles interruption automatically
-      // Just clear the audio queue and update UI state
-      
-      const response = await fetch('/voice/message', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ type: 'control', command: 'interrupt' })
-      });
-      
-      if (!response.ok) {
-        throw new Error(`HTTP ${response.status}`);
+      // First, try to cancel locally via RealtimeSession if available
+      const s: any = openaiAgentRef.current;
+      if (s) {
+        try {
+          const sendMethod = s?.send || s?.emit || s?.transport?.sendEvent;
+          if (sendMethod) {
+            // Best-effort set of cancellation events used across SDK versions
+            await sendMethod.call(s, { type: 'response.cancel' });
+            await sendMethod.call(s, { type: 'response.cancel_all' });
+            await sendMethod.call(s, { type: 'input_audio_buffer.clear' });
+            await sendMethod.call(s, { type: 'output_audio_buffer.clear' });
+          }
+        } catch (e) {
+          console.warn('⚠️ Local interrupt via session failed, will fall back to HTTP', e);
+        }
       }
-      
+
+      // Also notify the worker for parity (no-ops on frontend is fine)
+      try {
+        const response = await fetch('/voice/message', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ type: 'control', command: 'interrupt' })
+        });
+        // Ignore non-OK here – local cancellation is primary
+      } catch {}
+
+      // Clear UI state
       audioQueueRef.current = [];
       isPlayingRef.current = false;
       stopSpeaking();
