@@ -182,60 +182,8 @@ export const initializeWebRTCConnection = async (
     });
   });
   
-  // More aggressive stream detection
-  const checkForStream = async () => {
-    let attempts = 0;
-    const maxAttempts = 10;
-    
-    const interval = setInterval(async () => {
-      attempts++;
-      console.log(`🔍 Checking for audio stream (attempt ${attempts}/${maxAttempts})...`);
-      
-      // Check if audio element has a source
-      if (audioEl.srcObject) {
-        console.log('🎵 Found audio srcObject, starting analyzer');
-        clearInterval(interval);
-        
-        const stream = audioEl.srcObject as MediaStream;
-        await initializeAudioAnalysis(stream, audioEl, {
-          audioContextRef,
-          setSpeechIntensity,
-          startSpeaking,
-          stopSpeaking,
-          setVoiceState
-        });
-        return;
-      }
-      
-      // Check if session has stream
-      if ((session as any).stream) {
-        console.log('🎵 Found session stream, attaching to audio element');
-        audioEl.srcObject = (session as any).stream;
-        clearInterval(interval);
-        return;
-      }
-      
-      // Check for any media streams in the session
-      if ((session as any)._pc?.getRemoteStreams) {
-        const remoteStreams = (session as any)._pc.getRemoteStreams();
-        if (remoteStreams && remoteStreams.length > 0) {
-          console.log('🎵 Found remote streams from RTCPeerConnection');
-          audioEl.srcObject = remoteStreams[0];
-          clearInterval(interval);
-          return;
-        }
-      }
-      
-      if (attempts >= maxAttempts) {
-        console.warn('⚠️ Could not find audio stream after', maxAttempts, 'attempts');
-        clearInterval(interval);
-        console.log('🎯 No audio stream found; relying on session events for speaking state');
-      }
-    }, 500);
-  };
-
-  // Start checking immediately after connection
-  checkForStream();
+  // Audio stream detection is handled by the remote_track event listener above
+  // No need for polling - the WebRTC connection will fire remote_track when audio is available
   
   // Set up periodic connection health check
   const healthCheckInterval = setInterval(async () => {
