@@ -172,13 +172,43 @@ export const useVoiceConnectionService = ({
               }
               break;
               
-            case 'response_text':
+            case 'response_text': {
+              const disabled = useAnimationStore.getState().isVoiceDisabled;
+              if (disabled) {
+                console.log('🔇 Voice disabled: ignoring response_text');
+                break;
+              }
               console.log('Text response received:', data.text);
               setResponse(data.text);
               onResponse?.(data.text);
               break;
+            }
               
-            case 'agent_start':
+            case 'agent_start': {
+              const disabled = useAnimationStore.getState().isVoiceDisabled;
+              if (disabled) {
+                console.log('🔇 Voice disabled: ignoring agent_start and silencing audio');
+                // Mute any existing audio element and keep UI idle
+                try {
+                  const audioEl: HTMLAudioElement | undefined = (window as any).__hexaAudioEl;
+                  if (audioEl) {
+                    audioEl.muted = true;
+                    if (!audioEl.paused) audioEl.pause();
+                  }
+                } catch {}
+                setSpeechIntensity?.(0);
+                stopSyntheticFlap();
+                setVoiceState('idle');
+              } else {
+                console.log('Agent start received - voice is starting');
+                setVoiceState('speaking');
+                startSpeaking?.();
+                // Ensure visible mouth motion even if analyser isn't available
+                startSyntheticFlap();
+              }
+              break;
+            }
+              
             case 'audio_delta': {
               const disabled = useAnimationStore.getState().isVoiceDisabled;
               if (disabled) {
@@ -198,7 +228,7 @@ export const useVoiceConnectionService = ({
                 console.log('Audio delta received - voice is playing');
                 setVoiceState('speaking');
                 startSpeaking?.();
-                // Ensure visible mouth motion even if analyser isn’t available
+                // Ensure visible mouth motion even if analyser isn't available
                 startSyntheticFlap();
               }
               break;

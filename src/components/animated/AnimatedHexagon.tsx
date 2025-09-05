@@ -49,7 +49,7 @@ export const AnimatedHexagon: React.FC<AnimatedHexagonProps> = ({
     stopRecording,
     interrupt,
   } = useVoiceInteraction({
-    autoStart: true,
+    autoStart: true, // Let the voice system initialize normally
     onTranscription: (text) => {
       // Handle transcription if needed
     }
@@ -69,49 +69,152 @@ export const AnimatedHexagon: React.FC<AnimatedHexagonProps> = ({
     return () => stopIdleAnimation();
   }, []);
 
-  // Silence/unsilence the realtime audio when the voice toggle changes
+  // Block voice system immediately if disabled on mount
   useEffect(() => {
-    const audioEl: HTMLAudioElement | undefined = (window as any).__hexaAudioEl;
     if (isVoiceDisabled) {
-      // Stop any active capture and interrupt ongoing TTS
-      try { stopRecording(); } catch {}
-      try { interrupt?.(); } catch {}
-      // Hard mute: pause all audio elements in case SDK owns one internally
-      try {
-        const els = Array.from(document.querySelectorAll('audio')) as HTMLAudioElement[];
-        els.forEach(el => { try { el.muted = true; if (!el.paused) el.pause(); } catch {} });
-      } catch {}
-      if (audioEl) { try { audioEl.muted = true; if (!audioEl.paused) audioEl.pause(); } catch {} }
+      console.log('🔇 Voice disabled on mount - preventing all voice initialization');
+      // Set a global flag to prevent voice system initialization
+      (window as any).__voiceSystemBlocked = true;
+    } else {
+      (window as any).__voiceSystemBlocked = false;
+    }
+  }, [isVoiceDisabled]);
 
-      // Ask the session to stop and not auto-create responses
+
+  // Block voice system when disabled
+  useEffect(() => {
+    if (isVoiceDisabled) {
+      console.log('🔇 Voice disabled - blocking all voice processing');
+      
+      // Block microphone access at the browser level immediately
+      try {
+        // Override getUserMedia to block microphone access
+        const originalGetUserMedia = navigator.mediaDevices.getUserMedia;
+        navigator.mediaDevices.getUserMedia = async (constraints) => {
+          console.log('🔇 Voice disabled: blocking microphone access');
+          throw new Error('Microphone access blocked - voice is disabled');
+        };
+        
+        // Store the original function for restoration
+        (window as any).__originalGetUserMedia = originalGetUserMedia;
+      } catch (error) {
+        console.error('Failed to block microphone access:', error);
+      }
+      
+      // Stop any active recording
+      try { stopRecording(); } catch {}
+      
+      // Interrupt any ongoing responses
+      try { interrupt?.(); } catch {}
+      
+      // Block the AI from processing by disabling turn detection and audio
       try {
         const s: any = (window as any).activeSession;
         const send = s?.send || s?.emit || s?.transport?.sendEvent;
         if (send) {
+          // Cancel any ongoing responses
           send.call(s, { type: 'response.cancel' });
           send.call(s, { type: 'response.cancel_all' });
           send.call(s, { type: 'input_audio_buffer.clear' });
           send.call(s, { type: 'output_audio_buffer.clear' });
-          // Disable server auto-response while muted
-          send.call(s, { type: 'session.update', session: { turn_detection: { create_response: false } } });
+          
+          // Completely disable the AI from processing
+          send.call(s, { type: 'session.update', session: { 
+            turn_detection: { 
+              create_response: false,
+              threshold: 0,
+              silence_duration_ms: 0
+            } 
+          }});
+          
+          // Also disable audio input/output
+          send.call(s, { type: 'input_audio_buffer.disable' });
+          send.call(s, { type: 'output_audio_buffer.disable' });
+          
+          // Block microphone input at the RealtimeSession level
+          try {
+            // Override the session's internal microphone handling
+            if (s._inputAudioBuffer) {
+              s._inputAudioBuffer.disable = () => console.log('🔇 Input audio buffer disabled');
+              s._inputAudioBuffer.enable = () => console.log('🔇 Input audio buffer enable blocked');
+            }
+            
+            // Block the session's internal audio processing
+            if (s._audioProcessor) {
+              s._audioProcessor.stop = () => console.log('🔇 Audio processor stopped');
+              s._audioProcessor.start = () => console.log('🔇 Audio processor start blocked');
+            }
+          } catch (audioError) {
+            console.log('🔇 Audio blocking applied:', audioError.message);
+          }
         }
+      } catch (error) {
+        console.error('Failed to disable voice processing:', error);
+      }
+      
+      // Mute all audio elements
+      try {
+        const els = Array.from(document.querySelectorAll('audio')) as HTMLAudioElement[];
+        els.forEach(el => { 
+          try { 
+            el.muted = true; 
+            if (!el.paused) el.pause(); 
+          } catch {} 
+        });
       } catch {}
     } else {
-      // Re-enable audio output (no auto start)
-      try {
-        const audioEl2: HTMLAudioElement | undefined = (window as any).__hexaAudioEl;
-        if (audioEl2) audioEl2.muted = false;
-      } catch {}
-      // Restore server auto-response capability
+      console.log('🔊 Voice enabled - restoring voice processing');
+      
+      
+      // Restore AI processing
       try {
         const s: any = (window as any).activeSession;
         const send = s?.send || s?.emit || s?.transport?.sendEvent;
         if (send) {
-          send.call(s, { type: 'session.update', session: { turn_detection: { create_response: true } } });
+          send.call(s, { type: 'session.update', session: { 
+            turn_detection: { 
+              create_response: true,
+              threshold: 0.5,
+              silence_duration_ms: 500
+            } 
+          }});
+          
+          // Re-enable audio input/output
+          send.call(s, { type: 'input_audio_buffer.enable' });
+          send.call(s, { type: 'output_audio_buffer.enable' });
         }
+      } catch (error) {
+        console.error('Failed to enable voice processing:', error);
+      }
+      
+      // Force re-initialization of voice system
+      try {
+        // Clear any existing session to force re-initialization
+        if ((window as any).activeSession) {
+          console.log('🔊 Voice enabled: clearing existing session for re-initialization');
+          (window as any).activeSession = null;
+        }
+        
+        // Trigger a re-connection to ensure everything is working
+        if (typeof window !== 'undefined' && (window as any).__hexaReset) {
+          console.log('🔊 Voice enabled: triggering voice system reset');
+          (window as any).__hexaReset();
+        }
+      } catch (error) {
+        console.error('Failed to reset voice system:', error);
+      }
+      
+      // Unmute audio elements
+      try {
+        const els = Array.from(document.querySelectorAll('audio')) as HTMLAudioElement[];
+        els.forEach(el => { 
+          try { 
+            el.muted = false; 
+          } catch {} 
+        });
       } catch {}
     }
-  }, [isVoiceDisabled]);
+  }, [isVoiceDisabled, stopRecording, interrupt]);
 
   // Handle voice toggle - now the entire hexagon is the voice interface
   const handleVoiceToggle = (e: React.MouseEvent) => {

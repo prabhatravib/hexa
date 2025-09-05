@@ -1,3 +1,5 @@
+import { useAnimationStore } from '@/store/animationStore';
+
 type VoiceState = 'idle' | 'listening' | 'thinking' | 'speaking' | 'error';
 
 interface AudioAnalysisOptions {
@@ -16,6 +18,17 @@ export const initializeAudioAnalysis = async (
   options: AudioAnalysisOptions
 ) => {
   const { audioContextRef, setSpeechIntensity, startSpeaking, stopSpeaking, setVoiceState } = options;
+  
+  // Check if voice is disabled before starting audio analysis
+  try {
+    const disabled = useAnimationStore.getState().isVoiceDisabled;
+    if (disabled) {
+      console.log('🔇 Voice disabled: blocking audio analysis initialization');
+      return;
+    }
+  } catch (error) {
+    console.error('Failed to check voice disabled state:', error);
+  }
   
   if (analysisStarted) {
     console.log('🎵 Analysis already started, skipping');

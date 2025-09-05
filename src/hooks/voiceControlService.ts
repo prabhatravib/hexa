@@ -1,4 +1,5 @@
 import { useCallback } from 'react';
+import { useAnimationStore } from '@/store/animationStore';
 
 type VoiceState = 'idle' | 'listening' | 'thinking' | 'speaking' | 'error';
 
@@ -30,8 +31,17 @@ export const useVoiceControlService = ({
   isPlayingRef
 }: VoiceControlServiceOptions) => {
   
+  // Get voice disabled state from animation store
+  const { isVoiceDisabled } = useAnimationStore();
+  
   // Start recording
   const startRecording = useCallback(async () => {
+    // Block recording if voice is disabled
+    if (isVoiceDisabled) {
+      console.log('🔇 Voice recording blocked - voice is disabled');
+      return;
+    }
+
     try {
       if (!openaiAgentRef.current) {
         console.error('❌ OpenAI Agent not initialized');
@@ -49,7 +59,7 @@ export const useVoiceControlService = ({
       console.error('Failed to start recording:', error);
       setVoiceState('error');
     }
-  }, [startListening, setVoiceState]);
+  }, [startListening, setVoiceState, isVoiceDisabled]);
    
   // Stop recording
   const stopRecording = useCallback(async () => {
@@ -182,6 +192,12 @@ export const useVoiceControlService = ({
    
   // Send text message via HTTP POST
   const sendText = useCallback(async (text: string) => {
+    // Block text sending if voice is disabled
+    if (isVoiceDisabled) {
+      console.log('🔇 Text sending blocked - voice is disabled');
+      return false;
+    }
+
     try {
       const response = await fetch('/voice/message', {
         method: 'POST',
@@ -199,7 +215,7 @@ export const useVoiceControlService = ({
       onError?.('Failed to send message');
       return false;
     }
-  }, [onError]);
+  }, [onError, isVoiceDisabled]);
    
   // Switch agent
   const switchAgent = useCallback(async (agentId: string) => {

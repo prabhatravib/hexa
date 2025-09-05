@@ -25,6 +25,24 @@ export const initializeOpenAIAgent = async (
 ) => {
   const { setVoiceState, onError, startSpeaking, stopSpeaking, setSpeechIntensity, audioContextRef } = options;
   
+  // Check if voice is disabled before initializing
+  try {
+    // Check global flag first (set by AnimatedHexagon)
+    if ((window as any).__voiceSystemBlocked) {
+      console.log('🔇 Voice system blocked globally - blocking OpenAI Agent initialization');
+      return false; // Don't initialize
+    }
+    
+    const { useAnimationStore } = await import('@/store/animationStore');
+    const disabled = useAnimationStore.getState().isVoiceDisabled;
+    if (disabled) {
+      console.log('🔇 Voice disabled: blocking OpenAI Agent initialization');
+      return false; // Don't initialize
+    }
+  } catch (error) {
+    console.error('Failed to check voice disabled state:', error);
+  }
+  
   try {
     console.log('🔧 Initializing OpenAI Agent with WebRTC...');
     console.log('🔧 Session data received:', {

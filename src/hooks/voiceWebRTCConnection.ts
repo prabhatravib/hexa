@@ -1,5 +1,6 @@
 import { initializeAudioAnalysis } from './voiceAudioAnalysis';
 import { setupAudioElementHandlers } from './voiceAudioElementManager';
+import { useAnimationStore } from '@/store/animationStore';
 
 type VoiceState = 'idle' | 'listening' | 'thinking' | 'speaking' | 'error';
 
@@ -18,6 +19,23 @@ export const initializeWebRTCConnection = async (
   options: WebRTCConnectionOptions
 ) => {
   const { audioEl, setVoiceState, startSpeaking, stopSpeaking, setSpeechIntensity, audioContextRef } = options;
+  
+  // Check if voice is disabled before establishing connection
+  try {
+    // Check global flag first (set by AnimatedHexagon)
+    if ((window as any).__voiceSystemBlocked) {
+      console.log('🔇 Voice system blocked globally - blocking WebRTC connection');
+      return false; // Don't establish connection
+    }
+    
+    const disabled = useAnimationStore.getState().isVoiceDisabled;
+    if (disabled) {
+      console.log('🔇 Voice disabled: blocking WebRTC connection');
+      return false; // Don't establish connection
+    }
+  } catch (error) {
+    console.error('Failed to check voice disabled state:', error);
+  }
   
   // Use the working method: WebRTC with client secret
   if (!sessionData.clientSecret) {
@@ -92,6 +110,17 @@ export const initializeWebRTCConnection = async (
       enabled: event.track?.enabled
     });
     
+    // Check if voice is disabled before processing audio
+    try {
+      const disabled = useAnimationStore.getState().isVoiceDisabled;
+      if (disabled) {
+        console.log('🔇 Voice disabled: blocking remote audio track processing');
+        return; // Block all audio processing when voice is disabled
+      }
+    } catch (error) {
+      console.error('Failed to check voice disabled state:', error);
+    }
+    
     if (event.track && event.track.kind === 'audio') {
       console.log('🎵 Audio track received, attaching to audio element');
       
@@ -101,10 +130,11 @@ export const initializeWebRTCConnection = async (
 
       // Respect global voice disabled toggle immediately
       try {
-        const disabled = (await import('../store/animationStore')).useAnimationStore.getState().isVoiceDisabled;
+        const disabled = useAnimationStore.getState().isVoiceDisabled;
         if (disabled) {
           console.log('🔇 Voice disabled: muting and pausing remote audio track');
           try { (audioEl as any).muted = true; if (!audioEl.paused) audioEl.pause(); } catch {}
+          return; // Block further processing
         }
       } catch {}
       

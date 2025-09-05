@@ -5,6 +5,7 @@ import { useVoiceControlService } from './voiceControlService';
 import { useVoiceAnimation } from './useVoiceAnimation';
 import { getSupportedLanguageCodes, DEFAULT_LANGUAGE } from '@/lib/languageConfig';
 import { useExternalDataStore } from '@/store/externalDataStore';
+import { useAnimationStore } from '@/store/animationStore';
 
 interface UseVoiceInteractionOptions {
   wakeWord?: string;
@@ -43,6 +44,9 @@ export const useVoiceInteraction = (options: UseVoiceInteractionOptions = {}) =>
     stopSpeaking,
     setInitializationState,
   } = useVoiceAnimation();
+
+  // Get voice disabled state from animation store
+  const { isVoiceDisabled } = useAnimationStore();
 
 
 
@@ -140,6 +144,12 @@ export const useVoiceInteraction = (options: UseVoiceInteractionOptions = {}) =>
   
   // Start recording
   const startRecording = useCallback(async () => {
+    // Block recording if voice is disabled
+    if (isVoiceDisabled) {
+      console.log('🔇 Voice recording blocked - voice is disabled');
+      return;
+    }
+
     try {
       // Resume AudioContext on first user gesture to unlock audio processing
       if (audioContextRef.current) {
@@ -154,7 +164,7 @@ export const useVoiceInteraction = (options: UseVoiceInteractionOptions = {}) =>
       console.error('Failed to start recording:', error);
       setVoiceState('error');
     }
-  }, [startRecordingControl, setVoiceState]);
+  }, [startRecordingControl, setVoiceState, isVoiceDisabled]);
    
   // Stop recording
   const stopRecording = useCallback(async () => {
@@ -168,6 +178,12 @@ export const useVoiceInteraction = (options: UseVoiceInteractionOptions = {}) =>
    
   // Send text message via HTTP POST
   const sendText = useCallback(async (text: string) => {
+    // Block text sending if voice is disabled
+    if (isVoiceDisabled) {
+      console.log('🔇 Text sending blocked - voice is disabled');
+      return;
+    }
+
     try {
       const success = await sendTextControl(text);
       if (success) {
@@ -177,7 +193,7 @@ export const useVoiceInteraction = (options: UseVoiceInteractionOptions = {}) =>
       console.error('Failed to send text:', error);
       onError?.('Failed to send message');
     }
-  }, [sendTextControl, onError]);
+  }, [sendTextControl, onError, isVoiceDisabled]);
    
   // Switch agent
   const switchAgent = useCallback(async (agentId: string) => {
@@ -232,7 +248,7 @@ export const useVoiceInteraction = (options: UseVoiceInteractionOptions = {}) =>
    
   // Clean up
   useEffect(() => {
-    if (autoStart) {
+    if (autoStart && !isVoiceDisabled) {
       setInitializationState('initializing');
       connect();
     }
@@ -252,7 +268,7 @@ export const useVoiceInteraction = (options: UseVoiceInteractionOptions = {}) =>
       }
       stopRecording();
     };
-  }, []);
+  }, [autoStart, isVoiceDisabled, connect, setInitializationState]);
    
   return {
     isConnected,

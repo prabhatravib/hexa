@@ -26,6 +26,17 @@ export const setupSessionEventHandlers = (
   let isCurrentlySpeaking = false;
 
   const forceStopSpeaking = (reason: string) => {
+    // Check if voice is disabled before stopping speaking
+    try {
+      const disabled = useAnimationStore.getState().isVoiceDisabled;
+      if (disabled) {
+        console.log(`🔇 Voice disabled: ignoring ${reason} - not stopping speaking state`);
+        return;
+      }
+    } catch (error) {
+      console.error('Failed to check voice disabled state:', error);
+    }
+    
     console.log(`🔇 ${reason} - leaving speaking state`);
     isCurrentlySpeaking = false;
     if (stopSpeaking) {
@@ -38,6 +49,17 @@ export const setupSessionEventHandlers = (
 
   // Smart audio end detection - ignore early events, wait for real audio end
   const delayedStopSpeaking = (reason: string) => {
+    // Check if voice is disabled before processing audio end events
+    try {
+      const disabled = useAnimationStore.getState().isVoiceDisabled;
+      if (disabled) {
+        console.log(`🔇 Voice disabled: ignoring ${reason} - not processing audio end event`);
+        return;
+      }
+    } catch (error) {
+      console.error('Failed to check voice disabled state:', error);
+    }
+    
     console.log(`⏳ ${reason} received - checking if this is a real audio end or just an early event`);
 
     // If no audio element, stop immediately
@@ -120,6 +142,17 @@ export const setupSessionEventHandlers = (
     
     eventArray.forEach((event: any) => {
       if (event.type === 'output_audio_buffer.stopped') {
+        // Check if voice is disabled before processing audio events
+        try {
+          const disabled = useAnimationStore.getState().isVoiceDisabled;
+          if (disabled) {
+            console.log('🔇 Voice disabled: ignoring output_audio_buffer.stopped event');
+            return;
+          }
+        } catch (error) {
+          console.error('Failed to check voice disabled state:', error);
+        }
+        
         console.log('🎵 output_audio_buffer.stopped - real audio finished, stopping mouth animation');
         forceStopSpeaking('output_audio_buffer.stopped');
       }
