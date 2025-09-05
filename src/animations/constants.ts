@@ -156,3 +156,63 @@ export const randomBetween = (min: number, max: number): number => {
 export const getRandomBlinkDelay = (): number => {
   return randomBetween(TIMING.BLINK_MIN_INTERVAL, TIMING.BLINK_MAX_INTERVAL);
 };
+
+// Animation variants for AnimatedHexagon component
+export const HEXAGON_ANIMATION_VARIANTS = {
+  container: {
+    idle: {
+      scale: SCALE.IDLE,
+      rotate: ROTATION.IDLE,
+    },
+    hover: {
+      scale: SCALE.HOVER,
+      rotate: ROTATION.HOVER_WIGGLE,
+      transition: {
+        rotate: {
+          duration: TIMING.HOVER_ROTATE_DURATION / 1000,
+          ease: EASING.SMOOTH
+        },
+        scale: {
+          duration: TIMING.HOVER_TRANSITION / 1000
+        }
+      }
+    },
+    active: {
+      scale: [SCALE.IDLE, SCALE.PRESSED, SCALE.ACTIVE, SCALE.IDLE],
+      transition: {
+        duration: TIMING.CLICK_BOUNCE_DURATION / 1000,
+        times: [0, 0.2, 0.5, 1]
+      }
+    }
+  },
+  
+  glow: {
+    idle: {
+      opacity: [OPACITY.GLOW_MIN, OPACITY.GLOW_MAX, OPACITY.GLOW_MIN],
+      scale: [SCALE.IDLE, SCALE.PULSE_MAX, SCALE.IDLE],
+      transition: {
+        duration: TIMING.GLOW_PULSE_DURATION / 1000,
+        repeat: Infinity,
+        ease: EASING.SMOOTH
+      }
+    },
+    hover: {
+      opacity: OPACITY.GLOW_MAX,
+      scale: 1.15,
+      transition: {
+        duration: TIMING.HOVER_TRANSITION / 1000
+      }
+    }
+  },
+  
+  eye: {
+    open: {
+      scaleY: 1,
+      transition: { duration: TIMING.BLINK_DURATION / 1000 }
+    },
+    closed: {
+      scaleY: 0.1,
+      transition: { duration: TIMING.BLINK_DURATION / 1000 }
+    }
+  }
+};
