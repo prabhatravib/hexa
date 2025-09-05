@@ -428,32 +428,6 @@ export const AnimatedHexagon: React.FC<AnimatedHexagonProps> = ({
         )}
       </motion.div>
 
-      {/* Voice active pulse ring around the entire hexagon - keeping circular */}
-      <AnimatePresence>
-        {isVoiceActive && (
-          <motion.div
-            className="absolute inset-0 rounded-full"
-            style={{
-              width: size * 1.3,
-              height: size * 1.3,
-              left: '50%',
-              top: '50%',
-              transform: 'translate(-50%, -50%)',
-              border: '3px solid #10b981'
-            }}
-            initial={{ scale: 1, opacity: 0.5 }}
-            animate={{
-              scale: [1, 1.2, 1],
-              opacity: [0.5, 0, 0.5]
-            }}
-            transition={{
-              duration: 2,
-              repeat: Infinity,
-              ease: "easeInOut"
-            }}
-          />
-        )}
-      </AnimatePresence>
       
       {/* Status text below hexagon */}
       <AnimatePresence>
