@@ -67,6 +67,14 @@ export const useVoiceInteraction = (options: UseVoiceInteractionOptions = {}) =>
   const [response, setResponse] = useState('');
   const [sessionInfo, setSessionInfo] = useState<any>(null);
   const [currentLanguage, setCurrentLanguage] = useState(defaultLanguage);
+
+  // Debug response changes
+  useEffect(() => {
+    console.log('🎯 useVoiceInteraction: Response state changed:', response);
+    if (response) {
+      console.log('🎯 useVoiceInteraction: Response is not empty, length:', response.length);
+    }
+  }, [response]);
   
   const wsRef = useRef<WebSocket | null>(null);
   const openaiAgentRef = useRef<any>(null);

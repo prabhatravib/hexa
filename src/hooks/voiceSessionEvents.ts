@@ -165,9 +165,20 @@ export const setupSessionEventHandlers = (
     // Do nothing - let output_audio_buffer.stopped handle stopping
   });
 
-  session.on('agent_end' as any, () => {
+  session.on('agent_end' as any, (...args: any[]) => {
     console.log('📢 agent_end - waiting for output_audio_buffer.stopped before stopping');
-    // Do nothing - let output_audio_buffer.stopped handle stopping
+    console.log('🔍 agent_end args:', args);
+    
+    // Extract response text from agent_end event
+    if (args.length > 2 && args[2]) {
+      const responseText = args[2];
+      console.log('✅ Extracted response text from agent_end:', responseText);
+      
+      // Send the response text to the voice connection service
+      if (typeof window !== 'undefined' && (window as any).__hexaSetResponse) {
+        (window as any).__hexaSetResponse(responseText);
+      }
+    }
   });
   
   // Set up various event handlers for mouth animation

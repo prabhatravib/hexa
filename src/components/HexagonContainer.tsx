@@ -6,13 +6,17 @@ import { useAnimationStore } from '@/store/animationStore';
 interface HexagonContainerProps {
   size?: number;
   className?: string;
+  onTranscript?: (transcript: string) => void;
+  onResponse?: (response: string) => void;
 }
 
 export const HexagonContainer: React.FC<HexagonContainerProps> = ({
   size = 300,
-  className = ''
+  className = '',
+  onTranscript,
+  onResponse
 }) => {
-  const { isVoiceDisabled, setVoiceDisabled } = useAnimationStore();
+  const { isVoiceDisabled, setVoiceDisabled, initializationState } = useAnimationStore();
 
   const toggleVoice = () => {
     setVoiceDisabled(!isVoiceDisabled);
@@ -20,7 +24,7 @@ export const HexagonContainer: React.FC<HexagonContainerProps> = ({
 
   return (
     <div className={`flex flex-col items-center gap-4 ${className}`}>
-      {/* Toggle Button - Centered above hexagon */}
+      {/* Primary Toggle Button - Always visible */}
       <motion.button
         onClick={toggleVoice}
         className="relative inline-flex items-center justify-center px-6 py-3 bg-black text-white rounded-full font-medium text-sm transition-all duration-200 hover:bg-gray-800 focus:outline-none focus:ring-2 focus:ring-gray-500 focus:ring-offset-2"
@@ -46,7 +50,11 @@ export const HexagonContainer: React.FC<HexagonContainerProps> = ({
       {/* Hexagon Frame with Overlay */}
       <div className="relative" style={{ width: size, height: size }}>
         {/* Hexagon */}
-        <AnimatedHexagon size={size} />
+        <AnimatedHexagon 
+          size={size} 
+          onTranscript={onTranscript}
+          onResponse={onResponse}
+        />
         
         {/* Glassy Overlay - Only visible when voice is OFF */}
         <AnimatePresence>

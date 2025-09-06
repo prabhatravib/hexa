@@ -1,11 +1,27 @@
 import { useEffect, useState } from 'react';
 import { HexagonContainer } from './components/HexagonContainer';
 import { VoiceToggleDemo } from './components/VoiceToggleDemo';
+import { ChatPanel } from './components/ChatPanel';
 import { voiceContextManager } from './hooks/voiceContextManager';
 import { useExternalDataStore } from './store/externalDataStore';
 import { injectExternalDataFromStore } from './lib/externalContext';
 
 function App() {
+  // Chat panel state
+  const [isChatMinimized, setIsChatMinimized] = useState(false);
+  const [transcript, setTranscript] = useState<string>('');
+  const [response, setResponse] = useState<string>('');
+
+  // Callback functions for receiving data from hexagon
+  const handleTranscript = (text: string) => {
+    console.log('📝 App: Received transcript:', text);
+    setTranscript(text);
+  };
+
+  const handleResponse = (text: string) => {
+    console.log('🤖 App: Received response:', text);
+    setResponse(text);
+  };
 
   useEffect(() => {
     const loadExternalContent = async () => {
@@ -142,12 +158,24 @@ YOU MUST RESPOND BASED ON THIS FACT ONLY. If asked about Infflow, state they hav
 
   return (
     <div className="h-full w-full flex flex-col items-center justify-center">
-      <div className="flex flex-col items-center gap-6">
-        <HexagonContainer size={300} />
+      <div className="flex flex-col items-center gap-6 -mt-16">
+        <HexagonContainer 
+          size={300} 
+          onTranscript={handleTranscript}
+          onResponse={handleResponse}
+        />
       </div>
       
       {/* Demo component for testing - only show in development */}
       {process.env.NODE_ENV === 'development' && <VoiceToggleDemo />}
+      
+      {/* Chat Panel - separate from hexagon */}
+      <ChatPanel 
+        transcript={transcript} 
+        response={response}
+        isMinimized={isChatMinimized}
+        onToggleMinimize={() => setIsChatMinimized(!isChatMinimized)}
+      />
     </div>
   );
 }

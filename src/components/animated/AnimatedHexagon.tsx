@@ -13,11 +13,15 @@ import './hexagon.css';
 interface AnimatedHexagonProps {
   size?: number;
   className?: string;
+  onTranscript?: (transcript: string) => void;
+  onResponse?: (response: string) => void;
 }
 
 export const AnimatedHexagon: React.FC<AnimatedHexagonProps> = ({
   size = 200,
-  className = ''
+  className = '',
+  onTranscript,
+  onResponse
 }) => {
   const {
     animationState,
@@ -56,6 +60,23 @@ export const AnimatedHexagon: React.FC<AnimatedHexagonProps> = ({
     }
   });
 
+  // Pass transcript to parent component
+  useEffect(() => {
+    if (transcript && onTranscript) {
+      console.log('📝 AnimatedHexagon: Sending transcript to parent:', transcript);
+      onTranscript(transcript);
+    }
+  }, [transcript, onTranscript]);
+
+  // Pass response to parent component
+  useEffect(() => {
+    console.log('🤖 AnimatedHexagon: Response changed:', response);
+    if (response && onResponse) {
+      console.log('🤖 AnimatedHexagon: Sending response to parent:', response);
+      onResponse(response);
+    }
+  }, [response, onResponse]);
+
   // Voice status hook
   const { getVoiceStatusIcon, getVoiceStatusColor } = useVoiceStatus();
 
@@ -67,6 +88,7 @@ export const AnimatedHexagon: React.FC<AnimatedHexagonProps> = ({
     }
     return false;
   });
+
 
   useEffect(() => {
     startIdleAnimation();
@@ -283,7 +305,8 @@ export const AnimatedHexagon: React.FC<AnimatedHexagonProps> = ({
         style={{ 
           width: size,
           height: size,
-          margin: '0 auto'
+          margin: '0 auto',
+          filter: initializationState !== 'ready' ? 'blur(15px)' : 'none'
         }}
         variants={containerVariants}
         animate={animationState}

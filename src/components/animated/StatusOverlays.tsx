@@ -17,23 +17,17 @@ export const LoadingOverlay: React.FC<LoadingOverlayProps> = ({
     <AnimatePresence>
       {isVisible && (
         <motion.div
-          className="absolute inset-0 bg-black/20 backdrop-blur-sm rounded-full z-20 flex items-center justify-center"
+          className="absolute inset-0 z-20 flex flex-col items-center justify-center"
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
           exit={{ opacity: 0 }}
         >
-          <div className="text-center">
-            {initializationState === 'initializing' && (
+
+
+          {/* Progress bar and percentage - Inside hexagon, vertically aligned with Voice button */}
+          {(initializationState === 'initializing' || initializationState === 'connecting') && (
+            <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
               <div className="flex flex-col items-center space-y-2">
-                <Loader2 className="w-8 h-8 animate-spin text-green-500" />
-                <span className="text-sm text-white font-medium">Initializing...</span>
-              </div>
-            )}
-            
-            {initializationState === 'connecting' && (
-              <div className="flex flex-col items-center space-y-2">
-                <Loader2 className="w-8 h-8 animate-spin text-blue-500" />
-                <span className="text-sm text-white font-medium">Connecting...</span>
                 <div className="w-24 h-2 bg-gray-700 rounded-full overflow-hidden">
                   <motion.div
                     className="h-full bg-blue-500 rounded-full"
@@ -44,16 +38,16 @@ export const LoadingOverlay: React.FC<LoadingOverlayProps> = ({
                 </div>
                 <span className="text-xs text-gray-300">{initializationProgress}%</span>
               </div>
-            )}
-            
-            {initializationState === 'error' && (
-              <div className="flex flex-col items-center space-y-2">
-                <AlertCircle className="w-8 h-8 text-red-500" />
-                <span className="text-sm text-white font-medium">Connection Failed</span>
-                <span className="text-xs text-gray-300 text-center px-2">Please refresh the page to retry</span>
-              </div>
-            )}
-          </div>
+            </div>
+          )}
+          
+          {initializationState === 'error' && (
+            <div className="mt-6 flex flex-col items-center space-y-2">
+              <AlertCircle className="w-8 h-8 text-red-500" />
+              <span className="text-sm text-white font-medium">Connection Failed</span>
+              <span className="text-xs text-gray-300 text-center px-2">Please refresh the page to retry</span>
+            </div>
+          )}
         </motion.div>
       )}
     </AnimatePresence>

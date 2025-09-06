@@ -1,4 +1,4 @@
-import { useCallback, useRef, useState } from 'react';
+import { useCallback, useRef, useState, useEffect } from 'react';
 import { useAnimationStore, VoiceState } from '../store/animationStore';
 import { injectExternalContext } from '@/lib/externalContext';
 import { useExternalDataStore } from '@/store/externalDataStore';
@@ -32,6 +32,25 @@ export const useVoiceConnectionService = ({
 }: VoiceConnectionServiceOptions) => {
   
   const { setInitializationState, setInitializationProgress } = useAnimationStore();
+  
+  // Set up global function to receive response text from session events
+  useEffect(() => {
+    (window as any).__hexaSetResponse = (text: any) => {
+      console.log('🌐 Global response received:', text);
+      
+      // Only process string responses, ignore arrays or objects
+      if (typeof text === 'string' && text.trim()) {
+        setResponse(text);
+        onResponse?.(text);
+      } else {
+        console.log('⚠️ Ignoring non-string response:', typeof text, text);
+      }
+    };
+    
+    return () => {
+      delete (window as any).__hexaSetResponse;
+    };
+  }, [setResponse, onResponse]);
   
   // Store external data for voice agent context
   const [externalData, setExternalData] = useState<{
@@ -237,6 +256,29 @@ export const useVoiceConnectionService = ({
             case 'audio_done':
             case 'agent_end': {
               console.log('Audio done received - voice stopped');
+              console.log('🔍 Full agent_end data:', data);
+              console.log('🔍 Data type:', typeof data);
+              console.log('🔍 Data keys:', Object.keys(data || {}));
+              
+              // Try to extract response text from various possible locations
+              let responseText = null;
+              
+              if (Array.isArray(data) && data.length > 2) {
+                responseText = data[2];
+                console.log('✅ Found text in array position 2:', responseText);
+              } else if (data && typeof data === 'object') {
+                responseText = data.text || data.message || data.content || data.response;
+                console.log('✅ Found text in object property:', responseText);
+              }
+              
+              if (responseText) {
+                console.log('✅ Setting response text:', responseText);
+                setResponse(responseText);
+                onResponse?.(responseText);
+              } else {
+                console.log('❌ No response text found in agent_end event');
+              }
+              
               // Force immediate stop
               setSpeechIntensity?.(0);
               stopSyntheticFlap();
