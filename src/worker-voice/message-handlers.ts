@@ -262,6 +262,12 @@ export class MessageHandlers {
     try {
       const message = JSON.parse(data);
       
+      // Debug: Log all message types to see what's happening
+      console.log('🔍 Worker processing message type:', message.type);
+      if (message.type && message.type.includes('transcription')) {
+        console.log('📝 Transcription-related message:', message);
+      }
+      
       switch (message.type) {
         case 'session.created':
           this.broadcastToClients({
@@ -283,6 +289,7 @@ export class MessageHandlers {
           break;
           
         case 'conversation.item.input_audio_transcription.completed':
+          console.log('📝 Transcription completed in worker:', message.transcript);
           this.broadcastToClients({
             type: 'transcription',
             text: message.transcript

@@ -55,6 +55,37 @@ export const useVoiceControlService = ({
       startListening();
       setVoiceState('listening');
       
+      // Add debugging to check if session is receiving audio
+      const session = openaiAgentRef.current;
+      if (session) {
+        console.log('🔍 Session state:', session.state);
+        console.log('🔍 Session ready state:', session.readyState);
+        
+        // Check if we can access the input audio buffer
+        if (session._inputAudioBuffer) {
+          console.log('🔍 Input audio buffer available');
+        } else {
+          console.log('⚠️ Input audio buffer not available');
+        }
+      }
+      
+      // Check microphone permissions
+      if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
+        navigator.mediaDevices.getUserMedia({ audio: true })
+          .then(stream => {
+            console.log('🎤 Microphone access granted');
+            // Stop the stream immediately as we don't need it
+            stream.getTracks().forEach(track => track.stop());
+          })
+          .catch(error => {
+            console.error('❌ Microphone access denied:', error);
+            onError?.('Microphone access is required for voice interaction');
+          });
+      } else {
+        console.error('❌ MediaDevices API not available');
+        onError?.('Your browser does not support microphone access');
+      }
+      
     } catch (error) {
       console.error('Failed to start recording:', error);
       setVoiceState('error');

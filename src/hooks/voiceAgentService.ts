@@ -21,7 +21,7 @@ export const useVoiceAgentService = ({ setVoiceState, onError, startSpeaking, st
       startSpeaking,
       stopSpeaking,
       setSpeechIntensity,
-      audioContextRef
+      audioContextRef,
     });
   }, [setVoiceState, onError, startSpeaking, stopSpeaking, setSpeechIntensity, audioContextRef]);
 

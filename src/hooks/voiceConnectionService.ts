@@ -7,11 +7,13 @@ interface VoiceConnectionServiceOptions {
   setVoiceState: (state: VoiceState) => void;
   onError?: (error: string) => void;
   onResponse?: (text: string) => void;
+  onTranscript?: (text: string) => void;
   initializeOpenAIAgentFromWorker: () => Promise<void>;
   initializeOpenAIAgent: (sessionData: any) => Promise<any>;
   openaiAgentRef: React.MutableRefObject<any>;
   setSessionInfo: (info: any) => void;
   setResponse: (text: string) => void;
+  setTranscript: (text: string) => void;
   startSpeaking?: () => void;
   stopSpeaking?: () => void;
   setSpeechIntensity?: (intensity: number) => void;
@@ -21,11 +23,13 @@ export const useVoiceConnectionService = ({
   setVoiceState,
   onError,
   onResponse,
+  onTranscript,
   initializeOpenAIAgentFromWorker,
   initializeOpenAIAgent,
   openaiAgentRef,
   setSessionInfo,
   setResponse,
+  setTranscript,
   startSpeaking,
   stopSpeaking,
   setSpeechIntensity
@@ -46,11 +50,24 @@ export const useVoiceConnectionService = ({
         console.log('⚠️ Ignoring non-string response:', typeof text, text);
       }
     };
+
+    (window as any).__hexaSetTranscript = (text: any) => {
+      console.log('🌐 Global transcript received:', text);
+      
+      // Only process string responses, ignore arrays or objects
+      if (typeof text === 'string' && text.trim()) {
+        setTranscript(text);
+        onTranscript?.(text);
+      } else {
+        console.log('⚠️ Ignoring non-string transcript:', typeof text, text);
+      }
+    };
     
     return () => {
       delete (window as any).__hexaSetResponse;
+      delete (window as any).__hexaSetTranscript;
     };
-  }, [setResponse, onResponse]);
+  }, [setResponse, onResponse, setTranscript, onTranscript]);
   
   // Store external data for voice agent context
   const [externalData, setExternalData] = useState<{
@@ -190,6 +207,18 @@ export const useVoiceConnectionService = ({
                 }
               }
               break;
+              
+            case 'transcription': {
+              const disabled = useAnimationStore.getState().isVoiceDisabled;
+              if (disabled) {
+                console.log('🔇 Voice disabled: ignoring transcription');
+                break;
+              }
+              console.log('User transcription received:', data.text);
+              setTranscript(data.text);
+              onTranscript?.(data.text);
+              break;
+            }
               
             case 'response_text': {
               const disabled = useAnimationStore.getState().isVoiceDisabled;

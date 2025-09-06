@@ -179,7 +179,128 @@ export const setupSessionEventHandlers = (
         (window as any).__hexaSetResponse(responseText);
       }
     }
+
+    // Also try to get the user's input from session history
+    try {
+      const history = session.history || [];
+      console.log('📚 Full session history on response:', history);
+      if (history.length >= 2) {
+        // Get the second-to-last message (should be user input)
+        const userMessage = history[history.length - 2];
+        console.log('📚 Second-to-last message (user):', userMessage);
+        if (userMessage && userMessage.role === 'user') {
+          const userText = Array.isArray(userMessage.content) 
+            ? userMessage.content[0]?.text || userMessage.content[0]
+            : userMessage.content;
+          
+          console.log('📚 User text extracted:', userText);
+          if (typeof userText === 'string' && userText.trim()) {
+            console.log('✅ Found user input in history:', userText);
+            if (typeof window !== 'undefined' && (window as any).__hexaSetTranscript) {
+              (window as any).__hexaSetTranscript(userText);
+            }
+          }
+        }
+      }
+    } catch (error) {
+      console.log('❌ Error getting user input from history:', error);
+    }
   });
+
+  // Debug: Log transcription-related events only
+  session.on('*' as any, (eventName: string, data: any) => {
+    if (eventName.includes('transcription') || eventName.includes('conversation')) {
+      console.log(`🔍 Session event: ${eventName}`, data);
+    }
+  });
+
+  // Handle transcription events - simplified approach
+  session.on('conversation.item.input_audio_transcription.completed' as any, (event: any) => {
+    console.log('📝 User transcription completed:', event);
+    
+    const transcript = event?.transcript || event?.text || event?.content;
+    if (transcript && typeof transcript === 'string' && transcript.trim()) {
+      console.log('✅ Found user transcript:', transcript);
+      // Use global function for now
+      if (typeof window !== 'undefined' && (window as any).__hexaSetTranscript) {
+        (window as any).__hexaSetTranscript(transcript);
+      }
+    }
+  });
+
+  // Handle transcript events
+  session.on('input_audio_buffer.speech_started' as any, () => {
+    console.log('🎤 Speech started - user is speaking');
+  });
+
+  session.on('input_audio_buffer.speech_stopped' as any, () => {
+    console.log('🎤 Speech stopped - user finished speaking');
+    
+    // Try to get transcript from the session
+    try {
+      const history = session.history || [];
+      console.log('📚 Full session history on speech stopped:', history);
+      if (history.length > 0) {
+        // Look for the most recent user message
+        for (let i = history.length - 1; i >= 0; i--) {
+          const item = history[i];
+          console.log(`📚 History item ${i}:`, item);
+          if (item && item.role === 'user') {
+            const userText = Array.isArray(item.content) 
+              ? item.content[0]?.text || item.content[0]
+              : item.content;
+            
+            console.log('📚 User text extracted:', userText);
+            if (typeof userText === 'string' && userText.trim()) {
+              console.log('✅ Found user transcript:', userText);
+              if (typeof window !== 'undefined' && (window as any).__hexaSetTranscript) {
+                (window as any).__hexaSetTranscript(userText);
+              }
+              break;
+            }
+          }
+        }
+      }
+    } catch (error) {
+      console.log('❌ Error getting transcript:', error);
+    }
+  });
+
+  // Try to capture transcript from various possible events
+  const transcriptEvents = [
+    'conversation.item.input_audio_transcription', 
+    'input_audio_buffer.transcription', 
+    'transcription',
+    'conversation.item.input_audio_transcription.done',
+    'input_audio_buffer.speech_stopped',
+    'conversation.item.input_audio_transcription.completed'
+  ];
+  
+  transcriptEvents.forEach(eventName => {
+    session.on(eventName as any, (data: any) => {
+      console.log(`📝 Transcript event ${eventName}:`, data);
+      console.log(`📝 Event data type:`, typeof data);
+      console.log(`📝 Event data keys:`, data && typeof data === 'object' ? Object.keys(data) : 'not an object');
+      
+      if (data && typeof data === 'string' && data.trim()) {
+        console.log('✅ Found transcript:', data);
+        if (typeof window !== 'undefined' && (window as any).__hexaSetTranscript) {
+          (window as any).__hexaSetTranscript(data);
+        }
+      } else if (data && data.text && typeof data.text === 'string' && data.text.trim()) {
+        console.log('✅ Found transcript in data.text:', data.text);
+        if (typeof window !== 'undefined' && (window as any).__hexaSetTranscript) {
+          (window as any).__hexaSetTranscript(data.text);
+        }
+      } else if (data && data.transcript && typeof data.transcript === 'string' && data.transcript.trim()) {
+        console.log('✅ Found transcript in data.transcript:', data.transcript);
+        if (typeof window !== 'undefined' && (window as any).__hexaSetTranscript) {
+          (window as any).__hexaSetTranscript(data.transcript);
+        }
+      }
+    });
+  });
+
   
   // Set up various event handlers for mouth animation
   // Try multiple event names as the SDK might use different ones

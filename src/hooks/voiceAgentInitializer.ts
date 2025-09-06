@@ -266,7 +266,7 @@ ${getLanguageInstructions()}`;
       stopSpeaking,
       audioEl,
       audioContextRef,
-      setSpeechIntensity
+      setSpeechIntensity,
     });
     
     // Subscribe to Zustand changes and automatically update session instructions

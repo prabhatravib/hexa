@@ -10,7 +10,6 @@ import { useAnimationStore } from '@/store/animationStore';
 interface UseVoiceInteractionOptions {
   wakeWord?: string;
   autoStart?: boolean;
-  onTranscription?: (text: string) => void;
   onResponse?: (text: string) => void;
   onError?: (error: string) => void;
   defaultLanguage?: string;
@@ -21,7 +20,6 @@ export const useVoiceInteraction = (options: UseVoiceInteractionOptions = {}) =>
   const {
     wakeWord = 'hey hexagon',
     autoStart = false,
-    onTranscription,
     onResponse,
     onError,
     defaultLanguage = DEFAULT_LANGUAGE,
@@ -58,7 +56,7 @@ export const useVoiceInteraction = (options: UseVoiceInteractionOptions = {}) =>
     startSpeaking,
     stopSpeaking,
     setSpeechIntensity: handleSpeechIntensity, // pass the existing processor
-    audioContextRef // provide shared AudioContext so analyser runs
+    audioContextRef, // provide shared AudioContext so analyser runs
   });
 
   const [isConnected, setIsConnected] = useState(false);
@@ -68,6 +66,12 @@ export const useVoiceInteraction = (options: UseVoiceInteractionOptions = {}) =>
   const [sessionInfo, setSessionInfo] = useState<any>(null);
   const [currentLanguage, setCurrentLanguage] = useState(defaultLanguage);
 
+  // Define onTranscript callback after state declarations
+  const onTranscript = useCallback((text: string) => {
+    console.log('🎯 useVoiceInteraction: onTranscript called with:', text);
+    setTranscript(text);
+  }, []);
+
   // Debug response changes
   useEffect(() => {
     console.log('🎯 useVoiceInteraction: Response state changed:', response);
@@ -75,6 +79,14 @@ export const useVoiceInteraction = (options: UseVoiceInteractionOptions = {}) =>
       console.log('🎯 useVoiceInteraction: Response is not empty, length:', response.length);
     }
   }, [response]);
+
+  // Debug transcript changes
+  useEffect(() => {
+    console.log('🎯 useVoiceInteraction: Transcript state changed:', transcript);
+    if (transcript) {
+      console.log('🎯 useVoiceInteraction: Transcript is not empty, length:', transcript.length);
+    }
+  }, [transcript]);
   
   const wsRef = useRef<WebSocket | null>(null);
   const openaiAgentRef = useRef<any>(null);
@@ -100,11 +112,13 @@ export const useVoiceInteraction = (options: UseVoiceInteractionOptions = {}) =>
     setVoiceState,
     onError,
     onResponse,
+    onTranscript,
     initializeOpenAIAgentFromWorker,
     initializeOpenAIAgent,
     openaiAgentRef,
     setSessionInfo,
     setResponse,
+    setTranscript,
     startSpeaking,
     stopSpeaking,
     setSpeechIntensity: handleSpeechIntensity
