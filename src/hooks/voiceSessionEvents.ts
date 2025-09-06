@@ -15,6 +15,34 @@ export const setupSessionEventHandlers = (
   options: SessionEventHandlersOptions
 ) => {
   const { setVoiceState, startSpeaking, stopSpeaking, audioEl, audioContextRef, setSpeechIntensity } = options;
+
+  // Helper: extract a human-readable transcript from various content shapes
+  const extractTranscript = (content: any): string | null => {
+    if (!content) return null;
+    // If the content is already a string
+    if (typeof content === 'string') return content.trim() || null;
+    
+    // Arrays of parts: try each until we find text
+    if (Array.isArray(content)) {
+      for (const part of content) {
+        const t = extractTranscript(part);
+        if (t) return t;
+      }
+      return null;
+    }
+
+    // Objects with known shapes
+    if (typeof content === 'object') {
+      // Newer SDKs may provide { type: 'input_text', text }
+      if (typeof content.text === 'string') return content.text.trim() || null;
+      // Transcribed audio often appears as { type: 'input_audio', transcript }
+      if (typeof content.transcript === 'string') return content.transcript.trim() || null;
+      // Some events nest content again
+      if (content.content) return extractTranscript(content.content);
+    }
+
+    return null;
+  };
   
   // Create a debug wrapper for setVoiceState that logs changes
   const debugSetVoiceState = (state: VoiceState) => {
@@ -189,15 +217,12 @@ export const setupSessionEventHandlers = (
         const userMessage = history[history.length - 2];
         console.log('📚 Second-to-last message (user):', userMessage);
         if (userMessage && userMessage.role === 'user') {
-          const userText = Array.isArray(userMessage.content) 
-            ? userMessage.content[0]?.text || userMessage.content[0]
-            : userMessage.content;
-          
-          console.log('📚 User text extracted:', userText);
-          if (typeof userText === 'string' && userText.trim()) {
-            console.log('✅ Found user input in history:', userText);
+          const text = extractTranscript(userMessage.content);
+          console.log('📚 User text extracted:', text ?? userMessage.content);
+          if (text) {
+            console.log('✅ Found user input in history:', text);
             if (typeof window !== 'undefined' && (window as any).__hexaSetTranscript) {
-              (window as any).__hexaSetTranscript(userText);
+              (window as any).__hexaSetTranscript(text);
             }
           }
         }
@@ -246,15 +271,12 @@ export const setupSessionEventHandlers = (
           const item = history[i];
           console.log(`📚 History item ${i}:`, item);
           if (item && item.role === 'user') {
-            const userText = Array.isArray(item.content) 
-              ? item.content[0]?.text || item.content[0]
-              : item.content;
-            
-            console.log('📚 User text extracted:', userText);
-            if (typeof userText === 'string' && userText.trim()) {
-              console.log('✅ Found user transcript:', userText);
+            const text = extractTranscript(item.content);
+            console.log('📚 User text extracted:', text ?? item.content);
+            if (text) {
+              console.log('✅ Found user transcript:', text);
               if (typeof window !== 'undefined' && (window as any).__hexaSetTranscript) {
-                (window as any).__hexaSetTranscript(userText);
+                (window as any).__hexaSetTranscript(text);
               }
               break;
             }

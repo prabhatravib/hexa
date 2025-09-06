@@ -86,6 +86,11 @@ export const AnimatedHexagon: React.FC<AnimatedHexagonProps> = ({
     return false;
   });
 
+  // UI preferences: hide floating bubbles above the hexagon
+  // Keep chat panel as the single source of conversation UI
+  const SHOW_TRANSCRIPT_OVERLAY = false;
+  const SHOW_RESPONSE_OVERLAY = false;
+
 
   useEffect(() => {
     startIdleAnimation();
@@ -289,11 +294,9 @@ export const AnimatedHexagon: React.FC<AnimatedHexagonProps> = ({
         initializationProgress={initializationProgress}
       />
       
-      {/* Transcript display above hexagon */}
-      <TranscriptDisplay transcript={transcript} />
-
-      {/* Response display above hexagon */}
-      <ResponseDisplay response={response} />
+      {/* Optional floating bubbles above hexagon (disabled by default) */}
+      {SHOW_TRANSCRIPT_OVERLAY && <TranscriptDisplay transcript={transcript} />}
+      {SHOW_RESPONSE_OVERLAY && <ResponseDisplay response={response} />}
 
       <motion.div 
         className={`inline-block w-full h-full relative ${

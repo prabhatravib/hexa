@@ -122,7 +122,7 @@ export const ChatPanel: React.FC<ChatPanelProps> = ({
                     <p className={`text-xs mt-1 ${
                       message.role === 'user' ? 'text-blue-100' : 'text-gray-500 dark:text-gray-400'
                     }`}>
-                      {message.timestamp.toLocaleTimeString()}
+                      {message.timestamp.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: true })}
                     </p>
                   </div>
                 </motion.div>
