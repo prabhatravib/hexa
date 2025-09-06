@@ -89,8 +89,17 @@ export class OpenAIConnection {
       voice: 'marin', // or 'cedar' - both are new GA voices
       input_audio_format: 'pcm16',
       output_audio_format: 'pcm16',
+      // Enable server-side transcription of input audio
+      // Correct structure: provide a model, no boolean flags like `enabled`
+      input_audio_transcription: {
+        model: 'gpt-4o-mini-transcribe',
+        // language can be optionally provided, e.g., 'en'
+        // language: 'en'
+      },
       turn_detection: {
         type: 'server_vad',
+        // Ensure the model automatically creates a response after speech ends
+        create_response: true,
         threshold: 0.3, // Lower threshold for more sensitive detection
         prefix_padding_ms: 500, // Capture more audio before speech
         silence_duration_ms: 1000 // Wait longer before considering speech ended
