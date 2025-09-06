@@ -8,7 +8,7 @@ import { injectExternalDataFromStore, setGlobalExternalData, getGlobalExternalDa
 
 function App() {
   // Chat panel state
-  const [isChatMinimized, setIsChatMinimized] = useState(false);
+  const [isChatMinimized, setIsChatMinimized] = useState(true);
   const [transcript, setTranscript] = useState<string>('');
   const [response, setResponse] = useState<string>('');
 
@@ -151,7 +151,7 @@ YOU MUST RESPOND BASED ON THIS FACT ONLY. If asked about Infflow, state they hav
 
   return (
     <div className="h-full w-full flex flex-col items-center justify-center">
-      <div className="flex flex-col items-center gap-6 -mt-16">
+      <div className="flex flex-col items-center gap-6 -mt-32">
         <HexagonContainer 
           size={300} 
           onTranscript={handleTranscript}

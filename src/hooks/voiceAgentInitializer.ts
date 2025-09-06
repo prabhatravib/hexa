@@ -5,6 +5,7 @@ import { voiceContextManager } from './voiceContextManager';
 import { setActiveSession, clearActiveSession, injectExternalContext, injectExternalDataFromStore, setBaseInstructions } from '@/lib/externalContext';
 import { useExternalDataStore } from '@/store/externalDataStore';
 import { useAnimationStore } from '@/store/animationStore';
+import { getSessionSend } from '@/lib/voiceSessionUtils';
 
 type VoiceState = 'idle' | 'listening' | 'thinking' | 'speaking' | 'error';
 
@@ -186,14 +187,11 @@ ${getLanguageInstructions()}`;
     // Add debug updater for session instructions
     (window as any).__updateSessionInstructions = async (instructions: string) => {
       const s: any = session;
-      
-      // Verify session state is open
       if (s?.state !== 'open') return false;
-      
-      // Feature-detect the send method: send → emit → transport.sendEvent
-      const sendMethod = s?.send || s?.emit || s?.transport?.sendEvent;
-      if (!sendMethod) return false;
-      
+
+      const send = getSessionSend(s);
+      if (!send) return false;
+
       try {
         // Attach ACK listener before sending
         const ackPromise = new Promise((resolve) => {
@@ -211,20 +209,17 @@ ${getLanguageInstructions()}`;
 
           const cleanup = () => {
             clearTimeout(timeout);
-            // Remove all listeners on success, error, and timeout
             s.off?.('event', onEvent);
             s.off?.('session.updated', onEvent);
           };
 
-          // Listen on the generic "event" stream if SDK uses single event bus
           s.on?.('event', onEvent);
           s.on?.('session.updated', onEvent);
         });
 
         // Send session.update
-        await sendMethod.call(s, { type: 'session.update', session: { instructions } });
-        
-        // Wait for ack
+        await Promise.resolve(send({ type: 'session.update', session: { instructions } }));
+
         return await ackPromise;
       } catch {
         return false;

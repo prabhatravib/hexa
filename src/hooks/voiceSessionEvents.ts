@@ -1,5 +1,6 @@
 type VoiceState = 'idle' | 'listening' | 'thinking' | 'speaking' | 'error';
 import { useAnimationStore } from '@/store/animationStore';
+import { isVoiceDisabledNow, silenceAudioEverywhere } from '@/lib/voiceDisableGuard';
 
 interface SessionEventHandlersOptions {
   setVoiceState: (state: VoiceState) => void;
@@ -144,8 +145,7 @@ export const setupSessionEventHandlers = (
 
   // Prefer high-level lifecycle events from the session when available
   session.on('agent_start' as any, () => {
-    const disabled = useAnimationStore.getState().isVoiceDisabled;
-    if (disabled) {
+    if (isVoiceDisabledNow()) {
       console.log('🔇 Voice disabled: ignoring agent_start and silencing audio');
       try { (audioEl as any).muted = true; if (!audioEl.paused) audioEl.pause(); } catch {}
       (window as any).__currentVoiceState = 'idle';
@@ -170,15 +170,9 @@ export const setupSessionEventHandlers = (
     
     eventArray.forEach((event: any) => {
       if (event.type === 'output_audio_buffer.stopped') {
-        // Check if voice is disabled before processing audio events
-        try {
-          const disabled = useAnimationStore.getState().isVoiceDisabled;
-          if (disabled) {
-            console.log('🔇 Voice disabled: ignoring output_audio_buffer.stopped event');
-            return;
-          }
-        } catch (error) {
-          console.error('Failed to check voice disabled state:', error);
+        if (isVoiceDisabledNow()) {
+          console.log('🔇 Voice disabled: ignoring output_audio_buffer.stopped event');
+          return;
         }
         
         console.log('🎵 output_audio_buffer.stopped - real audio finished, stopping mouth animation');
@@ -329,8 +323,7 @@ export const setupSessionEventHandlers = (
   const possibleAudioEvents = ['audio', 'response.audio.delta', 'response.audio', 'conversation.item.audio'];
   possibleAudioEvents.forEach(eventName => {
     session.on(eventName as any, (audioData: any) => {
-      const disabled = useAnimationStore.getState().isVoiceDisabled;
-      if (disabled) {
+      if (isVoiceDisabledNow()) {
         console.log(`🔇 Voice disabled: ignoring ${eventName} and pausing audio`);
         try { (audioEl as any).muted = true; if (!audioEl.paused) audioEl.pause(); } catch {}
         (window as any).__currentVoiceState = 'idle';

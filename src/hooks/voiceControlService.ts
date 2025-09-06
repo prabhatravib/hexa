@@ -1,5 +1,6 @@
 import { useCallback } from 'react';
 import { useAnimationStore } from '@/store/animationStore';
+import { safeSessionSend } from '@/lib/voiceSessionUtils';
 
 type VoiceState = 'idle' | 'listening' | 'thinking' | 'speaking' | 'error';
 
@@ -276,14 +277,11 @@ export const useVoiceControlService = ({
       const s: any = openaiAgentRef.current;
       if (s) {
         try {
-          const sendMethod = s?.send || s?.emit || s?.transport?.sendEvent;
-          if (sendMethod) {
-            // Best-effort set of cancellation events used across SDK versions
-            await sendMethod.call(s, { type: 'response.cancel' });
-            await sendMethod.call(s, { type: 'response.cancel_all' });
-            await sendMethod.call(s, { type: 'input_audio_buffer.clear' });
-            await sendMethod.call(s, { type: 'output_audio_buffer.clear' });
-          }
+          // Best-effort set of cancellation events used across SDK versions
+          await safeSessionSend(s, { type: 'response.cancel' });
+          await safeSessionSend(s, { type: 'response.cancel_all' });
+          await safeSessionSend(s, { type: 'input_audio_buffer.clear' });
+          await safeSessionSend(s, { type: 'output_audio_buffer.clear' });
         } catch (e) {
           console.warn('⚠️ Local interrupt via session failed, will fall back to HTTP', e);
         }

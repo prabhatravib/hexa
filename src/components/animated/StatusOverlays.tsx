@@ -24,7 +24,7 @@ export const LoadingOverlay: React.FC<LoadingOverlayProps> = ({
         >
 
 
-          {/* Progress bar and percentage - Inside hexagon, vertically aligned with Voice button */}
+          {/* Progress bar and percentage - Centered inside hexagon */}
           {(initializationState === 'initializing' || initializationState === 'connecting') && (
             <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
               <div className="flex flex-col items-center space-y-2">

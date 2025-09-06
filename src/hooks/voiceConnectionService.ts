@@ -1,5 +1,7 @@
 import { useCallback, useRef, useState, useEffect } from 'react';
 import { useAnimationStore, VoiceState } from '../store/animationStore';
+import { isVoiceDisabledNow, silenceAudioEverywhere } from '@/lib/voiceDisableGuard';
+import { getSessionSend, isRealtimeReady } from '@/lib/voiceSessionUtils';
 import { injectExternalContext } from '@/lib/externalContext';
 import { useExternalDataStore } from '@/store/externalDataStore';
 
@@ -131,318 +133,213 @@ export const useVoiceConnectionService = ({
       eventSource.onmessage = async (event) => {
         try {
           const data = JSON.parse(event.data);
-          
-          switch (data.type) {
-            case 'control': {
-              if (data.command === 'interrupt') {
+
+          // Helper: common end-of-speech handling
+          const handleAgentEnd = (payload: any) => {
+            console.log('Audio done received - voice stopped');
+            console.log('🔍 Full agent_end data:', payload);
+            console.log('🔍 Data type:', typeof payload);
+            console.log('🔍 Data keys:', Object.keys(payload || {}));
+
+            let responseText: any = null;
+            if (Array.isArray(payload) && payload.length > 2) {
+              responseText = payload[2];
+              console.log('✅ Found text in array position 2:', responseText);
+            } else if (payload && typeof payload === 'object') {
+              responseText = payload.text || payload.message || payload.content || payload.response;
+              console.log('✅ Found text in object property:', responseText);
+            }
+
+            if (responseText) {
+              console.log('✅ Setting response text:', responseText);
+              setResponse(responseText);
+              onResponse?.(responseText);
+            } else {
+              console.log('❌ No response text found in agent_end event');
+            }
+
+            setSpeechIntensity?.(0);
+            stopSyntheticFlap();
+
+            try {
+              const audioEl: HTMLAudioElement | undefined = (window as any).__hexaAudioEl;
+              if (audioEl && isVoiceDisabledNow()) {
+                audioEl.muted = true; if (!audioEl.paused) audioEl.pause();
+              }
+            } catch {}
+
+            setTimeout(() => {
+              stopSpeaking?.();
+              setVoiceState('idle');
+              const currentVoiceState = (window as any).__currentVoiceState;
+              if (currentVoiceState === 'speaking') {
+                console.log('⚠️ Force stopping speaking state after audio_done');
+                useAnimationStore.getState().stopSpeaking();
+              }
+            }, 100);
+          };
+
+          const handlers: Record<string, (d: any) => Promise<void> | void> = {
+            control: async (d) => {
+              if (d.command === 'interrupt') {
                 console.log('🛑 Interrupt command received from worker');
                 try {
                   const s: any = (window as any).activeSession;
-                  const send = s?.send || s?.emit || s?.transport?.sendEvent;
+                  const send = getSessionSend(s);
                   if (send) {
-                    await send.call(s, { type: 'response.cancel' });
-                    await send.call(s, { type: 'response.cancel_all' });
-                    await send.call(s, { type: 'input_audio_buffer.clear' });
-                    await send.call(s, { type: 'output_audio_buffer.clear' });
+                    send({ type: 'response.cancel' });
+                    send({ type: 'response.cancel_all' });
+                    send({ type: 'input_audio_buffer.clear' });
+                    send({ type: 'output_audio_buffer.clear' });
                   }
                 } catch {}
-                const audioEl: HTMLAudioElement | undefined = (window as any).__hexaAudioEl;
-                try {
-                  if (audioEl) { audioEl.muted = true; if (!audioEl.paused) audioEl.pause(); }
-                  // Hard-stop any audio elements on page
-                  const els = Array.from(document.querySelectorAll('audio')) as HTMLAudioElement[];
-                  els.forEach(el => { try { el.muted = true; if (!el.paused) el.pause(); } catch {} });
-                } catch {}
+                try { silenceAudioEverywhere(); } catch {}
                 setSpeechIntensity?.(0);
                 stopSyntheticFlap();
                 setVoiceState('idle');
               }
-              break;
-            }
-            case 'connected':
+            },
+            connected: () => {
               console.log('SSE connection established');
               setInitializationProgress(40);
-              break;
-              
-            case 'ready':
-              console.log('Voice session ready:', data.sessionId);
+            },
+            ready: (d) => {
+              console.log('Voice session ready:', d.sessionId);
               setInitializationProgress(60);
-              break;
-              
-            case 'session_info':
+            },
+            session_info: async (d) => {
               console.log('Session info received, updating OpenAI Agent...');
-              console.log('🔍 Received session_info with sessionId:', data.sessionId);
+              console.log('🔍 Received session_info with sessionId:', d.sessionId);
               setInitializationProgress(80);
-              setSessionInfo(data);
-              
-              // Store session ID for external data synchronization
-              if (data.sessionId) {
-                localStorage.setItem('voiceSessionId', data.sessionId);
-                console.log('📝 Stored voice session ID for external data sync:', data.sessionId);
+              setSessionInfo(d);
+              if (d.sessionId) {
+                localStorage.setItem('voiceSessionId', d.sessionId);
+                console.log('📝 Stored voice session ID for external data sync:', d.sessionId);
                 console.log('🔍 localStorage now contains:', localStorage.getItem('voiceSessionId'));
               }
-              // Update the agent with new session info if needed
               if (openaiAgentRef.current) {
                 console.log('✅ OpenAI Agent already initialized, session info updated');
-                // Pass external data to existing agent if available
                 if (externalData) {
                   console.log('🔧 Passing external data to existing agent:', externalData);
-                  // The agent should have access to external data through the worker
                 }
                 setInitializationProgress(100);
                 setInitializationState('ready');
               } else {
-                // Initialize with real session info
-                const session = await initializeOpenAIAgent(data);
+                const session = await initializeOpenAIAgent(d);
                 if (session) {
                   openaiAgentRef.current = session;
-                  // Pass external data to new agent if available
                   if (externalData) {
                     console.log('🔧 Passing external data to new agent:', externalData);
-                    // The agent should have access to external data through the worker
                   }
                   setInitializationProgress(100);
                   setInitializationState('ready');
                   console.log('✅ OpenAI Agent initialized successfully');
                 }
               }
-              break;
-              
-            case 'transcription': {
-              const disabled = useAnimationStore.getState().isVoiceDisabled;
-              if (disabled) {
-                console.log('🔇 Voice disabled: ignoring transcription');
-                break;
-              }
-              console.log('User transcription received:', data.text);
-              setTranscript(data.text);
-              onTranscript?.(data.text);
-              break;
-            }
-              
-            case 'response_text': {
-              const disabled = useAnimationStore.getState().isVoiceDisabled;
-              if (disabled) {
-                console.log('🔇 Voice disabled: ignoring response_text');
-                break;
-              }
-              console.log('Text response received:', data.text);
-              setResponse(data.text);
-              onResponse?.(data.text);
-              break;
-            }
-              
-            case 'agent_start': {
-              const disabled = useAnimationStore.getState().isVoiceDisabled;
-              if (disabled) {
+            },
+            transcription: (d) => {
+              if (isVoiceDisabledNow()) return console.log('🔇 Voice disabled: ignoring transcription');
+              console.log('User transcription received:', d.text);
+              setTranscript(d.text);
+              onTranscript?.(d.text);
+            },
+            response_text: (d) => {
+              if (isVoiceDisabledNow()) return console.log('🔇 Voice disabled: ignoring response_text');
+              console.log('Text response received:', d.text);
+              setResponse(d.text);
+              onResponse?.(d.text);
+            },
+            agent_start: () => {
+              if (isVoiceDisabledNow()) {
                 console.log('🔇 Voice disabled: ignoring agent_start and silencing audio');
-                // Mute any existing audio element and keep UI idle
-                try {
-                  const audioEl: HTMLAudioElement | undefined = (window as any).__hexaAudioEl;
-                  if (audioEl) {
-                    audioEl.muted = true;
-                    if (!audioEl.paused) audioEl.pause();
-                  }
-                } catch {}
+                silenceAudioEverywhere();
                 setSpeechIntensity?.(0);
                 stopSyntheticFlap();
                 setVoiceState('idle');
-              } else {
-                console.log('Agent start received - voice is starting');
-                setVoiceState('speaking');
-                startSpeaking?.();
-                // Ensure visible mouth motion even if analyser isn't available
-                startSyntheticFlap();
+                return;
               }
-              break;
-            }
-              
-            case 'audio_delta': {
-              const disabled = useAnimationStore.getState().isVoiceDisabled;
-              if (disabled) {
+              console.log('Agent start received - voice is starting');
+              setVoiceState('speaking');
+              startSpeaking?.();
+              startSyntheticFlap();
+            },
+            audio_delta: () => {
+              if (isVoiceDisabledNow()) {
                 console.log('🔇 Voice disabled: silencing incoming audio event');
-                // Mute any existing audio element and keep UI idle
-                try {
-                  const audioEl: HTMLAudioElement | undefined = (window as any).__hexaAudioEl;
-                  if (audioEl) {
-                    audioEl.muted = true;
-                    if (!audioEl.paused) audioEl.pause();
-                  }
-                } catch {}
+                silenceAudioEverywhere();
                 setSpeechIntensity?.(0);
                 stopSyntheticFlap();
                 setVoiceState('idle');
-              } else {
-                console.log('Audio delta received - voice is playing');
-                setVoiceState('speaking');
-                startSpeaking?.();
-                // Ensure visible mouth motion even if analyser isn't available
-                startSyntheticFlap();
+                return;
               }
-              break;
-            }
-              
-            case 'audio_done':
-            case 'agent_end': {
-              console.log('Audio done received - voice stopped');
-              console.log('🔍 Full agent_end data:', data);
-              console.log('🔍 Data type:', typeof data);
-              console.log('🔍 Data keys:', Object.keys(data || {}));
-              
-              // Try to extract response text from various possible locations
-              let responseText = null;
-              
-              if (Array.isArray(data) && data.length > 2) {
-                responseText = data[2];
-                console.log('✅ Found text in array position 2:', responseText);
-              } else if (data && typeof data === 'object') {
-                responseText = data.text || data.message || data.content || data.response;
-                console.log('✅ Found text in object property:', responseText);
-              }
-              
-              if (responseText) {
-                console.log('✅ Setting response text:', responseText);
-                setResponse(responseText);
-                onResponse?.(responseText);
-              } else {
-                console.log('❌ No response text found in agent_end event');
-              }
-              
-              // Force immediate stop
-              setSpeechIntensity?.(0);
-              stopSyntheticFlap();
-              const audioEl: HTMLAudioElement | undefined = (window as any).__hexaAudioEl;
-              const disabled = useAnimationStore.getState().isVoiceDisabled;
-              if (audioEl && disabled) {
-                try { audioEl.muted = true; if (!audioEl.paused) audioEl.pause(); } catch {}
-              }
-              
-              // Use a small delay to ensure audio element has finished
-              setTimeout(() => {
-                stopSpeaking?.();
-                setVoiceState('idle');
-                
-                // Double-check and force stop if still speaking
-                const currentVoiceState = (window as any).__currentVoiceState;
-                if (currentVoiceState === 'speaking') {
-                  console.log('⚠️ Force stopping speaking state after audio_done');
-                  useAnimationStore.getState().stopSpeaking();
-                }
-              }, 100);
-              break;
-            }
-              
-            case 'error':
-              console.error('Voice error received:', data);
-              console.error('Error details:', data.error);
+              console.log('Audio delta received - voice is playing');
+              setVoiceState('speaking');
+              startSpeaking?.();
+              startSyntheticFlap();
+            },
+            audio_done: (d) => handleAgentEnd(d),
+            agent_end: (d) => handleAgentEnd(d),
+            error: (d) => {
+              console.error('Voice error received:', d);
+              console.error('Error details:', d.error);
               setVoiceState('error');
               setInitializationState('error');
-              onError?.(data.error?.message || data.error || 'Unknown error');
-              break;
-              
-            case 'worker_restarting':
-              console.log('🔄 Worker is restarting:', data.message);
+              onError?.(d.error?.message || d.error || 'Unknown error');
+            },
+            worker_restarting: (d) => {
+              console.log('🔄 Worker is restarting:', d.message);
               setVoiceState('retrying');
               setInitializationState('connecting');
               setInitializationProgress(20);
-              // Don't show error - this is expected behavior
-              break;
-              
-            case 'worker_restarted':
-              console.log('✅ Worker restart complete:', data.message);
+            },
+            worker_restarted: (d) => {
+              console.log('✅ Worker restart complete:', d.message);
               setInitializationProgress(50);
-              // Reinitialize the connection with the new session
-              setTimeout(() => {
-                initializeOpenAIAgentFromWorker();
-              }, 1000);
-              break;
-              
-            case 'session_idle_reset':
-              console.log('🔄 Session idle reset detected:', data.message);
+              setTimeout(() => { initializeOpenAIAgentFromWorker(); }, 1000);
+            },
+            session_idle_reset: (d) => {
+              console.log('🔄 Session idle reset detected:', d.message);
               setVoiceState('retrying');
               setInitializationState('connecting');
               setInitializationProgress(30);
-              // Reinitialize the connection with the new session after idle reset
-              setTimeout(() => {
-                initializeOpenAIAgentFromWorker();
-              }, 1000);
-              break;
-              
-            case 'external_data_received':
-              console.log('🔍 Received external_data_received event:', data);
-              // Skip if this is duplicate data
-              if (isDuplicateData(data.data)) {
-                console.log('⏭️ Skipping duplicate external data');
-                break;
-              }
-              // Store external data for voice agent context (legacy)
-              setExternalData(data.data);
-              // Store in Zustand store for reliable access
-              useExternalDataStore.getState().setExternalData({
-                ...data.data,
-                source: 'api'
-              });
-              // Inject text content directly into active session
-              if (data.data?.text) {
-                console.log('🔧 Attempting to inject external context:', data.data.text);
-                
+              setTimeout(() => { initializeOpenAIAgentFromWorker(); }, 1000);
+            },
+            external_data_received: async (d) => {
+              console.log('🔍 Received external_data_received event:', d);
+              if (isDuplicateData(d.data)) return console.log('⏭️ Skipping duplicate external data');
+              setExternalData(d.data);
+              useExternalDataStore.getState().setExternalData({ ...d.data, source: 'api' });
+              if (d.data?.text) {
+                console.log('🔧 Attempting to inject external context:', d.data.text);
                 const s: any = (window as any).activeSession;
-                const ready = !!(s?.send || s?.emit || s?.transport?.sendEvent) &&
-                              (!s?._pc || ['connected','completed'].includes(s._pc.connectionState));
+                const ready = isRealtimeReady(s);
+                if (ready) await injectExternalContext(d.data.text);
+                else (window as any).__pendingExternalContext = d.data.text;
+              }
+            },
+            external_data_processed: async (d) => {
+              if (isDuplicateData(d.data)) return;
+              setExternalData(d.data);
+              useExternalDataStore.getState().setExternalData({ ...d.data, source: 'api' });
+              if (d.data?.text) await injectExternalContext(d.data.text);
+            },
+            external_text_available: async (d) => {
+              if (isDuplicateData({ text: d.text })) return;
+              setExternalData((prev) => (prev ? { ...prev, text: d.text } : { text: d.text }));
+              useExternalDataStore.getState().setExternalData({ text: d.text, source: 'api' });
+              if (d.text) await injectExternalContext(d.text);
+            },
+            external_image_available: (d) => {
+              console.log('🖼️ External image available for voice context:', d.dataType);
+              setExternalData((prev) => (prev ? { ...prev, image: d.image, type: d.dataType } : { image: d.image, type: d.dataType }));
+            },
+            __default: (d) => {
+              console.log('Unknown message type:', d.type, d);
+            },
+          };
 
-                if (ready) {
-                  await injectExternalContext(data.data.text);
-                } else {
-                  (window as any).__pendingExternalContext = data.data.text;
-                }
-              }
-              break;
-              
-            case 'external_data_processed':
-              // Skip if this is duplicate data
-              if (isDuplicateData(data.data)) {
-                break;
-              }
-              // Store external data for voice agent context (legacy)
-              setExternalData(data.data);
-              // Store in Zustand store for reliable access
-              useExternalDataStore.getState().setExternalData({
-                ...data.data,
-                source: 'api'
-              });
-              // Inject text content directly into active session
-              if (data.data?.text) {
-                await injectExternalContext(data.data.text);
-              }
-              break;
-              
-            case 'external_text_available':
-              // Skip if this is duplicate text data
-              if (isDuplicateData({ text: data.text })) {
-                break;
-              }
-              // Update external data with text content (legacy)
-              setExternalData(prev => prev ? { ...prev, text: data.text } : { text: data.text });
-              // Store in Zustand store for reliable access
-              useExternalDataStore.getState().setExternalData({
-                text: data.text,
-                source: 'api'
-              });
-              // Inject text content directly into active session
-              if (data.text) {
-                await injectExternalContext(data.text);
-              }
-              break;
-              
-            case 'external_image_available':
-              console.log('🖼️ External image available for voice context:', data.dataType);
-              // Update external data with image content
-              setExternalData(prev => prev ? { ...prev, image: data.image, type: data.dataType } : { image: data.image, type: data.dataType });
-              break;
-              
-            default:
-              console.log('Unknown message type:', data.type, data);
-          }
+          const handler = handlers[data.type] || handlers.__default;
+          await Promise.resolve(handler(data));
         } catch (parseError) {
           console.error('Failed to parse SSE message:', parseError, 'Raw data:', event.data);
           setVoiceState('error');

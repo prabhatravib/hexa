@@ -4,11 +4,12 @@ import { useAnimationStore } from '@/store/animationStore';
 import { useAnimationState, useAnimationSequence } from '@/hooks/useAnimationState';
 import { useVoiceInteraction } from '@/hooks/useVoiceInteraction';
 import { useVoiceStatus } from '@/hooks/useVoiceStatus';
-import { DevPanel } from './DevPanel';
+// import { DevPanel } from './DevPanel';
 import { HexagonSVG } from './HexagonSVG';
 import { LoadingOverlay, TranscriptDisplay, ResponseDisplay, StatusText } from './StatusOverlays';
 import { HEXAGON_ANIMATION_VARIANTS, SCALE, OPACITY } from '@/animations/constants';
 import './hexagon.css';
+import { useVoiceDisableEffects } from '@/hooks/useVoiceDisableEffects';
 
 interface AnimatedHexagonProps {
   size?: number;
@@ -78,13 +79,13 @@ export const AnimatedHexagon: React.FC<AnimatedHexagonProps> = ({
   const { getVoiceStatusIcon, getVoiceStatusColor } = useVoiceStatus();
 
   // Dev panel visibility (can be controlled by query param or environment)
-  const [showDevPanel, setShowDevPanel] = useState(() => {
-    if (typeof window !== 'undefined') {
-      const urlParams = new URLSearchParams(window.location.search);
-      return urlParams.get('dev') === 'true' || process.env.NODE_ENV === 'development';
-    }
-    return false;
-  });
+  // const [showDevPanel, setShowDevPanel] = useState(() => {
+  //   if (typeof window !== 'undefined') {
+  //     const urlParams = new URLSearchParams(window.location.search);
+  //     return urlParams.get('dev') === 'true' || process.env.NODE_ENV === 'development';
+  //   }
+  //   return false;
+  // });
 
   // UI preferences: hide floating bubbles above the hexagon
   // Keep chat panel as the single source of conversation UI
@@ -97,152 +98,8 @@ export const AnimatedHexagon: React.FC<AnimatedHexagonProps> = ({
     return () => stopIdleAnimation();
   }, []);
 
-  // Block voice system immediately if disabled on mount
-  useEffect(() => {
-    if (isVoiceDisabled) {
-      console.log('🔇 Voice disabled on mount - preventing all voice initialization');
-      // Set a global flag to prevent voice system initialization
-      (window as any).__voiceSystemBlocked = true;
-    } else {
-      (window as any).__voiceSystemBlocked = false;
-    }
-  }, [isVoiceDisabled]);
-
-
-  // Block voice system when disabled
-  useEffect(() => {
-    if (isVoiceDisabled) {
-      console.log('🔇 Voice disabled - blocking all voice processing');
-      
-      // Block microphone access at the browser level immediately
-      try {
-        // Override getUserMedia to block microphone access
-        const originalGetUserMedia = navigator.mediaDevices.getUserMedia;
-        navigator.mediaDevices.getUserMedia = async (constraints) => {
-          console.log('🔇 Voice disabled: blocking microphone access');
-          throw new Error('Microphone access blocked - voice is disabled');
-        };
-        
-        // Store the original function for restoration
-        (window as any).__originalGetUserMedia = originalGetUserMedia;
-      } catch (error) {
-        console.error('Failed to block microphone access:', error);
-      }
-      
-      // Stop any active recording
-      try { stopRecording(); } catch {}
-      
-      // Interrupt any ongoing responses
-      try { interrupt?.(); } catch {}
-      
-      // Block the AI from processing by disabling turn detection and audio
-      try {
-        const s: any = (window as any).activeSession;
-        const send = s?.send || s?.emit || s?.transport?.sendEvent;
-        if (send) {
-          // Cancel any ongoing responses
-          send.call(s, { type: 'response.cancel' });
-          send.call(s, { type: 'response.cancel_all' });
-          send.call(s, { type: 'input_audio_buffer.clear' });
-          send.call(s, { type: 'output_audio_buffer.clear' });
-          
-          // Completely disable the AI from processing
-          send.call(s, { type: 'session.update', session: { 
-            turn_detection: { 
-              create_response: false,
-              threshold: 0,
-              silence_duration_ms: 0
-            } 
-          }});
-          
-          // Also disable audio input/output
-          send.call(s, { type: 'input_audio_buffer.disable' });
-          send.call(s, { type: 'output_audio_buffer.disable' });
-          
-          // Block microphone input at the RealtimeSession level
-          try {
-            // Override the session's internal microphone handling
-            if (s._inputAudioBuffer) {
-              s._inputAudioBuffer.disable = () => console.log('🔇 Input audio buffer disabled');
-              s._inputAudioBuffer.enable = () => console.log('🔇 Input audio buffer enable blocked');
-            }
-            
-            // Block the session's internal audio processing
-            if (s._audioProcessor) {
-              s._audioProcessor.stop = () => console.log('🔇 Audio processor stopped');
-              s._audioProcessor.start = () => console.log('🔇 Audio processor start blocked');
-            }
-          } catch (audioError) {
-            console.log('🔇 Audio blocking applied:', audioError instanceof Error ? audioError.message : 'Unknown error');
-          }
-        }
-      } catch (error) {
-        console.error('Failed to disable voice processing:', error);
-      }
-      
-      // Mute all audio elements
-      try {
-        const els = Array.from(document.querySelectorAll('audio')) as HTMLAudioElement[];
-        els.forEach(el => { 
-          try { 
-            el.muted = true; 
-            if (!el.paused) el.pause(); 
-          } catch {} 
-        });
-      } catch {}
-    } else {
-      console.log('🔊 Voice enabled - restoring voice processing');
-      
-      
-      // Restore AI processing
-      try {
-        const s: any = (window as any).activeSession;
-        const send = s?.send || s?.emit || s?.transport?.sendEvent;
-        if (send) {
-          send.call(s, { type: 'session.update', session: { 
-            turn_detection: { 
-              create_response: true,
-              threshold: 0.5,
-              silence_duration_ms: 500
-            } 
-          }});
-          
-          // Re-enable audio input/output
-          send.call(s, { type: 'input_audio_buffer.enable' });
-          send.call(s, { type: 'output_audio_buffer.enable' });
-        }
-      } catch (error) {
-        console.error('Failed to enable voice processing:', error);
-      }
-      
-      // Force re-initialization of voice system
-      try {
-        // Clear any existing session to force re-initialization
-        if ((window as any).activeSession) {
-          console.log('🔊 Voice enabled: clearing existing session for re-initialization');
-          (window as any).activeSession = null;
-        }
-        
-        // Trigger a re-connection to ensure everything is working
-        if (typeof window !== 'undefined' && (window as any).__hexaReset) {
-          console.log('🔊 Voice enabled: triggering voice system reset');
-          (window as any).__hexaReset();
-        }
-      } catch (error) {
-        console.error('Failed to reset voice system:', error);
-      }
-      
-      // Unmute audio elements
-      try {
-        const els = Array.from(document.querySelectorAll('audio')) as HTMLAudioElement[];
-        els.forEach(el => { 
-          try { 
-            el.muted = false; 
-          } catch {} 
-        });
-      } catch {}
-    }
-  }, [isVoiceDisabled, stopRecording, interrupt]);
+  // Centralized voice disable/enable side effects
+  useVoiceDisableEffects({ isVoiceDisabled, stopRecording, interrupt });
 
   // Handle voice toggle - now the entire hexagon is the voice interface
   const handleVoiceToggle = (e: React.MouseEvent) => {
@@ -283,9 +140,11 @@ export const AnimatedHexagon: React.FC<AnimatedHexagonProps> = ({
   const eyeVariants = HEXAGON_ANIMATION_VARIANTS.eye;
 
   return (
-    <div className={`relative inline-block ${className}`} style={{ width: size * 1.4, height: size * 1.4 }}>
+    // Match the wrapper size to `size` so absolute overlays (e.g., progress bar)
+    // align with the same column as the Voice toggle above.
+    <div className={`relative inline-block ${className}`} style={{ width: size, height: size }}>
       {/* Dev Panel */}
-      <DevPanel isVisible={showDevPanel} />
+      {/* <DevPanel isVisible={showDevPanel} /> */}
       
       {/* Loading overlay during initialization */}
       <LoadingOverlay 
@@ -345,16 +204,16 @@ export const AnimatedHexagon: React.FC<AnimatedHexagonProps> = ({
 
       
       {/* Status text below hexagon */}
-      <StatusText initializationState={initializationState} />
+      {/* <StatusText initializationState={initializationState} /> */}
       
       {/* Dev panel toggle button */}
-      <button
+      {/* <button
         onClick={() => setShowDevPanel(!showDevPanel)}
         className="absolute bottom-2 left-2 w-6 h-6 bg-gray-600 text-white rounded text-xs hover:bg-gray-700"
         title="Toggle Dev Panel"
       >
         {showDevPanel ? '×' : '⚙'}
-      </button>
+      </button> */}
     </div>
   );
 };
