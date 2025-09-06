@@ -55,9 +55,6 @@ export const AnimatedHexagon: React.FC<AnimatedHexagonProps> = ({
     interrupt,
   } = useVoiceInteraction({
     autoStart: true, // Let the voice system initialize normally
-    onTranscription: (text) => {
-      // Handle transcription if needed
-    }
   });
 
   // Pass transcript to parent component

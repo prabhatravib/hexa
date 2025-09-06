@@ -4,7 +4,7 @@ import { VoiceToggleDemo } from './components/VoiceToggleDemo';
 import { ChatPanel } from './components/ChatPanel';
 import { voiceContextManager } from './hooks/voiceContextManager';
 import { useExternalDataStore } from './store/externalDataStore';
-import { injectExternalDataFromStore } from './lib/externalContext';
+import { injectExternalDataFromStore, setGlobalExternalData, getGlobalExternalData, injectGlobalExternalData, injectExternalContext } from './lib/externalContext';
 
 function App() {
   // Chat panel state
@@ -80,30 +80,25 @@ function App() {
     
     // Add global external data management
     (window as any).__setGlobalExternalData = async (text: string) => {
-      const { setGlobalExternalData } = await import('./lib/externalContext');
       setGlobalExternalData(text);
     };
     
     (window as any).__getGlobalExternalData = async () => {
-      const { getGlobalExternalData } = await import('./lib/externalContext');
       return getGlobalExternalData();
     };
     
     (window as any).__clearGlobalExternalData = async () => {
-      const { setGlobalExternalData } = await import('./lib/externalContext');
       setGlobalExternalData('');
     };
     
     // Manual injection function for testing
     (window as any).__injectGlobalData = async () => {
-      const { injectGlobalExternalData } = await import('./lib/externalContext');
       await injectGlobalExternalData();
     };
     
     // Add a simple test function
     (window as any).__testInjection = async () => {
       console.log('🧪 Testing injection...');
-      const { getGlobalExternalData, injectGlobalExternalData } = await import('./lib/externalContext');
       const globalData = getGlobalExternalData();
       console.log('🌍 Global data:', globalData);
       if (globalData) {
@@ -116,7 +111,6 @@ function App() {
     // Add a function to manually inject external data
     (window as any).__injectExternalData = async (text: string) => {
       console.log('🔧 Manually injecting external data:', text);
-      const { setGlobalExternalData, injectGlobalExternalData } = await import('./lib/externalContext');
       setGlobalExternalData(text);
       await injectGlobalExternalData();
     };
@@ -124,7 +118,6 @@ function App() {
     // Add a function to test injection directly
     (window as any).__testInjection = async (text: string) => {
       console.log('🧪 Testing direct injection:', text);
-      const { injectExternalContext } = await import('./lib/externalContext');
       await injectExternalContext(text);
     };
     

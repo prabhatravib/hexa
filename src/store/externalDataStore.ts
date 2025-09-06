@@ -105,7 +105,10 @@ export const useExternalDataStore = create<ExternalDataStore>((set, get) => ({
 
 // Global access for debugging
 if (typeof window !== 'undefined') {
-  (window as any).__externalDataStore = useExternalDataStore;
-  (window as any).__getExternalData = () => useExternalDataStore.getState().currentData;
-  (window as any).__setExternalData = (data: ExternalData) => useExternalDataStore.getState().setExternalData(data);
+  // Delay the assignment to avoid initialization issues
+  setTimeout(() => {
+    (window as any).__externalDataStore = useExternalDataStore;
+    (window as any).__getExternalData = () => useExternalDataStore.getState().currentData;
+    (window as any).__setExternalData = (data: ExternalData) => useExternalDataStore.getState().setExternalData(data);
+  }, 0);
 }

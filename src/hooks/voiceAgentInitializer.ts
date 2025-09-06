@@ -4,6 +4,7 @@ import { initializeWebRTCConnection } from './voiceWebRTCConnection';
 import { voiceContextManager } from './voiceContextManager';
 import { setActiveSession, clearActiveSession, injectExternalContext, injectExternalDataFromStore, setBaseInstructions } from '@/lib/externalContext';
 import { useExternalDataStore } from '@/store/externalDataStore';
+import { useAnimationStore } from '@/store/animationStore';
 
 type VoiceState = 'idle' | 'listening' | 'thinking' | 'speaking' | 'error';
 
@@ -33,7 +34,6 @@ export const initializeOpenAIAgent = async (
       return false; // Don't initialize
     }
     
-    const { useAnimationStore } = await import('@/store/animationStore');
     const disabled = useAnimationStore.getState().isVoiceDisabled;
     if (disabled) {
       console.log('🔇 Voice disabled: blocking OpenAI Agent initialization');
