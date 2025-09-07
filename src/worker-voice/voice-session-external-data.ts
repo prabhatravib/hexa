@@ -254,9 +254,13 @@ Use this over prior knowledge. "Infflow" with two f's is the user's company, not
         return this.core.createErrorResponse('Method not allowed. Use GET.', 405);
       }
 
-      // Always use the current OpenAI session ID
-      const targetSessionId = this.getCurrentOpenAISessionId();
-      console.log('🆔 Status request using current session ID:', targetSessionId);
+      // Extract iframe session ID from URL parameters
+      const url = new URL(request.url);
+      const iframeSessionId = url.searchParams.get('sessionId');
+      
+      // Use iframe session ID if available, otherwise fall back to OpenAI session ID
+      const targetSessionId = iframeSessionId || this.getCurrentOpenAISessionId();
+      console.log('🆔 Status request using session ID:', targetSessionId, iframeSessionId ? '(from iframe)' : '(from OpenAI)');
 
       // Get external data for the current session
       const externalData = await this.getExternalDataBySessionId(targetSessionId);
@@ -264,12 +268,22 @@ Use this over prior knowledge. "Infflow" with two f's is the user's company, not
       const dataType = externalData?.type || null;
       const timestamp = externalData?.timestamp || null;
 
+      // Debug: List all storage keys to see what's available
+      const allKeys = await this.state.storage.list();
+      console.log('🔍 All storage keys:', Array.from(allKeys.keys()));
+      console.log('🔍 Looking for key:', `external_data_${targetSessionId}`);
+      console.log('🔍 Found external data:', externalData);
+
       return this.core.createJsonResponse({
         hasExternalData,
         dataType,
         timestamp,
         sessionId: targetSessionId,
-        externalData: externalData  // Include the actual data
+        externalData: externalData,  // Include the actual data
+        debug: {
+          allKeys: Array.from(allKeys.keys()),
+          lookingFor: `external_data_${targetSessionId}`
+        }
       });
 
     } catch (error) {

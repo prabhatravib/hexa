@@ -46,12 +46,56 @@ function App() {
         console.error('❌ Error loading infflow.md:', error);
       }
 
-      // External data is now handled via SSE events, no need to poll files
+      // Load external data using iframe session ID
+      const loadExternalData = async () => {
+        try {
+          // Extract sessionId from URL parameters
+          const urlParams = new URLSearchParams(window.location.search);
+          const iframeSessionId = urlParams.get('sessionId');
+          
+          if (iframeSessionId) {
+            console.log('🆔 Found iframe session ID:', iframeSessionId);
+            
+            // Check for external data using the iframe session ID
+            const statusResponse = await fetch(`/api/external-data/status?sessionId=${iframeSessionId}`);
+            if (statusResponse.ok) {
+              const statusData = await statusResponse.json() as {
+                hasExternalData: boolean;
+                externalData?: any;
+                dataType?: string;
+                timestamp?: string;
+                sessionId?: string;
+              };
+              console.log('📊 External data status:', statusData);
+              
+              if (statusData.hasExternalData && statusData.externalData) {
+                console.log('✅ Found external data for iframe session:', statusData.externalData);
+                
+                // Store the external data in the Zustand store
+                useExternalDataStore.getState().setExternalData({
+                  ...statusData.externalData,
+                  source: 'iframe_session'
+                });
+                
+                console.log('📝 External data loaded into store for voice context');
+              } else {
+                console.log('ℹ️ No external data found for iframe session');
+              }
+            } else {
+              console.error('❌ Failed to check external data status:', statusResponse.status);
+            }
+          } else {
+            console.log('ℹ️ No iframe session ID found in URL');
+          }
+        } catch (error) {
+          console.error('❌ Error loading external data:', error);
+        }
+      };
+      
+      loadExternalData();
     };
     
     loadExternalContent();
-    
-    // External data is now handled via SSE events, no polling needed
     
   }, []);
 

@@ -84,11 +84,16 @@ export const useVoiceConnectionService = ({
   
   // Helper function to check if data is duplicate
   const isDuplicateData = (data: any): boolean => {
-    const dataString = JSON.stringify(data);
-    if (lastProcessedDataRef.current === dataString) {
+    // Only check for duplicates based on the actual text content
+    const textContent = data.text || '';
+    
+    if (lastProcessedDataRef.current === textContent) {
+      console.log('🔍 Duplicate detected based on text content:', textContent.substring(0, 100) + '...');
       return true;
     }
-    lastProcessedDataRef.current = dataString;
+    
+    lastProcessedDataRef.current = textContent;
+    console.log('🔍 New data accepted, text content:', textContent.substring(0, 100) + '...');
     return false;
   };
   
