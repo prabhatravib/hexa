@@ -43,7 +43,7 @@ export const HexagonContainer: React.FC<HexagonContainerProps> = ({
               repeat: !isVoiceDisabled ? Infinity : 0
             }}
           />
-          Voice {!isVoiceDisabled ? 'ON' : 'OFF'}
+          Voice {isVoiceDisabled ? 'OFF' : 'ON'}
         </span>
       </motion.button>
 

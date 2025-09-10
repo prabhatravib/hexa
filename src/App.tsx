@@ -1,16 +1,19 @@
 import { useEffect, useState } from 'react';
 import { HexagonContainer } from './components/HexagonContainer';
-import { VoiceToggleDemo } from './components/VoiceToggleDemo';
 import { ChatPanel } from './components/ChatPanel';
 import { voiceContextManager } from './hooks/voiceContextManager';
 import { useExternalDataStore } from './store/externalDataStore';
 import { injectExternalDataFromStore, setGlobalExternalData, getGlobalExternalData, injectGlobalExternalData, injectExternalContext } from './lib/externalContext';
+import { isRunningInIframe } from './lib/iframeDetection';
 
 function App() {
   // Chat panel state
   const [isChatMinimized, setIsChatMinimized] = useState(true);
   const [transcript, setTranscript] = useState<string>('');
   const [response, setResponse] = useState<string>('');
+  
+  // Iframe detection
+  const [isInIframe, setIsInIframe] = useState(false);
 
   // Callback functions for receiving data from hexagon
   const handleTranscript = (text: string) => {
@@ -24,6 +27,11 @@ function App() {
   };
 
   useEffect(() => {
+    // Detect if running in iframe
+    const iframeStatus = isRunningInIframe();
+    setIsInIframe(iframeStatus);
+    console.log('🔍 Iframe detection:', iframeStatus ? 'Running in iframe' : 'Accessed directly');
+    
     const loadExternalContent = async () => {
       try {
         console.log('📄 Loading infflow.md...');
@@ -190,6 +198,14 @@ YOU MUST RESPOND BASED ON THIS FACT ONLY. If asked about Infflow, state they hav
         console.log('❌ No external data available to inject');
       }
     };
+    
+    // Add iframe detection debugging
+    (window as any).__checkIframeStatus = () => {
+      const iframeStatus = isRunningInIframe();
+      console.log('🔍 Current iframe status:', iframeStatus ? 'In iframe' : 'Direct access');
+      console.log('🔍 Chat panel should be:', iframeStatus ? 'HIDDEN' : 'VISIBLE');
+      return iframeStatus;
+    };
   }, []);
 
 
@@ -203,16 +219,16 @@ YOU MUST RESPOND BASED ON THIS FACT ONLY. If asked about Infflow, state they hav
         />
       </div>
       
-      {/* Demo component for testing - only show in development */}
-      {process.env.NODE_ENV === 'development' && <VoiceToggleDemo />}
       
-      {/* Chat Panel - separate from hexagon */}
-      <ChatPanel 
-        transcript={transcript} 
-        response={response}
-        isMinimized={isChatMinimized}
-        onToggleMinimize={() => setIsChatMinimized(!isChatMinimized)}
-      />
+      {/* Chat Panel - only show when NOT in iframe */}
+      {!isInIframe && (
+        <ChatPanel 
+          transcript={transcript} 
+          response={response}
+          isMinimized={isChatMinimized}
+          onToggleMinimize={() => setIsChatMinimized(!isChatMinimized)}
+        />
+      )}
     </div>
   );
 }
