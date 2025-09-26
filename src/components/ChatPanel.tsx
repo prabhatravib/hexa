@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useAnimationStore } from '@/store/animationStore';
 
@@ -14,21 +14,28 @@ interface ChatPanelProps {
   response: string | null;
   isMinimized?: boolean;
   onToggleMinimize?: () => void;
+  onSendMessage?: (text: string) => Promise<boolean>;
+  isAgentReady?: boolean;
 }
 
 export const ChatPanel: React.FC<ChatPanelProps> = ({ 
   transcript, 
   response,
   isMinimized = false,
-  onToggleMinimize
+  onToggleMinimize,
+  onSendMessage,
+  isAgentReady = false
 }) => {
   const [messages, setMessages] = useState<Message[]>([]);
+  const [draft, setDraft] = useState('');
+  const [isSending, setIsSending] = useState(false);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
-  const { voiceState } = useAnimationStore();
-  
-  // Add user transcript as a message
+  const { voiceState, isVoiceDisabled } = useAnimationStore();
+
+  const canSend = Boolean(onSendMessage) && !isVoiceDisabled && isAgentReady;
+
   useEffect(() => {
-    console.log('💬 ChatPanel: Received transcript:', transcript);
     if (transcript && transcript.trim()) {
       const newMessage: Message = {
         id: `user-${Date.now()}`,
@@ -40,12 +47,8 @@ export const ChatPanel: React.FC<ChatPanelProps> = ({
     }
   }, [transcript]);
 
-  
-  // Handle AI response
   useEffect(() => {
-    console.log('💬 ChatPanel: Received response:', response);
     if (response && response.trim()) {
-      // Always add the response as a complete message immediately
       const newMessage: Message = {
         id: `assistant-${Date.now()}`,
         role: 'assistant',
@@ -55,12 +58,80 @@ export const ChatPanel: React.FC<ChatPanelProps> = ({
       setMessages(prev => [...prev, newMessage]);
     }
   }, [response]);
-  
-  // Auto-scroll to bottom
+
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages]);
-  
+
+  useEffect(() => {
+    if (errorMessage && draft.length === 0) {
+      setErrorMessage(null);
+    }
+  }, [draft, errorMessage]);
+
+  const sendMessage = useCallback(async () => {
+    const trimmed = draft.trim();
+    if (!trimmed) {
+      return;
+    }
+
+    if (!onSendMessage || !isAgentReady) {
+      setErrorMessage('Voice agent is still connecting');
+      return;
+    }
+
+    if (isVoiceDisabled) {
+      setErrorMessage('Voice is currently disabled');
+      return;
+    }
+
+    setIsSending(true);
+    setErrorMessage(null);
+    try {
+      const success = await onSendMessage(trimmed);
+      if (success) {
+        setDraft('');
+      } else {
+        setErrorMessage('Message could not be delivered');
+      }
+    } catch (error) {
+      console.error('Failed to send chat panel message:', error);
+      setErrorMessage('Message could not be delivered');
+    } finally {
+      setIsSending(false);
+    }
+  }, [draft, onSendMessage, canSend]);
+
+  const handleSubmit = useCallback((event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    void sendMessage();
+  }, [sendMessage]);
+
+  const handleKeyDown = useCallback((event: React.KeyboardEvent<HTMLTextAreaElement>) => {
+    if (event.key === 'Enter' && !event.shiftKey) {
+      event.preventDefault();
+      void sendMessage();
+    }
+  }, [sendMessage]);
+
+  const statusText = errorMessage
+    ? errorMessage
+    : !isAgentReady
+      ? 'Connecting voice agent...'
+      : isVoiceDisabled
+        ? 'Voice disabled'
+        : voiceState === 'listening'
+          ? 'Listening...'
+          : voiceState === 'thinking'
+            ? 'Thinking...'
+            : voiceState === 'speaking'
+              ? 'Speaking...'
+              : voiceState === 'error'
+                ? 'Error'
+                : 'Ready';
+
+  const computedRows = Math.min(4, Math.max(2, draft.split(/\r?\n/).length));
+
   return (
     <motion.div
       className={`fixed bottom-4 right-4 bg-white dark:bg-gray-800 rounded-lg shadow-2xl border border-gray-200 dark:border-gray-600 transition-all duration-300 ${
@@ -70,7 +141,6 @@ export const ChatPanel: React.FC<ChatPanelProps> = ({
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.3 }}
     >
-      {/* Header */}
       <div className="flex items-center justify-between px-4 py-2 border-b border-gray-200 dark:border-gray-600 bg-gray-50 dark:bg-gray-700 rounded-t-lg">
         <div className="flex items-center gap-2">
           <div className={`w-2 h-2 rounded-full ${
@@ -86,11 +156,10 @@ export const ChatPanel: React.FC<ChatPanelProps> = ({
           onClick={onToggleMinimize}
           className="text-gray-500 hover:text-gray-700 dark:hover:text-gray-300 text-lg font-bold"
         >
-          {isMinimized ? '▲' : '▼'}
+          {isMinimized ? '^' : 'v'}
         </button>
       </div>
-      
-      {/* Messages Container */}
+
       <AnimatePresence>
         {!isMinimized && (
           <motion.div
@@ -105,7 +174,7 @@ export const ChatPanel: React.FC<ChatPanelProps> = ({
                   Click the hexagon to start talking
                 </div>
               )}
-              
+
               {messages.map((message) => (
                 <motion.div
                   key={message.id}
@@ -127,22 +196,41 @@ export const ChatPanel: React.FC<ChatPanelProps> = ({
                   </div>
                 </motion.div>
               ))}
-              
-              
+
               <div ref={messagesEndRef} />
             </div>
-            
-            {/* Status Bar */}
-            <div className="px-4 py-2 border-t border-gray-200 dark:border-gray-600 bg-gray-50 dark:bg-gray-700">
-              <div className="flex items-center justify-between">
-                <span className="text-xs text-gray-500 dark:text-gray-400">
-                  {voiceState === 'listening' && '🎤 Listening...'}
-                  {voiceState === 'thinking' && '💭 Thinking...'}
-                  {voiceState === 'speaking' && '🗣️ Speaking...'}
-                  {voiceState === 'idle' && '✨ Ready'}
-                  {voiceState === 'error' && '❌ Error'}
+
+            <div className="px-4 py-3 border-t border-gray-200 dark:border-gray-600 bg-gray-50 dark:bg-gray-700">
+              <form onSubmit={handleSubmit} className="flex flex-col gap-2">
+                <div className="flex gap-2">
+                  <textarea
+                    value={draft}
+                    onChange={(event) => setDraft(event.target.value)}
+                    onKeyDown={handleKeyDown}
+                    disabled={!canSend || isSending}
+                    placeholder={!isAgentReady
+                      ? 'Voice agent is connecting...'
+                      : isVoiceDisabled
+                        ? 'Voice agent is disabled'
+                        : 'Type your message...'}
+                    className="flex-1 resize-none rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-sm text-gray-700 dark:text-gray-200 p-2 focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-60 disabled:cursor-not-allowed"
+                    rows={computedRows}
+                  />
+                  <button
+                    type="submit"
+                    disabled={!canSend || isSending || !draft.trim()}
+                    className="h-10 px-4 rounded-md bg-blue-500 text-white text-sm font-medium disabled:opacity-50 disabled:cursor-not-allowed hover:bg-blue-600 transition-colors"
+                  >
+                    {isSending ? 'Sending...' : 'Send'}
+                  </button>
+                </div>
+              </form>
+              <div className="mt-2 flex items-center justify-between">
+                <span className={`text-xs ${errorMessage ? 'text-red-500' : 'text-gray-500 dark:text-gray-400'}`}>
+                  {statusText}
                 </span>
                 <button
+                  type="button"
                   onClick={() => setMessages([])}
                   className="text-xs text-gray-500 hover:text-gray-700 dark:hover:text-gray-300"
                 >
@@ -156,3 +244,4 @@ export const ChatPanel: React.FC<ChatPanelProps> = ({
     </motion.div>
   );
 };
+

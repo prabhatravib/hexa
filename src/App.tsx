@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { HexagonContainer } from './components/HexagonContainer';
 import { ChatPanel } from './components/ChatPanel';
 import { voiceContextManager } from './hooks/voiceContextManager';
@@ -11,6 +11,16 @@ function App() {
   const [isChatMinimized, setIsChatMinimized] = useState(true);
   const [transcript, setTranscript] = useState<string>('');
   const [response, setResponse] = useState<string>('');
+  const [sendTextHandler, setSendTextHandler] = useState<((text: string) => Promise<boolean>) | null>(null);
+  const [isVoiceConnected, setIsVoiceConnected] = useState(false);
+
+  const handleSendTextAvailable = useCallback((handler: ((text: string) => Promise<boolean>) | null) => {
+    setSendTextHandler(() => handler ?? null);
+  }, []);
+
+  const handleVoiceConnectionChange = useCallback((connected: boolean) => {
+    setIsVoiceConnected(connected);
+  }, []);
   
   // Iframe detection
   const [isInIframe, setIsInIframe] = useState(false);
@@ -216,6 +226,8 @@ YOU MUST RESPOND BASED ON THIS FACT ONLY. If asked about Infflow, state they hav
           size={300} 
           onTranscript={handleTranscript}
           onResponse={handleResponse}
+          onSendTextAvailable={handleSendTextAvailable}
+          onConnectionChange={handleVoiceConnectionChange}
         />
       </div>
       
@@ -227,6 +239,8 @@ YOU MUST RESPOND BASED ON THIS FACT ONLY. If asked about Infflow, state they hav
           response={response}
           isMinimized={isChatMinimized}
           onToggleMinimize={() => setIsChatMinimized(!isChatMinimized)}
+          onSendMessage={sendTextHandler ?? undefined}
+          isAgentReady={isVoiceConnected}
         />
       )}
     </div>

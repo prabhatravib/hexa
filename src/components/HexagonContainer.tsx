@@ -8,13 +8,17 @@ interface HexagonContainerProps {
   className?: string;
   onTranscript?: (transcript: string) => void;
   onResponse?: (response: string) => void;
+  onSendTextAvailable?: (handler: ((text: string) => Promise<boolean>) | null) => void;
+  onConnectionChange?: (connected: boolean) => void;
 }
 
 export const HexagonContainer: React.FC<HexagonContainerProps> = ({
   size = 300,
   className = '',
   onTranscript,
-  onResponse
+  onResponse,
+  onSendTextAvailable,
+  onConnectionChange
 }) => {
   const { isVoiceDisabled, setVoiceDisabled, initializationState } = useAnimationStore();
 
@@ -54,6 +58,8 @@ export const HexagonContainer: React.FC<HexagonContainerProps> = ({
           size={size} 
           onTranscript={onTranscript}
           onResponse={onResponse}
+          onSendTextAvailable={onSendTextAvailable}
+          onConnectionChange={onConnectionChange}
         />
         
         {/* Glassy Overlay - Only visible when voice is OFF */}

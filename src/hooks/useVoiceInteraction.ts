@@ -2,6 +2,7 @@ import { useEffect, useRef, useState, useCallback } from 'react';
 import { useVoiceAgentService } from './voiceAgentService';
 import { useVoiceConnectionService } from './voiceConnectionService';
 import { useVoiceControlService } from './voiceControlService';
+import { safeSessionSend, isRealtimeReady } from '@/lib/voiceSessionUtils';
 import { useVoiceAnimation } from './useVoiceAnimation';
 import { getSupportedLanguageCodes, DEFAULT_LANGUAGE } from '@/lib/languageConfig';
 import { useExternalDataStore } from '@/store/externalDataStore';
@@ -99,7 +100,7 @@ export const useVoiceInteraction = (options: UseVoiceInteractionOptions = {}) =>
   const lastHashRef = useRef<string | null>(null);
   const lastSessionRef = useRef<string | null>(null);
 
-  function isRealtimeReady() {
+  function isActiveSessionReady() {
     const s: any = (window as any).activeSession;
     if (!s) return false;
     const hasSend = !!(s.send || s.emit || s.transport?.sendEvent);
@@ -200,20 +201,50 @@ export const useVoiceInteraction = (options: UseVoiceInteractionOptions = {}) =>
    
   // Send text message via HTTP POST
   const sendText = useCallback(async (text: string) => {
-    // Block text sending if voice is disabled
     if (isVoiceDisabled) {
-      console.log('🔇 Text sending blocked - voice is disabled');
-      return;
+      console.log('dY"? Text sending blocked - voice is disabled');
+      return false;
+    }
+
+    const session: any = (window as any).activeSession;
+    if (session && isRealtimeReady(session)) {
+      try {
+        const queued = await safeSessionSend(session, {
+          type: 'conversation.item.create',
+          item: {
+            type: 'message',
+            role: 'user',
+            content: [{ type: 'input_text', text }]
+          }
+        });
+
+        if (!queued) {
+          throw new Error('Realtime conversation.item.create failed');
+        }
+
+        const triggered = await safeSessionSend(session, { type: 'response.create' });
+        if (!triggered) {
+          throw new Error('Realtime response.create failed');
+        }
+
+        setTranscript(text);
+        return true;
+      } catch (error) {
+        console.warn('Realtime text send failed, falling back to HTTP:', error);
+      }
     }
 
     try {
       const success = await sendTextControl(text);
       if (success) {
         setTranscript(text);
+        return true;
       }
+      return false;
     } catch (error) {
       console.error('Failed to send text:', error);
       onError?.('Failed to send message');
+      return false;
     }
   }, [sendTextControl, onError, isVoiceDisabled]);
    
@@ -240,7 +271,7 @@ export const useVoiceInteraction = (options: UseVoiceInteractionOptions = {}) =>
   // Guarded external data POST with deduplication and session management
   useEffect(() => {
     const sid = sessionInfo?.sessionId;
-    if (!currentData || !sid || !isConnected || !isRealtimeReady()) return;
+    if (!currentData || !sid || !isConnected || !isActiveSessionReady()) return;
 
     // reset dedupe when session changes
     if (sid !== lastSessionRef.current) {
@@ -324,10 +355,13 @@ export const useVoiceInteraction = (options: UseVoiceInteractionOptions = {}) =>
       if (supportedLanguages.includes(language)) {
         setCurrentLanguage(language);
         // Send language change instruction to the AI
-        sendText(`Please switch to ${language === 'en' ? 'English' : language} for our conversation.`);
+        void sendText(`Please switch to ${language === 'en' ? 'English' : language} for our conversation.`);
       }
     },
     clearTranscript: () => setTranscript(''),
     clearResponse: () => setResponse('')
   };
 };
+
+
+

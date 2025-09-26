@@ -16,13 +16,17 @@ interface AnimatedHexagonProps {
   className?: string;
   onTranscript?: (transcript: string) => void;
   onResponse?: (response: string) => void;
+  onSendTextAvailable?: (handler: ((text: string) => Promise<boolean>) | null) => void;
+  onConnectionChange?: (connected: boolean) => void;
 }
 
 export const AnimatedHexagon: React.FC<AnimatedHexagonProps> = ({
   size = 200,
   className = '',
   onTranscript,
-  onResponse
+  onResponse,
+  onSendTextAvailable,
+  onConnectionChange
 }) => {
   const {
     animationState,
@@ -51,6 +55,7 @@ export const AnimatedHexagon: React.FC<AnimatedHexagonProps> = ({
     isRecording,
     transcript,
     response,
+    sendText,
     startRecording,
     stopRecording,
     interrupt,
@@ -74,6 +79,28 @@ export const AnimatedHexagon: React.FC<AnimatedHexagonProps> = ({
       onResponse(response);
     }
   }, [response, onResponse]);
+
+  useEffect(() => {
+    if (!onSendTextAvailable) {
+      return;
+    }
+
+    onSendTextAvailable(sendText);
+    return () => {
+      onSendTextAvailable(null);
+    };
+  }, [onSendTextAvailable, sendText]);
+
+  useEffect(() => {
+    if (!onConnectionChange) {
+      return;
+    }
+
+    onConnectionChange(isConnected);
+    return () => {
+      onConnectionChange(false);
+    };
+  }, [onConnectionChange, isConnected]);
 
   // Voice status hook
   const { getVoiceStatusIcon, getVoiceStatusColor } = useVoiceStatus();
