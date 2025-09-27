@@ -171,6 +171,13 @@ export const initializeWebRTCConnection = async (
     }
   });
   
+  session.on('response.audio.start' as any, () => {
+    console.log('dYZ Text-triggered audio response starting');
+    if (!audioEl.srcObject) {
+      console.warn('No audio stream available when response audio started');
+    }
+  });
+
   // Debug: Monitor all session events (excluding transport events)
   const sessionEvents = ['track', 'stream', 'connectionstatechange', 'iceconnectionstatechange', 'signalingstatechange'];
   sessionEvents.forEach(eventName => {
@@ -229,3 +236,4 @@ export const initializeWebRTCConnection = async (
   
   return true; // Connection successful
 };
+

@@ -374,9 +374,25 @@ export const setupSessionEventHandlers = (
     }
   });
 
+  session.on('conversation.item.created' as any, (item: any) => {
+    if (item?.role === 'user' && Array.isArray(item?.content) && item.content.some((part: any) => part?.type === 'input_text')) {
+      console.log('dY"? User text item created, preparing for voice response');
+      if (!isCurrentlySpeaking) {
+        debugSetVoiceState('thinking');
+      }
+    }
+  });
+
+  session.on('response.content' as any, (content: any) => {
+    console.log('dY"? Response content received:', content);
+    if (content?.type === 'text' && !isCurrentlySpeaking) {
+      console.log('dY"? Text response without audio yet - awaiting audio stream');
+    }
+  });
   session.on('error' as any, (error: any) => {
     console.error('❌ OpenAI session error:', error);
     debugSetVoiceState('error');
     // Note: onError is not available in this context, so we just set the state
   });
 };
+

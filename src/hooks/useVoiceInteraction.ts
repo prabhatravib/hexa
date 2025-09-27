@@ -209,6 +209,8 @@ export const useVoiceInteraction = (options: UseVoiceInteractionOptions = {}) =>
     const session: any = (window as any).activeSession;
     if (session && isRealtimeReady(session)) {
       try {
+        console.log('dY"? Sending text via Realtime session');
+
         const queued = await safeSessionSend(session, {
           type: 'conversation.item.create',
           item: {
@@ -222,12 +224,21 @@ export const useVoiceInteraction = (options: UseVoiceInteractionOptions = {}) =>
           throw new Error('Realtime conversation.item.create failed');
         }
 
-        const triggered = await safeSessionSend(session, { type: 'response.create' });
+        const triggered = await safeSessionSend(session, {
+          type: 'response.create',
+          response: {
+            modalities: ['text', 'audio'],
+            instructions: "Respond aloud to the user's message"
+          }
+        });
+
         if (!triggered) {
           throw new Error('Realtime response.create failed');
         }
 
+        console.log('dY"? Text sent and voice response requested');
         setTranscript(text);
+        setVoiceState('thinking');
         return true;
       } catch (error) {
         console.warn('Realtime text send failed, falling back to HTTP:', error);
@@ -235,6 +246,7 @@ export const useVoiceInteraction = (options: UseVoiceInteractionOptions = {}) =>
     }
 
     try {
+      console.log('dY"? Sending text via HTTP fallback');
       const success = await sendTextControl(text);
       if (success) {
         setTranscript(text);
@@ -246,7 +258,7 @@ export const useVoiceInteraction = (options: UseVoiceInteractionOptions = {}) =>
       onError?.('Failed to send message');
       return false;
     }
-  }, [sendTextControl, onError, isVoiceDisabled]);
+  }, [sendTextControl, onError, isVoiceDisabled, setVoiceState]);
    
   // Switch agent
   const switchAgent = useCallback(async (agentId: string) => {
@@ -362,6 +374,9 @@ export const useVoiceInteraction = (options: UseVoiceInteractionOptions = {}) =>
     clearResponse: () => setResponse('')
   };
 };
+
+
+
 
 
 

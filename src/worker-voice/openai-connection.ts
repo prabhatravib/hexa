@@ -227,7 +227,11 @@ export class OpenAIConnection {
           
           // Now trigger a response
           const responseTrigger = {
-            type: "response.create"
+            type: "response.create",
+            response: {
+              modalities: ['text', 'audio'],
+              instructions: "Respond aloud to the user's message"
+            }
           };
           
           const triggerResponse = await fetch(`https://api.openai.com/v1/realtime/sessions/${this.sessionId}/responses`, {
