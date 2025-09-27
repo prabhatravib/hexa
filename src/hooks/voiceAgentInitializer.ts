@@ -183,6 +183,7 @@ ${getLanguageInstructions()}`;
     
     // Create session and connect
     const session = new RealtimeSession(agent);
+    (session as any).__hexaSessionId = sessionData?.sessionId ?? null;
 
     // Add debug updater for session instructions
     (window as any).__updateSessionInstructions = async (instructions: string) => {

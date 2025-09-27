@@ -92,6 +92,50 @@ export const useVoiceInteraction = (options: UseVoiceInteractionOptions = {}) =>
   const audioQueueRef = useRef<ArrayBuffer[]>([]);
   const isPlayingRef = useRef(false);
 
+const waitForConversationAck = useCallback(async (session: any, text: string) => {
+  if (!session?.on) return true;
+
+  return await new Promise<boolean>(resolve => {
+    let settled = false;
+    let timeoutId: ReturnType<typeof window.setTimeout> | null = null;
+
+    const cleanup = () => {
+      if (settled) return;
+      settled = true;
+      if (timeoutId !== null) window.clearTimeout(timeoutId);
+      session.off?.('conversation.item.created', onCreated);
+      session.off?.('error', onError);
+    };
+
+    const onCreated = (item: any) => {
+      try {
+        if (item?.role !== 'user') return;
+        const matches = Array.isArray(item?.content)
+          ? item.content.some((part: any) => part?.type === 'input_text' && part?.text === text)
+          : false;
+        if (!matches) return;
+      } catch {
+        return;
+      }
+      cleanup();
+      resolve(true);
+    };
+
+    const onError = () => {
+      cleanup();
+      resolve(false);
+    };
+
+    timeoutId = window.setTimeout(() => {
+      cleanup();
+      resolve(false);
+    }, 600);
+
+    session.on?.('conversation.item.created', onCreated);
+    session.on?.('error', onError);
+  });
+}, []);
+
   // External data management with guards
   const currentData = useExternalDataStore(s => s.currentData);
   const lastHashRef = useRef<string | null>(null);
@@ -228,7 +272,11 @@ export const useVoiceInteraction = (options: UseVoiceInteractionOptions = {}) =>
             throw new Error('Realtime conversation.item.create failed');
           }
 
-          await new Promise(resolve => setTimeout(resolve, 100));
+          const acked = await waitForConversationAck(session, text);
+          if (!acked) {
+            console.warn('dY"? Conversation item create ack timed out, continuing anyway');
+            await new Promise(resolve => setTimeout(resolve, 120));
+          }
 
           const triggered = await safeSessionSend(session, {
             type: 'response.create',
@@ -269,7 +317,7 @@ export const useVoiceInteraction = (options: UseVoiceInteractionOptions = {}) =>
         return false;
       }
     },
-    [sendTextControl, onError, isVoiceDisabled, setVoiceState, stopSpeaking]
+    [sendTextControl, onError, isVoiceDisabled, setVoiceState, stopSpeaking, waitForConversationAck]
   );
 
   // Switch agent
