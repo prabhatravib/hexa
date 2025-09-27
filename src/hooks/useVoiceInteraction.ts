@@ -211,6 +211,12 @@ export const useVoiceInteraction = (options: UseVoiceInteractionOptions = {}) =>
       try {
         console.log('dY"? Sending text via Realtime session');
 
+        // Clear any previous audio state so we start fresh
+        if (stopSpeaking) {
+          stopSpeaking();
+        }
+        setVoiceState('thinking');
+
         const queued = await safeSessionSend(session, {
           type: 'conversation.item.create',
           item: {
@@ -224,11 +230,15 @@ export const useVoiceInteraction = (options: UseVoiceInteractionOptions = {}) =>
           throw new Error('Realtime conversation.item.create failed');
         }
 
+        await new Promise((resolve) => setTimeout(resolve, 100));
+
         const triggered = await safeSessionSend(session, {
           type: 'response.create',
           response: {
-            modalities: ['text', 'audio'],
-            instructions: "Respond aloud to the user's message"
+            modalities: ['audio', 'text'],
+            instructions: "Please respond with voice to the user's message",
+            voice: 'marin',
+            output_audio_format: 'pcm16'
           }
         });
 
@@ -238,7 +248,6 @@ export const useVoiceInteraction = (options: UseVoiceInteractionOptions = {}) =>
 
         console.log('dY"? Text sent and voice response requested');
         setTranscript(text);
-        setVoiceState('thinking');
         return true;
       } catch (error) {
         console.warn('Realtime text send failed, falling back to HTTP:', error);
@@ -250,6 +259,7 @@ export const useVoiceInteraction = (options: UseVoiceInteractionOptions = {}) =>
       const success = await sendTextControl(text);
       if (success) {
         setTranscript(text);
+        setVoiceState('thinking');
         return true;
       }
       return false;
@@ -258,7 +268,7 @@ export const useVoiceInteraction = (options: UseVoiceInteractionOptions = {}) =>
       onError?.('Failed to send message');
       return false;
     }
-  }, [sendTextControl, onError, isVoiceDisabled, setVoiceState]);
+  }, [sendTextControl, onError, isVoiceDisabled, setVoiceState, stopSpeaking]);
    
   // Switch agent
   const switchAgent = useCallback(async (agentId: string) => {

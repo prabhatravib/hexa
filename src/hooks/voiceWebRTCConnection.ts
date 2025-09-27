@@ -122,23 +122,29 @@ export const initializeWebRTCConnection = async (
     }
     
     if (event.track && event.track.kind === 'audio') {
-      console.log('🎵 Audio track received, attaching to audio element');
+      console.log('dY"? Audio track received, attaching to audio element');
       
-      // Create a new MediaStream with the audio track
       const stream = new MediaStream([event.track]);
       audioEl.srcObject = stream;
+      audioEl.autoplay = true;
+      audioEl.volume = 1;
 
-      // Respect global voice disabled toggle immediately
       try {
         const disabled = useAnimationStore.getState().isVoiceDisabled;
         if (disabled) {
-          console.log('🔇 Voice disabled: muting and pausing remote audio track');
+          console.log('dY"? Voice disabled: muting and pausing remote audio track');
           try { (audioEl as any).muted = true; if (!audioEl.paused) audioEl.pause(); } catch {}
-          return; // Block further processing
+          return;
         }
       } catch {}
-      
-      // Start audio analysis immediately on remote_track
+
+      try {
+        await audioEl.play();
+        console.log('dY"? Audio playback started');
+      } catch (error) {
+        console.warn('dY"? Failed to autoplay audio:', error);
+      }
+
       await initializeAudioAnalysis(stream, audioEl, {
         audioContextRef,
         setSpeechIntensity,
@@ -146,15 +152,9 @@ export const initializeWebRTCConnection = async (
         stopSpeaking,
         setVoiceState
       });
-      
-      // Start playing to trigger the playing event (for compatibility)
-      audioEl.play().catch((error: any) => {
-        console.warn('⚠️ Failed to autoplay audio:', error);
-      });
-      
-      // Monitor the track for when it ends
+
       event.track.addEventListener('ended', () => {
-        console.log('🔇 Audio track ended - stopping speech and mouth animation');
+        console.log('dY"? Audio track ended - stopping speech and mouth animation');
         if (setSpeechIntensity) setSpeechIntensity(0);
         if (stopSpeaking) {
           stopSpeaking();
@@ -162,11 +162,6 @@ export const initializeWebRTCConnection = async (
           setVoiceState('idle');
         }
         (window as any).__currentVoiceState = 'idle';
-      });
-      
-      // Also monitor track state changes
-      event.track.addEventListener('ended', () => {
-        console.log('🔇 Audio track ended event fired');
       });
     }
   });

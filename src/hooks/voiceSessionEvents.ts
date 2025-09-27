@@ -353,17 +353,59 @@ export const setupSessionEventHandlers = (
   
   // Also listen for response events that might indicate speaking
   session.on('response.created' as any, () => {
-    console.log('📢 Response created - AI is preparing to speak');
+    console.log('dY"? Response created - AI is preparing to speak');
     debugSetVoiceState('thinking');
+
+    setTimeout(() => {
+      const currentState = (window as any).__currentVoiceState;
+      if (currentState === 'thinking') {
+        console.warn('dY"? Still in thinking state after 3s, checking audio element...');
+        const audioElement = (window as any).__hexaAudioEl;
+        if (audioElement && !audioElement.paused && audioElement.currentTime > 0) {
+          console.log('dY"? Audio appears to be playing; forcing speaking state');
+          if (startSpeaking) {
+            startSpeaking();
+          } else {
+            setVoiceState('speaking');
+          }
+        }
+      }
+    }, 3000);
   });
   
 
   
   session.on('response.output_item.added' as any, (item: any) => {
-    console.log('📢 Output item added:', item);
-    if (item?.type === 'audio' || item?.content_type?.includes('audio')) {
-      console.log('🎵 Audio output item detected - starting mouth animation');
+    console.log('dY"? Response output item added:', item);
+    const isAudio = item?.content_type === 'audio' ||
+      item?.modality === 'audio' ||
+      item?.type === 'audio' ||
+      (Array.isArray(item?.content) && item.content.some((part: any) => part?.type === 'audio'));
+
+    if (!isAudio) {
+      return;
+    }
+
+    if (isVoiceDisabledNow()) {
+      console.log('dY"? Voice disabled: ignoring audio output item');
+      return;
+    }
+
+    console.log('dY"? Audio output item detected - entering speaking state');
+    if (!isCurrentlySpeaking) {
+      isCurrentlySpeaking = true;
+      if (startSpeaking) {
+        startSpeaking();
+      } else {
+        setVoiceState('speaking');
+      }
+    }
+  });
+  session.on('response.audio_transcript.done' as any, (data: any) => {
+    console.log('dY"? Audio transcript done:', data);
+    if (data?.transcript && !isVoiceDisabledNow()) {
       if (!isCurrentlySpeaking) {
+        console.log('dY"? Transcript indicates audio playback - entering speaking state');
         isCurrentlySpeaking = true;
         if (startSpeaking) {
           startSpeaking();
@@ -373,6 +415,7 @@ export const setupSessionEventHandlers = (
       }
     }
   });
+
 
   session.on('conversation.item.created' as any, (item: any) => {
     if (item?.role === 'user' && Array.isArray(item?.content) && item.content.some((part: any) => part?.type === 'input_text')) {

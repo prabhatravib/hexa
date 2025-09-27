@@ -5,8 +5,21 @@ export type SessionLike = any;
 // Returns a callable send-like function across SDK variants or null
 export function getSessionSend(session: SessionLike): ((evt: any) => any) | null {
   if (!session) return null;
-  const send = session.send || session.emit || session.transport?.sendEvent;
-  return typeof send === 'function' ? send.bind(session) : null;
+
+  const transport = (session as any).transport;
+  if (transport && typeof transport.sendEvent === 'function') {
+    return transport.sendEvent.bind(transport);
+  }
+
+  if (typeof (session as any).sendEvent === 'function') {
+    return (session as any).sendEvent.bind(session);
+  }
+
+  if (typeof session.send === 'function') {
+    return session.send.bind(session);
+  }
+
+  return null;
 }
 
 // Best-effort send that won’t throw; resolves true if a method existed
