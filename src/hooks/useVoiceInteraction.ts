@@ -3,6 +3,7 @@ import { useVoiceAgentService } from './voiceAgentService';
 import { useVoiceConnectionService } from './voiceConnectionService';
 import { useVoiceControlService } from './voiceControlService';
 import { safeSessionSend, isRealtimeReady } from '@/lib/voiceSessionUtils';
+import { getBaseInstructions } from '@/lib/externalContext';
 import { useVoiceAnimation } from './useVoiceAnimation';
 import { getSupportedLanguageCodes, DEFAULT_LANGUAGE } from '@/lib/languageConfig';
 import { useExternalDataStore } from '@/store/externalDataStore';
@@ -24,7 +25,7 @@ export const useVoiceInteraction = (options: UseVoiceInteractionOptions = {}) =>
     onResponse,
     onError,
     defaultLanguage = DEFAULT_LANGUAGE,
-    supportedLanguages = getSupportedLanguageCodes()
+    supportedLanguages = getSupportedLanguageCodes(),
   } = options;
 
   const {
@@ -46,10 +47,6 @@ export const useVoiceInteraction = (options: UseVoiceInteractionOptions = {}) =>
 
   // Get voice disabled state from animation store
   const { isVoiceDisabled } = useAnimationStore();
-
-
-
-  
 
   const { initializeOpenAIAgent, initializeOpenAIAgentFromWorker } = useVoiceAgentService({
     setVoiceState,
@@ -88,7 +85,7 @@ export const useVoiceInteraction = (options: UseVoiceInteractionOptions = {}) =>
       console.log('🎯 useVoiceInteraction: Transcript is not empty, length:', transcript.length);
     }
   }, [transcript]);
-  
+
   const wsRef = useRef<WebSocket | null>(null);
   const openaiAgentRef = useRef<any>(null);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
@@ -96,7 +93,7 @@ export const useVoiceInteraction = (options: UseVoiceInteractionOptions = {}) =>
   const isPlayingRef = useRef(false);
 
   // External data management with guards
-  const currentData = useExternalDataStore((s) => s.currentData);
+  const currentData = useExternalDataStore(s => s.currentData);
   const lastHashRef = useRef<string | null>(null);
   const lastSessionRef = useRef<string | null>(null);
 
@@ -122,7 +119,7 @@ export const useVoiceInteraction = (options: UseVoiceInteractionOptions = {}) =>
     setTranscript,
     startSpeaking,
     stopSpeaking,
-    setSpeechIntensity: handleSpeechIntensity
+    setSpeechIntensity: handleSpeechIntensity,
   });
 
   const {
@@ -131,7 +128,7 @@ export const useVoiceInteraction = (options: UseVoiceInteractionOptions = {}) =>
     playAudioQueue,
     sendText: sendTextControl,
     switchAgent: switchAgentControl,
-    interrupt: interruptControl
+    interrupt: interruptControl,
   } = useVoiceControlService({
     setVoiceState,
     onError,
@@ -143,9 +140,9 @@ export const useVoiceInteraction = (options: UseVoiceInteractionOptions = {}) =>
     openaiAgentRef,
     audioContextRef,
     audioQueueRef,
-    isPlayingRef
+    isPlayingRef,
   });
-  
+
   // Connect using SSE for receiving messages
   const connect = useCallback(async () => {
     try {
@@ -164,7 +161,7 @@ export const useVoiceInteraction = (options: UseVoiceInteractionOptions = {}) =>
       onError?.('Failed to initialize voice service');
     }
   }, [connectToVoice, setVoiceState, onError, setInitializationState]);
-  
+
   // Start recording
   const startRecording = useCallback(async () => {
     // Block recording if voice is disabled
@@ -180,7 +177,7 @@ export const useVoiceInteraction = (options: UseVoiceInteractionOptions = {}) =>
           await audioContextRef.current.resume();
         }
       }
-      
+
       await startRecordingControl();
       setIsRecording(true);
     } catch (error) {
@@ -188,7 +185,7 @@ export const useVoiceInteraction = (options: UseVoiceInteractionOptions = {}) =>
       setVoiceState('error');
     }
   }, [startRecordingControl, setVoiceState, isVoiceDisabled]);
-   
+
   // Stop recording
   const stopRecording = useCallback(async () => {
     try {
@@ -198,88 +195,96 @@ export const useVoiceInteraction = (options: UseVoiceInteractionOptions = {}) =>
       console.error('Failed to stop recording:', error);
     }
   }, [stopRecordingControl]);
-   
+
   // Send text message via HTTP POST
-  const sendText = useCallback(async (text: string) => {
-    if (isVoiceDisabled) {
-      console.log('dY"? Text sending blocked - voice is disabled');
-      return false;
-    }
+  const sendText = useCallback(
+    async (text: string) => {
+      if (isVoiceDisabled) {
+        console.log('dY"? Text sending blocked - voice is disabled');
+        return false;
+      }
 
-    const session: any = (window as any).activeSession;
-    if (session && isRealtimeReady(session)) {
+      const session: any = (window as any).activeSession;
+      if (session && isRealtimeReady(session)) {
+        try {
+          console.log('dY"? Sending text via Realtime session');
+
+          // Clear any previous audio state so we start fresh
+          if (stopSpeaking) {
+            stopSpeaking();
+          }
+          setVoiceState('thinking');
+
+          const queued = await safeSessionSend(session, {
+            type: 'conversation.item.create',
+            item: {
+              type: 'message',
+              role: 'user',
+              content: [{ type: 'input_text', text }],
+            },
+          });
+
+          if (!queued) {
+            throw new Error('Realtime conversation.item.create failed');
+          }
+
+          await new Promise(resolve => setTimeout(resolve, 100));
+
+          const triggered = await safeSessionSend(session, {
+            type: 'response.create',
+            response: {
+              modalities: ['audio', 'text'],
+              instructions:
+                getBaseInstructions() ||
+                'You are Hexa, the Hexagon assistant. Respond aloud to the user.',
+              voice: 'marin',
+              output_audio_format: 'pcm16',
+            },
+          });
+
+          if (!triggered) {
+            throw new Error('Realtime response.create failed');
+          }
+
+          console.log('dY"? Text sent and voice response requested');
+          setTranscript(text);
+          return true;
+        } catch (error) {
+          console.warn('Realtime text send failed, falling back to HTTP:', error);
+        }
+      }
+
       try {
-        console.log('dY"? Sending text via Realtime session');
-
-        // Clear any previous audio state so we start fresh
-        if (stopSpeaking) {
-          stopSpeaking();
+        console.log('dY"? Sending text via HTTP fallback');
+        const success = await sendTextControl(text);
+        if (success) {
+          setTranscript(text);
+          setVoiceState('thinking');
+          return true;
         }
-        setVoiceState('thinking');
-
-        const queued = await safeSessionSend(session, {
-          type: 'conversation.item.create',
-          item: {
-            type: 'message',
-            role: 'user',
-            content: [{ type: 'input_text', text }]
-          }
-        });
-
-        if (!queued) {
-          throw new Error('Realtime conversation.item.create failed');
-        }
-
-        await new Promise((resolve) => setTimeout(resolve, 100));
-
-        const triggered = await safeSessionSend(session, {
-          type: 'response.create',
-          response: {
-            modalities: ['audio', 'text'],
-            instructions: "Please respond with voice to the user's message",
-            voice: 'marin',
-            output_audio_format: 'pcm16'
-          }
-        });
-
-        if (!triggered) {
-          throw new Error('Realtime response.create failed');
-        }
-
-        console.log('dY"? Text sent and voice response requested');
-        setTranscript(text);
-        return true;
+        return false;
       } catch (error) {
-        console.warn('Realtime text send failed, falling back to HTTP:', error);
+        console.error('Failed to send text:', error);
+        onError?.('Failed to send message');
+        return false;
       }
-    }
+    },
+    [sendTextControl, onError, isVoiceDisabled, setVoiceState, stopSpeaking]
+  );
 
-    try {
-      console.log('dY"? Sending text via HTTP fallback');
-      const success = await sendTextControl(text);
-      if (success) {
-        setTranscript(text);
-        setVoiceState('thinking');
-        return true;
-      }
-      return false;
-    } catch (error) {
-      console.error('Failed to send text:', error);
-      onError?.('Failed to send message');
-      return false;
-    }
-  }, [sendTextControl, onError, isVoiceDisabled, setVoiceState, stopSpeaking]);
-   
   // Switch agent
-  const switchAgent = useCallback(async (agentId: string) => {
-    try {
-      await switchAgentControl(agentId);
-    } catch (error) {
-      console.error('Failed to switch agent:', error);
-      onError?.('Failed to switch agent');
-    }
-  }, [switchAgentControl, onError]);
- 
+  const switchAgent = useCallback(
+    async (agentId: string) => {
+      try {
+        await switchAgentControl(agentId);
+      } catch (error) {
+        console.error('Failed to switch agent:', error);
+        onError?.('Failed to switch agent');
+      }
+    },
+    [switchAgentControl, onError]
+  );
+
   // Interrupt current response
   const interrupt = useCallback(async () => {
     try {
@@ -308,8 +313,10 @@ export const useVoiceInteraction = (options: UseVoiceInteractionOptions = {}) =>
       prompt: currentData.prompt,
     });
 
-    crypto.subtle.digest('SHA-256', new TextEncoder().encode(body)).then((buf) => {
-      const hash = Array.from(new Uint8Array(buf)).map(b => b.toString(16).padStart(2,'0')).join('');
+    crypto.subtle.digest('SHA-256', new TextEncoder().encode(body)).then(buf => {
+      const hash = Array.from(new Uint8Array(buf))
+        .map(b => b.toString(16).padStart(2, '0'))
+        .join('');
       if (hash === lastHashRef.current) return;
 
       lastHashRef.current = hash;
@@ -317,17 +324,19 @@ export const useVoiceInteraction = (options: UseVoiceInteractionOptions = {}) =>
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body,
-      }).catch(() => { lastHashRef.current = null; });
+      }).catch(() => {
+        lastHashRef.current = null;
+      });
     });
   }, [currentData, isConnected, sessionInfo]);
-   
+
   // Clean up
   useEffect(() => {
     if (autoStart && !isVoiceDisabled) {
       setInitializationState('initializing');
       connect();
     }
-    
+
     return () => {
       if (wsRef.current) {
         // Handle both WebSocket and EventSource cleanup
@@ -344,7 +353,7 @@ export const useVoiceInteraction = (options: UseVoiceInteractionOptions = {}) =>
       stopRecording();
     };
   }, [autoStart, isVoiceDisabled, connect, setInitializationState]);
-   
+
   return {
     isConnected,
     isRecording,
@@ -377,16 +386,12 @@ export const useVoiceInteraction = (options: UseVoiceInteractionOptions = {}) =>
       if (supportedLanguages.includes(language)) {
         setCurrentLanguage(language);
         // Send language change instruction to the AI
-        void sendText(`Please switch to ${language === 'en' ? 'English' : language} for our conversation.`);
+        void sendText(
+          `Please switch to ${language === 'en' ? 'English' : language} for our conversation.`
+        );
       }
     },
     clearTranscript: () => setTranscript(''),
-    clearResponse: () => setResponse('')
+    clearResponse: () => setResponse(''),
   };
 };
-
-
-
-
-
-

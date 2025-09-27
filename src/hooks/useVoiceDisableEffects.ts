@@ -105,8 +105,7 @@ export function useVoiceDisableEffects({
             if (s._inputAudioBuffer) {
               s._inputAudioBuffer.disable = () => console.log('Input audio buffer disabled');
 
-              s._inputAudioBuffer.enable = () =>
-                console.log('Input audio buffer enable blocked');
+              s._inputAudioBuffer.enable = () => console.log('Input audio buffer enable blocked');
             }
 
             if (s._audioProcessor) {
@@ -139,7 +138,7 @@ export function useVoiceDisableEffects({
           type: 'session.update',
 
           session: {
-            turn_detection: { create_response: true, threshold: 0.5, silence_duration_ms: 500 },
+            turn_detection: { create_response: false, threshold: 0.5, silence_duration_ms: 500 },
           },
         });
 
@@ -170,4 +169,3 @@ export function useVoiceDisableEffects({
     }
   }, [isVoiceDisabled, stopRecording, interrupt]);
 }
-

@@ -8,15 +8,15 @@ import { useExternalDataStore } from '../store/externalDataStore';
 export function stripCodeFences(raw: string): string {
   // Remove ```xxx fences and trim
   let text = raw
-    .replace(/^```[\w]*\s*/, '')    // Remove opening fence (```mermaid or ```)
-    .replace(/```\s*$/, '')         // Remove closing fence
+    .replace(/^```[\w]*\s*/, '') // Remove opening fence (```mermaid or ```)
+    .replace(/```\s*$/, '') // Remove closing fence
     .trim();
-  
+
   // If we still have content, return it
   if (text) {
     return text;
   }
-  
+
   // Fallback: if stripping removed everything, return original
   console.log('⚠️ Code fence stripping removed all content, using original text');
   return raw.trim();
@@ -41,11 +41,11 @@ export function setActiveSession(session: any) {
 function isRealtimeReady() {
   const s = (window as any).activeSession || activeSession;
   const ready = !!s && s.state === 'open' && s.transport?.sendEvent;
-  console.log('🔍 Realtime ready check:', { 
-    hasSession: !!s, 
-    state: s?.state, 
+  console.log('🔍 Realtime ready check:', {
+    hasSession: !!s,
+    state: s?.state,
     hasTransport: !!s?.transport?.sendEvent,
-    result: ready 
+    result: ready,
   });
   return ready;
 }
@@ -54,13 +54,17 @@ export function setBaseInstructions(instr: string) {
   baseInstructions = instr || '';
 }
 
+export function getBaseInstructions(): string {
+  return baseInstructions;
+}
+
 // Store global external data that persists across sessions
 let globalExternalData: string | null = null;
 
 export function setGlobalExternalData(data: string) {
   globalExternalData = data;
   console.log('🌍 Global external data set:', data);
-  
+
   // If there's an active session, inject immediately
   if (activeSession) {
     console.log('🔄 Active session found, injecting immediately');
@@ -80,9 +84,9 @@ export async function injectGlobalExternalData() {
     console.log('🔄 Injecting global external data into new session:', globalExternalData);
     await injectExternalContext({ text: globalExternalData });
   } else {
-    console.log('ℹ️ No global external data or no active session:', { 
-      hasGlobalData: !!globalExternalData, 
-      hasActiveSession: !!activeSession 
+    console.log('ℹ️ No global external data or no active session:', {
+      hasGlobalData: !!globalExternalData,
+      hasActiveSession: !!activeSession,
     });
   }
 }
@@ -94,11 +98,11 @@ export function clearActiveSession() {
 export function injectCurrentExternalData() {
   const store = useExternalDataStore.getState();
   const currentData = store.currentData;
-  
+
   if (!currentData || !currentData.text) {
     return;
   }
-  
+
   injectExternalContext({ text: currentData.text }); // fire-and-forget
 }
 
@@ -109,7 +113,7 @@ export async function injectExternalContext(data: { text: string } | string): Pr
     console.log('❌ No text to inject');
     return false;
   }
-  
+
   const stripped = stripCodeFences(text);
   if (!stripped) {
     console.log('❌ Text became empty after stripping');
@@ -123,7 +127,7 @@ export async function injectExternalContext(data: { text: string } | string): Pr
   }
 
   const s = (window as any).activeSession || activeSession;
-  
+
   if (!s) {
     console.log('❌ No active session found');
     (window as any).__pendingExternalContext = stripped;
@@ -146,8 +150,8 @@ export async function injectExternalContext(data: { text: string } | string): Pr
       item: {
         type: 'message',
         role: 'system',
-        content: [{ type: 'input_text', text: stripped }]
-      }
+        content: [{ type: 'input_text', text: stripped }],
+      },
     });
     console.log('✅ External context successfully injected into voice session!');
     console.log('📝 Injected text:', stripped.substring(0, 200) + '...');
@@ -164,22 +168,24 @@ export async function injectExternalContext(data: { text: string } | string): Pr
 async function cryptoDigest(s: string): Promise<string> {
   const enc = new TextEncoder().encode(s);
   const buf = await crypto.subtle.digest('SHA-256', enc);
-  return Array.from(new Uint8Array(buf)).map(b => b.toString(16).padStart(2, '0')).join('');
+  return Array.from(new Uint8Array(buf))
+    .map(b => b.toString(16).padStart(2, '0'))
+    .join('');
 }
 
 // Function to inject external data from Zustand store on demand
 export function injectExternalDataFromStore() {
   const store = useExternalDataStore.getState();
   const formattedContext = store.getFormattedContext();
-  
+
   if (!formattedContext) {
     return;
   }
-  
+
   if (!activeSession) {
     return;
   }
-  
+
   // Use the same injection method as injectExternalContext
   injectExternalContext({ text: formattedContext }); // fire-and-forget
 }

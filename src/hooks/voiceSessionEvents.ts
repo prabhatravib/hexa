@@ -1,6 +1,8 @@
 type VoiceState = 'idle' | 'listening' | 'thinking' | 'speaking' | 'error';
 import { useAnimationStore } from '@/store/animationStore';
 import { isVoiceDisabledNow, silenceAudioEverywhere } from '@/lib/voiceDisableGuard';
+import { getBaseInstructions } from '@/lib/externalContext';
+import { safeSessionSend } from '@/lib/voiceSessionUtils';
 
 interface SessionEventHandlersOptions {
   setVoiceState: (state: VoiceState) => void;
@@ -11,18 +13,22 @@ interface SessionEventHandlersOptions {
   setSpeechIntensity?: (intensity: number) => void;
 }
 
-export const setupSessionEventHandlers = (
-  session: any,
-  options: SessionEventHandlersOptions
-) => {
-  const { setVoiceState, startSpeaking, stopSpeaking, audioEl, audioContextRef, setSpeechIntensity } = options;
+export const setupSessionEventHandlers = (session: any, options: SessionEventHandlersOptions) => {
+  const {
+    setVoiceState,
+    startSpeaking,
+    stopSpeaking,
+    audioEl,
+    audioContextRef,
+    setSpeechIntensity,
+  } = options;
 
   // Helper: extract a human-readable transcript from various content shapes
   const extractTranscript = (content: any): string | null => {
     if (!content) return null;
     // If the content is already a string
     if (typeof content === 'string') return content.trim() || null;
-    
+
     // Arrays of parts: try each until we find text
     if (Array.isArray(content)) {
       for (const part of content) {
@@ -44,15 +50,16 @@ export const setupSessionEventHandlers = (
 
     return null;
   };
-  
+
   // Create a debug wrapper for setVoiceState that logs changes
   const debugSetVoiceState = (state: VoiceState) => {
     console.log(`🎤 Voice state changing from ${(window as any).__currentVoiceState} to ${state}`);
     setVoiceState(state);
   };
-  
+
   // Track if we're currently speaking to avoid duplicate calls
   let isCurrentlySpeaking = false;
+  let awaitingMicResponse = false;
 
   const forceStopSpeaking = (reason: string) => {
     // Check if voice is disabled before stopping speaking
@@ -65,7 +72,7 @@ export const setupSessionEventHandlers = (
     } catch (error) {
       console.error('Failed to check voice disabled state:', error);
     }
-    
+
     console.log(`🔇 ${reason} - leaving speaking state`);
     isCurrentlySpeaking = false;
     if (stopSpeaking) {
@@ -88,8 +95,10 @@ export const setupSessionEventHandlers = (
     } catch (error) {
       console.error('Failed to check voice disabled state:', error);
     }
-    
-    console.log(`⏳ ${reason} received - checking if this is a real audio end or just an early event`);
+
+    console.log(
+      `⏳ ${reason} received - checking if this is a real audio end or just an early event`
+    );
 
     // If no audio element, stop immediately
     if (!audioEl) {
@@ -99,10 +108,11 @@ export const setupSessionEventHandlers = (
     }
 
     // Check multiple conditions for audio still playing
-    const audioStillPlaying = !audioEl.paused && 
-                             audioEl.currentTime > 0 && 
-                             audioEl.readyState >= 2 && // HAVE_CURRENT_DATA or better
-                             audioEl.srcObject !== null;
+    const audioStillPlaying =
+      !audioEl.paused &&
+      audioEl.currentTime > 0 &&
+      audioEl.readyState >= 2 && // HAVE_CURRENT_DATA or better
+      audioEl.srcObject !== null;
 
     if (!audioStillPlaying) {
       console.log(`✅ Audio not playing, stopping immediately`);
@@ -111,8 +121,12 @@ export const setupSessionEventHandlers = (
     }
 
     // Audio is still playing - this is an early event, wait for real end
-    console.log(`⚠️ ${reason} fired but audio still playing - this is an early event, waiting for real audio end`);
-    console.log(`Audio state: paused=${audioEl.paused}, currentTime=${audioEl.currentTime}, readyState=${audioEl.readyState}`);
+    console.log(
+      `⚠️ ${reason} fired but audio still playing - this is an early event, waiting for real audio end`
+    );
+    console.log(
+      `Audio state: paused=${audioEl.paused}, currentTime=${audioEl.currentTime}, readyState=${audioEl.readyState}`
+    );
 
     let checkCount = 0;
     const maxChecks = 300; // 30 seconds maximum (100ms * 300)
@@ -120,26 +134,28 @@ export const setupSessionEventHandlers = (
     // Monitor audio state until it actually stops
     const checkAudioState = setInterval(() => {
       checkCount++;
-      
+
       // More robust check for audio playing
-      const stillPlaying = !audioEl.paused && 
-                          audioEl.currentTime > 0 && 
-                          audioEl.readyState >= 2 &&
-                          audioEl.srcObject !== null;
-      
+      const stillPlaying =
+        !audioEl.paused &&
+        audioEl.currentTime > 0 &&
+        audioEl.readyState >= 2 &&
+        audioEl.srcObject !== null;
+
       // Also check if audio time is advancing
       const previousTime = audioEl.currentTime;
-      
+
       setTimeout(() => {
         const timeAdvanced = audioEl.currentTime > previousTime;
-        
+
         if (!stillPlaying || !timeAdvanced || checkCount >= maxChecks) {
-          console.log(`✅ Audio actually finished playing (stillPlaying=${stillPlaying}, timeAdvanced=${timeAdvanced}, checks=${checkCount}), now stopping mouth animation`);
+          console.log(
+            `✅ Audio actually finished playing (stillPlaying=${stillPlaying}, timeAdvanced=${timeAdvanced}, checks=${checkCount}), now stopping mouth animation`
+          );
           clearInterval(checkAudioState);
           forceStopSpeaking(reason);
         }
       }, 50); // Check if time advanced after 50ms
-      
     }, 100); // Check every 100ms for fast response
   };
 
@@ -147,7 +163,10 @@ export const setupSessionEventHandlers = (
   session.on('agent_start' as any, () => {
     if (isVoiceDisabledNow()) {
       console.log('🔇 Voice disabled: ignoring agent_start and silencing audio');
-      try { (audioEl as any).muted = true; if (!audioEl.paused) audioEl.pause(); } catch {}
+      try {
+        (audioEl as any).muted = true;
+        if (!audioEl.paused) audioEl.pause();
+      } catch {}
       (window as any).__currentVoiceState = 'idle';
       setVoiceState('idle');
       return;
@@ -167,15 +186,17 @@ export const setupSessionEventHandlers = (
   session.on('transport_event' as any, (events: any) => {
     // Handle both array and single object cases
     const eventArray = Array.isArray(events) ? events : [events];
-    
+
     eventArray.forEach((event: any) => {
       if (event.type === 'output_audio_buffer.stopped') {
         if (isVoiceDisabledNow()) {
           console.log('🔇 Voice disabled: ignoring output_audio_buffer.stopped event');
           return;
         }
-        
-        console.log('🎵 output_audio_buffer.stopped - real audio finished, stopping mouth animation');
+
+        console.log(
+          '🎵 output_audio_buffer.stopped - real audio finished, stopping mouth animation'
+        );
         forceStopSpeaking('output_audio_buffer.stopped');
       }
     });
@@ -183,19 +204,21 @@ export const setupSessionEventHandlers = (
 
   // Ignore audio_stopped events completely - they're unreliable
   session.on('audio_stopped' as any, () => {
-    console.log('⏸️ audio_stopped received (completely ignored) - will wait for output_audio_buffer.stopped');
+    console.log(
+      '⏸️ audio_stopped received (completely ignored) - will wait for output_audio_buffer.stopped'
+    );
     // Do nothing - let output_audio_buffer.stopped handle stopping
   });
 
   session.on('agent_end' as any, (...args: any[]) => {
     console.log('📢 agent_end - waiting for output_audio_buffer.stopped before stopping');
     console.log('🔍 agent_end args:', args);
-    
+
     // Extract response text from agent_end event
     if (args.length > 2 && args[2]) {
       const responseText = args[2];
       console.log('✅ Extracted response text from agent_end:', responseText);
-      
+
       // Send the response text to the voice connection service
       if (typeof window !== 'undefined' && (window as any).__hexaSetResponse) {
         (window as any).__hexaSetResponse(responseText);
@@ -236,7 +259,7 @@ export const setupSessionEventHandlers = (
   // Handle transcription events - simplified approach
   session.on('conversation.item.input_audio_transcription.completed' as any, (event: any) => {
     console.log('📝 User transcription completed:', event);
-    
+
     const transcript = event?.transcript || event?.text || event?.content;
     if (transcript && typeof transcript === 'string' && transcript.trim()) {
       console.log('✅ Found user transcript:', transcript);
@@ -250,11 +273,32 @@ export const setupSessionEventHandlers = (
   // Handle transcript events
   session.on('input_audio_buffer.speech_started' as any, () => {
     console.log('🎤 Speech started - user is speaking');
+    awaitingMicResponse = true;
   });
 
   session.on('input_audio_buffer.speech_stopped' as any, () => {
     console.log('🎤 Speech stopped - user finished speaking');
-    
+
+    if (awaitingMicResponse) {
+      awaitingMicResponse = false;
+
+      if (isVoiceDisabledNow()) {
+        console.log('🔇 Voice disabled: skipping response.create after speech stop');
+      } else {
+        console.log('💬 Speech stopped - requesting response from model');
+        debugSetVoiceState('thinking');
+        void safeSessionSend(session, {
+          type: 'response.create',
+          response: {
+            modalities: ['audio', 'text'],
+            instructions:
+              getBaseInstructions() ||
+              'You are Hexa, the Hexagon assistant. Respond aloud to the user.',
+          },
+        });
+      }
+    }
+
     // Try to get transcript from the session
     try {
       const history = session.history || [];
@@ -284,20 +328,23 @@ export const setupSessionEventHandlers = (
 
   // Try to capture transcript from various possible events
   const transcriptEvents = [
-    'conversation.item.input_audio_transcription', 
-    'input_audio_buffer.transcription', 
+    'conversation.item.input_audio_transcription',
+    'input_audio_buffer.transcription',
     'transcription',
     'conversation.item.input_audio_transcription.done',
     'input_audio_buffer.speech_stopped',
-    'conversation.item.input_audio_transcription.completed'
+    'conversation.item.input_audio_transcription.completed',
   ];
-  
+
   transcriptEvents.forEach(eventName => {
     session.on(eventName as any, (data: any) => {
       console.log(`📝 Transcript event ${eventName}:`, data);
       console.log(`📝 Event data type:`, typeof data);
-      console.log(`📝 Event data keys:`, data && typeof data === 'object' ? Object.keys(data) : 'not an object');
-      
+      console.log(
+        `📝 Event data keys:`,
+        data && typeof data === 'object' ? Object.keys(data) : 'not an object'
+      );
+
       if (data && typeof data === 'string' && data.trim()) {
         console.log('✅ Found transcript:', data);
         if (typeof window !== 'undefined' && (window as any).__hexaSetTranscript) {
@@ -308,7 +355,12 @@ export const setupSessionEventHandlers = (
         if (typeof window !== 'undefined' && (window as any).__hexaSetTranscript) {
           (window as any).__hexaSetTranscript(data.text);
         }
-      } else if (data && data.transcript && typeof data.transcript === 'string' && data.transcript.trim()) {
+      } else if (
+        data &&
+        data.transcript &&
+        typeof data.transcript === 'string' &&
+        data.transcript.trim()
+      ) {
         console.log('✅ Found transcript in data.transcript:', data.transcript);
         if (typeof window !== 'undefined' && (window as any).__hexaSetTranscript) {
           (window as any).__hexaSetTranscript(data.transcript);
@@ -317,15 +369,22 @@ export const setupSessionEventHandlers = (
     });
   });
 
-  
   // Set up various event handlers for mouth animation
   // Try multiple event names as the SDK might use different ones
-  const possibleAudioEvents = ['audio', 'response.audio.delta', 'response.audio', 'conversation.item.audio'];
+  const possibleAudioEvents = [
+    'audio',
+    'response.audio.delta',
+    'response.audio',
+    'conversation.item.audio',
+  ];
   possibleAudioEvents.forEach(eventName => {
     session.on(eventName as any, (audioData: any) => {
       if (isVoiceDisabledNow()) {
         console.log(`🔇 Voice disabled: ignoring ${eventName} and pausing audio`);
-        try { (audioEl as any).muted = true; if (!audioEl.paused) audioEl.pause(); } catch {}
+        try {
+          (audioEl as any).muted = true;
+          if (!audioEl.paused) audioEl.pause();
+        } catch {}
         (window as any).__currentVoiceState = 'idle';
         setVoiceState('idle');
         return;
@@ -341,16 +400,23 @@ export const setupSessionEventHandlers = (
       }
     });
   });
-  
+
   // Handle audio completion events - ignore premature done events
-  const possibleDoneEvents = ['audio_done', 'response.audio.done', 'response.done', 'conversation.item.done'];
+  const possibleDoneEvents = [
+    'audio_done',
+    'response.audio.done',
+    'response.done',
+    'conversation.item.done',
+  ];
   possibleDoneEvents.forEach(eventName => {
     session.on(eventName as any, () => {
-      console.log(`⛔ Ignoring premature event ${eventName}; waiting for output_audio_buffer.stopped or audio element end`);
+      console.log(
+        `⛔ Ignoring premature event ${eventName}; waiting for output_audio_buffer.stopped or audio element end`
+      );
       // Do not change voice state here; rely on output_audio_buffer.stopped and audio element events
     });
   });
-  
+
   // Also listen for response events that might indicate speaking
   session.on('response.created' as any, () => {
     console.log('dY"? Response created - AI is preparing to speak');
@@ -372,12 +438,11 @@ export const setupSessionEventHandlers = (
       }
     }, 3000);
   });
-  
 
-  
   session.on('response.output_item.added' as any, (item: any) => {
     console.log('dY"? Response output item added:', item);
-    const isAudio = item?.content_type === 'audio' ||
+    const isAudio =
+      item?.content_type === 'audio' ||
       item?.modality === 'audio' ||
       item?.type === 'audio' ||
       (Array.isArray(item?.content) && item.content.some((part: any) => part?.type === 'audio'));
@@ -416,9 +481,12 @@ export const setupSessionEventHandlers = (
     }
   });
 
-
   session.on('conversation.item.created' as any, (item: any) => {
-    if (item?.role === 'user' && Array.isArray(item?.content) && item.content.some((part: any) => part?.type === 'input_text')) {
+    if (
+      item?.role === 'user' &&
+      Array.isArray(item?.content) &&
+      item.content.some((part: any) => part?.type === 'input_text')
+    ) {
       console.log('dY"? User text item created, preparing for voice response');
       if (!isCurrentlySpeaking) {
         debugSetVoiceState('thinking');
@@ -438,4 +506,3 @@ export const setupSessionEventHandlers = (
     // Note: onError is not available in this context, so we just set the state
   });
 };
-
