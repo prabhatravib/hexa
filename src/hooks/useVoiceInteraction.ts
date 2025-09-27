@@ -97,7 +97,7 @@ const waitForConversationAck = useCallback(async (session: any, text: string) =>
 
   return await new Promise<boolean>(resolve => {
     let settled = false;
-    let timeoutId: ReturnType<typeof window.setTimeout> | null = null;
+    let timeoutId: number | null = null;
 
     const cleanup = () => {
       if (settled) return;

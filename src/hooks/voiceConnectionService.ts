@@ -269,7 +269,7 @@ export const useVoiceConnectionService = ({
                     stopSyntheticFlap();
                     setSpeechIntensity?.(0);
                     stopSpeaking?.();
-                    setVoiceState('connecting');
+                    setVoiceState('idle');
                   }
 
                   const session = await initializeOpenAIAgent(d);
