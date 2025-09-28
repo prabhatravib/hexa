@@ -1,5 +1,5 @@
 {
-  "name": "hexa-worker",
+  "name": "hexa",
   "compatibility_date": "2025-08-16",
   "assets": {
     "directory": "./dist"
