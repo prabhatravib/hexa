@@ -444,7 +444,20 @@ Use this over prior knowledge. "Infflow" with two f's is the user's company, not
         });
       }
 
-      // Store the external data
+      // 🚫 CHECK: Block external data if session is in narrator mode
+      const sessionMeta = await this.getSessionMeta(sessionId);
+      if (sessionMeta && sessionMeta.mode === 'narrator') {
+        console.log('🚫 Blocked external data: Session is in narrator mode');
+        return this.core.createJsonResponse({
+          success: false,
+          blocked: true,
+          reason: 'narrator_mode_active',
+          message: 'External data not accepted while in narrator mode',
+          sessionId
+        }, 403); // 403 Forbidden
+      }
+
+      // Store the external data (only if NOT in narrator mode)
       const externalData = {
         text,
         image,

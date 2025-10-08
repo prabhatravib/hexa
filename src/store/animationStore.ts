@@ -20,6 +20,7 @@ interface AnimationStore {
   isSpeaking: boolean;
   speechIntensity: number; // 0-1 for mouth animation
   isVoiceDisabled: boolean; // New state for voice toggle
+  vadSpeaking: boolean; // VAD detection flag - true when voice activity detected
   
   // Initialization state
   initializationState: InitializationState;
@@ -47,6 +48,7 @@ interface AnimationStore {
   setSpeaking: (speaking: boolean) => void;
   setSpeechIntensity: (intensity: number) => void;
   setVoiceDisabled: (disabled: boolean) => void;
+  setVadSpeaking: (speaking: boolean) => void;
   
   // Initialization state setters
   setInitializationState: (state: InitializationState) => void;
@@ -97,6 +99,7 @@ export const useAnimationStore = create<AnimationStore>((set, get) => ({
   isSpeaking: false,
   speechIntensity: 0,
   isVoiceDisabled: false,
+  vadSpeaking: false,
   
   // Initialization state
   initializationState: 'initializing',
@@ -121,6 +124,7 @@ export const useAnimationStore = create<AnimationStore>((set, get) => ({
   setSpeaking: (speaking) => set({ isSpeaking: speaking }),
   setSpeechIntensity: (intensity) => set({ speechIntensity: intensity }),
   setVoiceDisabled: (disabled) => set({ isVoiceDisabled: disabled }),
+  setVadSpeaking: (speaking) => set({ vadSpeaking: speaking }),
   
   // Initialization state setters
   setInitializationState: (state) => set({ initializationState: state }),

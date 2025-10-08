@@ -81,6 +81,7 @@ export const initializeAudioAnalysis = async (
         console.log('🎵 Stopping audio analysis - voice state is idle or analysis stopped');
         analysisRafId = null;
         if (setSpeechIntensity) setSpeechIntensity(0);
+        useAnimationStore.getState().setVadSpeaking(false);
         return;
       }
 
@@ -103,6 +104,9 @@ export const initializeAudioAnalysis = async (
       const norm = Math.min(1, over / (1 - noiseFloor));
       const alpha = speaking ? ATTACK : RELEASE;
       level += alpha * ((speaking ? norm : 0) - level);
+      
+      // Update VAD flag in store
+      useAnimationStore.getState().setVadSpeaking(speaking);
       
       // Add debugging for analyzer output
       if (process.env.NODE_ENV === 'development' && Math.random() < 0.01) { // Log 1% of the time
