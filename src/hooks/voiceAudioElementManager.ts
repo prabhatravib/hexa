@@ -1,4 +1,4 @@
-import { initializeAudioAnalysis } from './voiceAudioAnalysis';
+import { initializeAudioAnalysis, stopAudioAnalysis } from './voiceAudioAnalysis';
 import { useAnimationStore } from '@/store/animationStore';
 
 type VoiceState = 'idle' | 'listening' | 'thinking' | 'speaking' | 'error';
@@ -120,6 +120,19 @@ export const setupAudioElementHandlers = (
     analysisStarted = false;
     if (setSpeechIntensity) setSpeechIntensity(0);
     
+    // Reset mouth animation target (SSR-safe)
+    try {
+      const store = useAnimationStore.getState();
+      if (store.setMouthTarget) {
+        store.setMouthTarget(0);
+      }
+    } catch (error) {
+      // Store not available, ignore
+    }
+    
+    // Stop the audio analyzer
+    stopAudioAnalysis();
+    
     // Force stop speaking state
     if (stopSpeaking) {
       stopSpeaking();
@@ -143,6 +156,19 @@ export const setupAudioElementHandlers = (
     analysisStarted = false;
     if (setSpeechIntensity) setSpeechIntensity(0);
     
+    // Reset mouth animation target (SSR-safe)
+    try {
+      const store = useAnimationStore.getState();
+      if (store.setMouthTarget) {
+        store.setMouthTarget(0);
+      }
+    } catch (error) {
+      // Store not available, ignore
+    }
+    
+    // Stop the audio analyzer
+    stopAudioAnalysis();
+    
     if (stopSpeaking) {
       stopSpeaking();
     } else {
@@ -157,6 +183,19 @@ export const setupAudioElementHandlers = (
     audioPlaying = false;
     analysisStarted = false;
     if (setSpeechIntensity) setSpeechIntensity(0);
+    
+    // Reset mouth animation target (SSR-safe)
+    try {
+      const store = useAnimationStore.getState();
+      if (store.setMouthTarget) {
+        store.setMouthTarget(0);
+      }
+    } catch (error) {
+      // Store not available, ignore
+    }
+    
+    // Stop the audio analyzer
+    stopAudioAnalysis();
     
     if (stopSpeaking) {
       stopSpeaking();
@@ -173,6 +212,20 @@ export const setupAudioElementHandlers = (
     audioPlaying = false;
     analysisStarted = false;
     if (setSpeechIntensity) setSpeechIntensity(0);
+    
+    // Reset mouth animation target (SSR-safe)
+    try {
+      const store = useAnimationStore.getState();
+      if (store.setMouthTarget) {
+        store.setMouthTarget(0);
+      }
+    } catch (error) {
+      // Store not available, ignore
+    }
+    
+    // Stop the audio analyzer
+    stopAudioAnalysis();
+    
     if (stopSpeaking) stopSpeaking();
     (window as any).__currentVoiceState = 'idle';
   });

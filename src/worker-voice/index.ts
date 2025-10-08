@@ -27,7 +27,7 @@ export default {
     }
     
     // Handle external data endpoints
-    if (url.pathname === '/api/external-data' || url.pathname === '/api/external-data/status' || url.pathname === '/api/set-base-instructions' || url.pathname === '/api/set-live-session' || url.pathname === '/external-data.md') {
+    if (url.pathname === '/api/external-data' || url.pathname === '/api/external-data/status' || url.pathname === '/api/set-base-instructions' || url.pathname === '/api/set-live-session' || url.pathname === '/api/send-email' || url.pathname === '/external-data.md') {
       const durableObjectId = env.VOICE_SESSION.idFromName('global');
       const durableObject = env.VOICE_SESSION.get(durableObjectId);
       

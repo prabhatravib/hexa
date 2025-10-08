@@ -1,13 +1,11 @@
 # Voice Agents Implementation
 
-This repository now includes a comprehensive voice agent system built with OpenAI's Realtime API and the OpenAI Agents SDK. The system supports multiple specialized agents with different personalities and capabilities.
+This repository includes a voice agent system built with OpenAI's Realtime API. As of the latest rationalization, the app uses a single Hexagon persona with the frontend owning runtime instruction updates via `session.update`. The worker focuses on transport, session lifecycle, and external-data ingestion/broadcast.
 
 ## 🚀 Features
 
-### Multi-Agent System
-- **Hexagon Assistant**: Friendly AI companion with hexagonal personality
-- **Customer Support Agent**: Professional customer service representative
-- **Language Tutor**: Enthusiastic language learning partner
+### Persona
+- **Hexagon Assistant**: Friendly AI companion with hexagonal personality (current and only persona)
 
 ### Advanced Capabilities
 - Real-time speech-to-speech communication
@@ -26,19 +24,24 @@ The system uses OpenAI's multimodal speech-to-speech architecture with the `gpt-
 - Filters out noise automatically
 - Provides low-latency interactions
 
-### Components Structure
+### Components Structure (simplified)
 ```
 src/
-├── agents/
-│   ├── voiceAgentConfig.ts      # Agent configurations and personalities
-│   └── voiceAgentManager.ts     # Agent management and tool integration
-├── components/
-│   ├── VoiceControl.tsx         # Main voice interaction component
-│   ├── AgentSelector.tsx        # Agent switching interface
-│   └── VoiceAgentDemo.tsx       # Interactive demo page
 ├── hooks/
-│   └── useVoiceInteraction.ts   # Voice interaction logic
-└── worker-voice.ts              # Cloudflare Worker backend
+│   ├── voiceAgentInitializer.ts   # Single source for instructions; creates Realtime session
+│   ├── useVoiceInteraction.ts     # Voice interaction logic
+│   ├── voiceConnectionService.ts  # SSE/WebRTC bridge
+│   └── voiceControlService.ts     # Recording & commands
+├── lib/
+│   ├── externalContext.ts         # External-data injection helpers
+│   └── voiceSessionUtils.ts       # Realtime helpers (includes updateSessionInstructions)
+└── worker-voice/                  # Cloudflare Worker backend
+    ├── voice-session.ts           # Durable Object
+    ├── voice-session-core.ts      # SSE & lifecycle
+    ├── voice-session-external-data.ts # External-data endpoints and broadcast
+    ├── voice-session-handlers.ts  # HTTP routes (no instruction ownership)
+    ├── openai-connection.ts       # Session creation
+    └── agent-manager.ts           # Hexagon-only agent announcements
 ```
 
 ## 🎯 Agent Personalities
@@ -97,9 +100,7 @@ npm run dev
 5. Use the agent selector to switch between agents
 
 ### Agent Switching
-- Click the agent icon in the top-right corner
-- Select from available agents
-- The conversation context is maintained during switches
+The worker now runs in Hexagon-only mode. Any switch requests are coerced to `hexagon` and broadcast for UI/state consistency; instruction updates are owned by the frontend.
 
 ### Voice Commands
 - **Interrupt**: Stop the current response
@@ -108,18 +109,15 @@ npm run dev
 
 ## 🔧 Configuration
 
-### Customizing Agent Personalities
-Edit `src/agents/voiceAgentConfig.ts` to modify:
-- Personality traits
-- Instructions and behaviors
-- Conversation flows
-- Tool capabilities
+### Customizing Instructions
+Edit `src/hooks/voiceAgentInitializer.ts` to modify:
+- Base instructions and tone
+- Language policy combination
+- How external-data is emphasized at startup
+At runtime, use `updateSessionInstructions(session, newText)` from `src/lib/voiceSessionUtils.ts`.
 
-### Adding New Agents
-1. Create a new agent configuration
-2. Add it to the `VoiceAgentManager`
-3. Include relevant tools and instructions
-4. Update the UI components
+### Adding New Personas (optional)
+If you need multiple personas again, reintroduce a persona registry and call `updateSessionInstructions` from the frontend when switching. Keep the worker as a transport/external-data relay for consistency.
 
 ### Tool Integration
 Agents can use specialized tools:

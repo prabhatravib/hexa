@@ -1,6 +1,10 @@
 import { useEffect, useRef, useCallback } from 'react';
 import { useAnimationStore } from '@/store/animationStore';
 
+// Global references for immediate control from non-React modules
+let globalStopFallbackFlap: (() => void) | null = null;
+let globalHandleSilence: (() => void) | null = null;
+
 export const useVoiceAnimation = () => {
   const {
     setVoiceState,
@@ -26,6 +30,7 @@ export const useVoiceAnimation = () => {
   const lastTargetRef = useRef(0); // Last target value for change-based throttling
   const lastAnalyzerWriteRef = useRef(0); // Last time real analyser updated the mouth
   const fallbackFlapRafRef = useRef<number | null>(null); // RAF id for synthetic flap
+  const silenceDetectedRef = useRef(false);
   
   // Performance instrumentation
   const performanceRef = useRef({
@@ -87,14 +92,37 @@ export const useVoiceAnimation = () => {
 
   const stopFallbackFlap = useCallback(() => {
     if (fallbackFlapRafRef.current) {
-      // console.log('🎯 Stopping fallback flap animation');
       cancelAnimationFrame(fallbackFlapRafRef.current);
       fallbackFlapRafRef.current = null;
-      // Reset mouth to closed position
-      setMouthTarget(0);
-      resetMouth();
     }
-  }, [setMouthTarget, resetMouth]);
+  }, []);
+
+  // Register the stopFallbackFlap function globally for immediate access
+  useEffect(() => {
+    globalStopFallbackFlap = stopFallbackFlap;
+    return () => {
+      globalStopFallbackFlap = null;
+    };
+  }, [stopFallbackFlap]);
+
+  const handleImmediateSilence = useCallback(() => {
+    silenceDetectedRef.current = true;
+    stopFallbackFlap();
+    setMouthTarget(0);
+    resetMouth();
+    setSpeechIntensity(0);
+    emaAccumulatorRef.current = 0;
+    lastTargetRef.current = 0;
+  }, [resetMouth, setMouthTarget, setSpeechIntensity, stopFallbackFlap]);
+
+  useEffect(() => {
+    globalHandleSilence = handleImmediateSilence;
+    return () => {
+      if (globalHandleSilence === handleImmediateSilence) {
+        globalHandleSilence = null;
+      }
+    };
+  }, [handleImmediateSilence]);
 
   // Fallback: If we are in 'speaking' but no analyser updates are coming, drive a synthetic flap
   const startFallbackFlap = useCallback(() => {
@@ -109,6 +137,13 @@ export const useVoiceAnimation = () => {
     const loop = () => {
       frameCount++;
       
+      if (silenceDetectedRef.current) {
+        fallbackFlapRafRef.current = null;
+        setMouthTarget(0);
+        resetMouth();
+        return;
+      }
+
       // Check current state from store directly
       const currentState = useAnimationStore.getState().voiceState;
       
@@ -154,6 +189,7 @@ export const useVoiceAnimation = () => {
       if (emaAccumulatorRef.current === 0) {
         emaAccumulatorRef.current = 0.1; // Small initial value to avoid jump
       }
+      silenceDetectedRef.current = false;
       // Begin fallback flapping in case analyser isn't feeding us
       startFallbackFlap();
     } else {
@@ -162,6 +198,7 @@ export const useVoiceAnimation = () => {
       stopFallbackFlap();
       resetMouth();
       setMouthTarget(0);
+      setSpeechIntensity(0); // Ensure speech intensity is reset for graceful closing
       emaAccumulatorRef.current = 0;
       lastTargetRef.current = 0;
       
@@ -211,4 +248,17 @@ export const useVoiceAnimation = () => {
     stopSpeaking,
     setInitializationState,
   };
+};
+
+// Export the global stopFallbackFlap function for immediate access
+export const stopFallbackFlapImmediately = () => {
+  if (globalStopFallbackFlap) {
+    globalStopFallbackFlap();
+  }
+};
+
+export const handleSilenceImmediately = () => {
+  if (globalHandleSilence) {
+    globalHandleSilence();
+  }
 };

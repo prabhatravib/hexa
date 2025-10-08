@@ -11,6 +11,15 @@ export interface ExternalData {
   type?: string;
 }
 
+export interface SessionData {
+  sessionId: string;
+  mode?: 'default' | 'narrator';
+  systemPromptOverride?: string;
+  isOverride?: boolean;
+  awaitingContext?: boolean;
+  timestamp?: number;
+}
+
 export class VoiceSessionExternalData {
   private currentExternalData: ExternalData | null = null;
   private externalContext: string = "";
@@ -34,6 +43,72 @@ export class VoiceSessionExternalData {
     }
     // Fallback to core session ID if no live session
     return this.core.getSessionId();
+  }
+
+  private async storeSessionMeta(sessionId: string, meta: SessionData): Promise<void> {
+    try {
+      const key = `session_meta_${sessionId}`;
+      await this.state.storage.put(key, meta);
+      console.log('[Narrator Mode] Stored session meta:', { key, ...meta });
+    } catch (err) {
+      console.error('❌ Failed to store session meta:', err);
+    }
+  }
+
+  private async getSessionMeta(sessionId: string): Promise<SessionData | null> {
+    try {
+      const key = `session_meta_${sessionId}`;
+      const data = await this.state.storage.get(key) as SessionData | null;
+      return data || null;
+    } catch (err) {
+      console.error('❌ Failed to get session meta:', err);
+      return null;
+    }
+  }
+
+  private async applyNarratorOverrideIfPossible(sessionId: string, context?: string): Promise<void> {
+    try {
+      const openai = (this.messageHandlers as any).openaiConnection;
+      if (!openai || !openai.isConnected()) {
+        console.log('[Narrator Mode] OpenAI session not connected yet; will apply on connect.');
+        return;
+      }
+
+      let instructions = (context || '').trim();
+      if (!instructions) {
+        const meta = await this.getSessionMeta(sessionId);
+        instructions = (meta?.systemPromptOverride || '').trim();
+      }
+      if (!instructions) {
+        console.log('[Narrator Mode] No narrator context available to apply.');
+        return;
+      }
+
+      console.log(`[Narrator Mode] Using narrator system prompt for session: ${sessionId}`);
+      await openai.sendMessage({
+        type: 'session.update',
+        session: { instructions }
+      });
+      this.core.broadcastToClients({
+        type: 'narrator_prompt_applied',
+        sessionId,
+        message: 'Narrator instructions applied to session'
+      });
+    } catch (err) {
+      console.error('❌ Failed to apply narrator override:', err);
+    }
+  }
+
+  async setNarratorAwaitingContext(sessionId: string): Promise<void> {
+    const meta: SessionData = {
+      sessionId,
+      mode: 'narrator',
+      awaitingContext: true,
+      isOverride: false,
+      timestamp: Date.now()
+    };
+    await this.storeSessionMeta(sessionId, meta);
+    console.log(`[Narrator Mode] Initialized narrator session awaiting context: ${sessionId}`);
   }
 
   async injectExternalFact(text: string): Promise<void> {
@@ -262,17 +337,22 @@ Use this over prior knowledge. "Infflow" with two f's is the user's company, not
       const targetSessionId = iframeSessionId || this.getCurrentOpenAISessionId();
       console.log('🆔 Status request using session ID:', targetSessionId, iframeSessionId ? '(from iframe)' : '(from OpenAI)');
 
-      // Get external data for the current session
-      const externalData = await this.getExternalDataBySessionId(targetSessionId);
+      // Get external data and narrator meta for the current session
+      const [externalData, sessionMeta] = await Promise.all([
+        this.getExternalDataBySessionId(targetSessionId),
+        this.getSessionMeta(targetSessionId)
+      ]);
       const hasExternalData = externalData !== null;
       const dataType = externalData?.type || null;
       const timestamp = externalData?.timestamp || null;
+      const hasNarratorContext = !!(sessionMeta?.mode === 'narrator' && sessionMeta?.systemPromptOverride);
 
       // Debug: List all storage keys to see what's available
       const allKeys = await this.state.storage.list();
       console.log('🔍 All storage keys:', Array.from(allKeys.keys()));
-      console.log('🔍 Looking for key:', `external_data_${targetSessionId}`);
+      console.log('🔍 Looking for keys:', `external_data_${targetSessionId}`, `session_meta_${targetSessionId}`);
       console.log('🔍 Found external data:', externalData);
+      console.log('🔍 Found session meta:', sessionMeta);
 
       return this.core.createJsonResponse({
         hasExternalData,
@@ -280,10 +360,8 @@ Use this over prior knowledge. "Infflow" with two f's is the user's company, not
         timestamp,
         sessionId: targetSessionId,
         externalData: externalData,  // Include the actual data
-        debug: {
-          allKeys: Array.from(allKeys.keys()),
-          lookingFor: `external_data_${targetSessionId}`
-        }
+        hasNarratorContext,
+        sessionMeta
       });
 
     } catch (error) {
@@ -314,6 +392,7 @@ Use this over prior knowledge. "Infflow" with two f's is the user's company, not
         mermaidCode?: string;
         diagramImage?: string;
         sessionId?: string;
+        context?: string; // narrator mode context
       };
 
       // Handle different input formats from external websites
@@ -321,6 +400,7 @@ Use this over prior knowledge. "Infflow" with two f's is the user's company, not
       const image = body.image || body.diagramImage || '';
       const prompt = body.prompt || '';
       const type = body.type || '';
+      const context = (body.context || '').trim();
       const sessionId = body.sessionId || this.core.getSessionId();
 
       if (!text && !image) {
@@ -332,8 +412,37 @@ Use this over prior knowledge. "Infflow" with two f's is the user's company, not
         hasImage: !!image, 
         prompt, 
         type,
+        hasNarratorContext: !!context,
         sessionId 
       });
+
+      // Narrator mode: store and apply system prompt override
+      if (type === 'narrator' && context) {
+        const meta: SessionData = {
+          sessionId,
+          mode: 'narrator',
+          systemPromptOverride: context,
+          isOverride: true,
+          awaitingContext: false,
+          timestamp: Date.now()
+        };
+        await this.storeSessionMeta(sessionId, meta);
+
+        console.log(`[Narrator Mode] Context stored for session: ${sessionId}`);
+        await this.applyNarratorOverrideIfPossible(sessionId, context);
+
+        this.core.broadcastToClients({
+          type: 'narrator_mode_activated',
+          sessionId,
+          message: 'Narrator context stored and applied'
+        });
+
+        return this.core.createJsonResponse({
+          success: true,
+          mode: 'narrator',
+          sessionId
+        });
+      }
 
       // Store the external data
       const externalData = {
@@ -392,7 +501,21 @@ Use this over prior knowledge. "Infflow" with two f's is the user's company, not
   // Public method to trigger auto-injection when session is ready
   // This is now handled by broadcasting to frontend instead of direct injection
   async triggerAutoInjectionIfReady(): Promise<void> {
-    console.log('🔄 Auto-injection now handled by frontend via broadcast');
+    try {
+      const sid = this.core.getSessionId();
+      const meta = await this.getSessionMeta(sid);
+
+      if (meta?.mode === 'narrator' && meta.isOverride && meta.systemPromptOverride) {
+        console.log(`[Narrator Mode] Auto-applying narrator instructions on session open: ${sid}`);
+        await this.applyNarratorOverrideIfPossible(sid, meta.systemPromptOverride);
+      } else if (meta?.mode === 'narrator' && meta.awaitingContext) {
+        console.log(`[Narrator Mode] Narrator mode active, awaiting context for session: ${sid}`);
+      } else {
+        console.log('🔄 Auto-injection now handled by frontend via broadcast');
+      }
+    } catch (err) {
+      console.error('❌ Failed during narrator auto-apply:', err);
+    }
   }
 
 

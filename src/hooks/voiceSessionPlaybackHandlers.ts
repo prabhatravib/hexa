@@ -1,4 +1,5 @@
 import { useAnimationStore } from '@/store/animationStore';
+import { stopAudioAnalysis } from './voiceAudioAnalysis';
 import { isVoiceDisabledNow } from '@/lib/voiceDisableGuard';
 import type {
   DebugSetVoiceState,
@@ -68,6 +69,17 @@ export const registerVoiceSessionPlaybackHandlers = (
 
     console.log(`dY"ÃƒÂ¯Ã‚Â¿Ã‚Â½ ${reason} - leaving speaking state`);
     runtimeState.isCurrentlySpeaking = false;
+    
+    // Reset mouth animation target to prevent stuck-open mouth
+    try {
+      useAnimationStore.getState().setMouthTarget(0);
+    } catch (error) {
+      console.error('Failed to reset mouth target:', error);
+    }
+    
+    // Stop the audio analyzer
+    stopAudioAnalysis();
+    
     if (stopSpeaking) {
       stopSpeaking();
     } else {

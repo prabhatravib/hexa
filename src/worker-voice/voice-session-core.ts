@@ -372,4 +372,9 @@ export class VoiceSessionCore {
     
     console.log(`✅ Sent to ${this.clients.size} SSE clients`);
   }
+
+  // Email functionality - will be implemented by VoiceSession
+  async sendEmailToCreator(userMessage: string, contactInfo?: string, sessionId?: string): Promise<{success: boolean, message?: string, error?: string}> {
+    throw new Error('sendEmailToCreator must be implemented by VoiceSession');
+  }
 }

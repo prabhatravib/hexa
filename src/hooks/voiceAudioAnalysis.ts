@@ -1,4 +1,5 @@
 import { useAnimationStore } from '@/store/animationStore';
+import { handleSilenceImmediately } from '@/hooks/useVoiceAnimation';
 
 type VoiceState = 'idle' | 'listening' | 'thinking' | 'speaking' | 'error';
 
@@ -11,6 +12,7 @@ interface AudioAnalysisOptions {
 }
 
 let analysisStarted = false; // guard so analyser is wired only once
+let analysisRafId: number | null = null; // RAF ID for the analysis loop
 
 export const initializeAudioAnalysis = async (
   stream: MediaStream | null,
@@ -73,6 +75,15 @@ export const initializeAudioAnalysis = async (
     const RELEASE = 0.06;
 
     const tick = () => {
+      // Check if analysis should continue - stop if voice state is idle
+      const currentVoiceState = useAnimationStore.getState().voiceState;
+      if (currentVoiceState === 'idle' || !analysisStarted) {
+        console.log('🎵 Stopping audio analysis - voice state is idle or analysis stopped');
+        analysisRafId = null;
+        if (setSpeechIntensity) setSpeechIntensity(0);
+        return;
+      }
+
       const td = new Uint8Array(analyser.fftSize);
       analyser.getByteTimeDomainData(td);
       let sum = 0;
@@ -84,8 +95,10 @@ export const initializeAudioAnalysis = async (
       if (!speaking) noiseFloor = 0.9 * noiseFloor + 0.1 * rms;
       const openThr = noiseFloor + OPEN_MARGIN;
       const closeThr = noiseFloor + CLOSE_MARGIN;
-      if (!speaking && rms > openThr) speaking = true;
-      if (speaking && rms < closeThr) speaking = false;
+      if (!speaking && rms > openThr) speaking = true;      if (speaking && rms < closeThr) {
+        speaking = false;
+        handleSilenceImmediately();
+      }
       const over = Math.max(0, rms - noiseFloor);
       const norm = Math.min(1, over / (1 - noiseFloor));
       const alpha = speaking ? ATTACK : RELEASE;
@@ -96,12 +109,12 @@ export const initializeAudioAnalysis = async (
         console.log(`🎵 Analyzer: rms=${rms.toFixed(4)}, level=${level.toFixed(4)}, speaking=${speaking}`);
       }
       
-      if (setSpeechIntensity) setSpeechIntensity(level);
-      requestAnimationFrame(tick);
+      if (setSpeechIntensity) setSpeechIntensity(speaking ? level : 0);
+      analysisRafId = requestAnimationFrame(tick);
     };
     
     // Start the analyzer tick loop
-    tick();
+    analysisRafId = requestAnimationFrame(tick);
   };
 
   // If we have a stream, use MediaStreamSource
@@ -113,6 +126,30 @@ export const initializeAudioAnalysis = async (
   }
 };
 
+export const stopAudioAnalysis = () => {
+  console.log('🎵 Stopping audio analysis...');
+  analysisStarted = false;
+  
+  // Reset mouth animation target to prevent stuck-open mouth (SSR-safe)
+  try {
+    const store = useAnimationStore.getState();
+    if (store.setMouthTarget) {
+      store.setMouthTarget(0);
+    }
+  } catch (error) {
+    // Store not available (SSR or unmounted), ignore
+  }
+  
+  if (analysisRafId !== null) {
+    cancelAnimationFrame(analysisRafId);
+    analysisRafId = null;
+  }
+};
+
 export const resetAudioAnalysis = () => {
   analysisStarted = false;
+  if (analysisRafId !== null) {
+    cancelAnimationFrame(analysisRafId);
+    analysisRafId = null;
+  }
 };

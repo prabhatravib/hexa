@@ -17,14 +17,70 @@ export class MessageHandlers {
     prompt?: string;
     type?: string;
   } | null = null;
+  private core: any; // Reference to VoiceSessionCore
+  
+  // Email flow state
+  private emailFlowActive: boolean = false;
+  private emailFlowStep: 'initial' | 'waiting_message' | 'waiting_contact' | 'sending' = 'initial';
+  private emailMessageContent: string = '';
+  private emailContactInfo: string = '';
 
   constructor(openaiConnection: any, broadcastToClients: (message: any) => void) {
     this.openaiConnection = openaiConnection;
     this.broadcastToClients = broadcastToClients;
   }
 
+  setCore(core: any): void {
+    this.core = core;
+  }
+
   setOpenAIConnection(openaiConnection: any): void {
     this.openaiConnection = openaiConnection;
+  }
+
+  private async sendCollectedEmail(): Promise<void> {
+    try {
+      console.log('📧 Sending collected email...', {
+        message: this.emailMessageContent,
+        contact: this.emailContactInfo
+      });
+
+      const result = await this.core.sendEmailToCreator(
+        this.emailMessageContent,
+        this.emailContactInfo || 'Anonymous',
+        'voice-command'
+      );
+
+      if (result.success) {
+        console.log('✅ Email sent successfully');
+        this.broadcastToClients({
+          type: 'email_sent',
+          message: 'Your message has been sent to creator developer prabhat!',
+          success: true
+        });
+      } else {
+        console.error('❌ Email sending failed:', result.error);
+        this.broadcastToClients({
+          type: 'email_error',
+          message: 'Sorry, I had trouble sending your message. Please try again.',
+          success: false,
+          error: result.error
+        });
+      }
+    } catch (error) {
+      console.error('❌ Email sending exception:', error);
+      this.broadcastToClients({
+        type: 'email_error',
+        message: 'Sorry, I had trouble sending your message. Please try again.',
+        success: false
+      });
+    } finally {
+      // Reset email flow state
+      this.emailFlowActive = false;
+      this.emailFlowStep = 'initial';
+      this.emailMessageContent = '';
+      this.emailContactInfo = '';
+    }
   }
 
   // Method to update external data context
@@ -290,6 +346,50 @@ export class MessageHandlers {
           
         case 'conversation.item.input_audio_transcription.completed':
           console.log('📝 Transcription completed in worker:', message.transcript);
+          
+          // Check if user is asking to send an email
+          const transcript = (message.transcript || '').toLowerCase();
+          
+          if (!this.emailFlowActive && 
+              ((transcript.includes('send') && transcript.includes('email')) ||
+              (transcript.includes('send') && transcript.includes('message') && 
+               (transcript.includes('creator') || transcript.includes('developer') || transcript.includes('prabhat'))) ||
+              (transcript.includes('contact') && 
+               (transcript.includes('creator') || transcript.includes('developer') || transcript.includes('prabhat'))))) {
+            
+            console.log('📧 Email intent detected in user speech');
+            this.emailFlowActive = true;
+            this.emailFlowStep = 'waiting_message';
+            this.emailMessageContent = '';
+            this.emailContactInfo = '';
+            
+            this.broadcastToClients({
+              type: 'email_flow_started',
+              message: 'Email flow initiated'
+            });
+          } else if (this.emailFlowActive) {
+            // We're in email flow, collect the message
+            if (this.emailFlowStep === 'waiting_message') {
+              // This is the message they want to send
+              this.emailMessageContent = message.transcript;
+              this.emailFlowStep = 'waiting_contact';
+              console.log('📧 Email message collected:', this.emailMessageContent);
+            } else if (this.emailFlowStep === 'waiting_contact') {
+              // Check if they're providing contact info or declining
+              if (transcript.includes('no') || transcript.includes('skip') || transcript.includes('anonymous')) {
+                this.emailContactInfo = '';
+                console.log('📧 User declined to provide contact info');
+              } else {
+                this.emailContactInfo = message.transcript;
+                console.log('📧 Email contact info collected:', this.emailContactInfo);
+              }
+              
+              // Now send the email
+              this.emailFlowStep = 'sending';
+              this.sendCollectedEmail();
+            }
+          }
+          
           this.broadcastToClients({
             type: 'transcription',
             text: message.transcript
@@ -358,7 +458,7 @@ export class MessageHandlers {
             }
           });
           break;
-          
+
         default:
           console.log('Unknown OpenAI message type:', message.type);
       }

@@ -1,0 +1,84 @@
+graph TB
+    subgraph "Client Browser"
+        subgraph "React App"
+            MAIN["main.tsx<br/>React Root"]
+            APP["App.tsx<br/>Voice Shell"]
+            HEX["HexagonContainer.tsx / AnimatedHexagon.tsx<br/>Voice UI"]
+            CHAT["ChatPanel.tsx<br/>Text UI"]
+            STATE["animationStore.ts<br/>Shared Voice State"]
+        end
+
+        subgraph "Voice Hooks"
+            VOICE_CORE["useVoiceInteraction.ts<br/>Session Orchestrator"]
+            VOICE_LINKS["useVoiceConnectionService.ts<br/>SSE / WebRTC Bridge"]
+            VOICE_CTRL["useVoiceControlService.ts<br/>Recording & Commands"]
+            VOICE_ANIM["useVoiceAnimation.ts<br/>Audio → Visuals"]
+        end
+
+        subgraph "Context Utilities"
+            CONTEXT_STORE["externalDataStore.ts<br/>Zustand Store"]
+            CONTEXT_UTILS["externalContext.ts<br/>Injection Helpers"]
+            GUARD["voiceDisableGuard.ts<br/>Voice Safeguards"]
+        end
+    end
+
+    subgraph "Cloudflare Worker"
+        ENTRY["worker-voice/index.ts<br/>Request Router"]
+        DO["voice-session.ts<br/>Durable Object"]
+        CORE["voice-session-core.ts<br/>SSE & Lifecycle"]
+        HANDLERS["voice-session-handlers.ts<br/>HTTP Routes"]
+        EXT_DATA["voice-session-external-data.ts<br/>Context Broadcast"]
+        OPENAI_CONN["openai-connection.ts<br/>Realtime Session"]
+    end
+
+    subgraph "External Services"
+        OPENAI["OpenAI Realtime API"]
+        DATA_API["/api/external-data<br/>Iframe & Manual Upload"]
+        ASSETS["Cloudflare Assets<br/>dist/ bundle"]
+    end
+
+    %% React surface flow
+    MAIN --> APP --> HEX
+    APP --> CHAT
+    HEX --> VOICE_CORE
+    CHAT --> VOICE_CORE
+    VOICE_CORE --> VOICE_LINKS
+    VOICE_CORE --> VOICE_CTRL
+    VOICE_CORE --> VOICE_ANIM
+    VOICE_CORE --> CONTEXT_STORE
+    VOICE_ANIM --> STATE
+    VOICE_LINKS --> STATE
+    STATE --> HEX
+
+    %% Worker interactions
+    VOICE_LINKS -->|SSE /voice/sse| ENTRY
+    VOICE_CTRL -->|POST /voice/message| ENTRY
+    CONTEXT_UTILS -->|POST /api/external-data| ENTRY
+    ENTRY --> DO --> CORE
+    DO --> HANDLERS
+    DO --> EXT_DATA
+    DO --> OPENAI_CONN
+    CORE --> STATE
+    EXT_DATA --> CONTEXT_STORE
+    EXT_DATA -->|status| DATA_API
+
+    %% External integrations
+    OPENAI_CONN -.-> OPENAI
+    ENTRY --> ASSETS
+    ASSETS --> MAIN
+    CONTEXT_STORE --> CONTEXT_UTILS
+    GUARD --> VOICE_CTRL
+    GUARD --> VOICE_LINKS
+
+    %% Styling
+    classDef react fill:#d4f1f9,stroke:#1b5e20,stroke-width:2px;
+    classDef hook fill:#fff3cd,stroke:#f0ad4e,stroke-width:2px;
+    classDef context fill:#e8f5e9,stroke:#388e3c,stroke-width:2px;
+    classDef worker fill:#f3e5f5,stroke:#6a1b9a,stroke-width:2px;
+    classDef external fill:#ffe0b2,stroke:#ef6c00,stroke-width:2px;
+
+    class MAIN,APP,HEX,CHAT,STATE react
+    class VOICE_CORE,VOICE_LINKS,VOICE_CTRL,VOICE_ANIM hook
+    class CONTEXT_STORE,CONTEXT_UTILS,GUARD context
+    class ENTRY,DO,CORE,HANDLERS,EXT_DATA,OPENAI_CONN worker
+    class OPENAI,DATA_API,ASSETS external

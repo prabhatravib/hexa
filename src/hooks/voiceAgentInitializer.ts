@@ -92,7 +92,7 @@ ${getLanguageInstructions()}`;
     // Set base instructions for external context injection
     setBaseInstructions(baseInstructions);
 
-    // Create agent with proper configuration
+    // Create agent without tools initially to avoid blocking connection
     const agent = new RealtimeAgent({
       name: 'Hexa, an AI Assistant',
       instructions: baseInstructions
@@ -305,6 +305,122 @@ ${getLanguageInstructions()}`;
 
     if (ok) {
       setActiveSession(session);
+      
+      // Register tool after connection is established
+      try {
+        console.log('📧 Registering sendEmailToCreator tool with agent...');
+        
+        // Create tool with invoke function
+        const emailTool = {
+          type: "function" as const,
+          name: "sendEmailToCreator",
+          description: "Send an email message to the creator/developer Prabhat. Use this when the user wants to contact, email, or send a message to the creator, developer, or Prabhat.",
+          parameters: {
+            type: "object" as const,
+            properties: {
+              message: { 
+                type: "string" as const, 
+                description: "The message content to send to the creator" 
+              },
+              contactInfo: { 
+                type: "string" as const, 
+                description: "Optional email address or name of the sender for follow-up" 
+              }
+            },
+            required: ["message"] as const,
+            additionalProperties: false
+          },
+          strict: false,
+          needsApproval: async () => false,
+          invoke: async (args: any) => {
+            console.log('📧 Email tool invoke called with full args:', JSON.stringify(args, null, 2));
+            
+            // The SDK passes args in the context.history array
+            // Find the function_call item and parse its arguments string
+            let message = '';
+            let contactInfo = 'Anonymous';
+            
+            try {
+              const history = args?.context?.history || [];
+              const functionCallItem = history.find((item: any) => item.type === 'function_call');
+              
+              if (functionCallItem && functionCallItem.arguments) {
+                // Parse the JSON string containing the actual arguments
+                const parsedArgs = JSON.parse(functionCallItem.arguments);
+                message = parsedArgs.message || '';
+                contactInfo = parsedArgs.contactInfo || 'Anonymous';
+              }
+            } catch (parseError) {
+              console.error('📧 Error parsing arguments:', parseError);
+            }
+            
+            console.log('📧 Extracted message:', message);
+            console.log('📧 Extracted contactInfo:', contactInfo);
+            
+            try {
+              const response = await fetch('/api/send-email', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                  message: message,
+                  userEmail: contactInfo,
+                  sessionId: 'realtime-tool-invoke'
+                })
+              });
+              const result: any = await response.json();
+              if (result?.success) {
+                console.log('✅ Email sent successfully:', result);
+              } else {
+                console.error('❌ Email send failed:', result);
+              }
+              return result;
+            } catch (error) {
+              console.error('❌ Email tool invoke error:', error);
+              return { success: false, error: String(error) };
+            }
+          }
+        };
+        
+        // Add tool directly to agent's tools array
+        if (!(agent as any).tools) {
+          (agent as any).tools = [];
+        }
+        (agent as any).tools.push(emailTool);
+        console.log('✅ Email tool added to agent.tools array');
+        
+        // Also register with OpenAI API via session.update
+        const send = getSessionSend(session as any);
+        if (send) {
+          await send({
+            type: 'session.update',
+            session: {
+              tools: [{
+                type: "function",
+                name: "sendEmailToCreator",
+                description: "Send an email message to the creator/developer Prabhat. Use this when the user wants to contact, email, or send a message to the creator, developer, or Prabhat.",
+                parameters: {
+                  type: "object",
+                  properties: {
+                    message: { 
+                      type: "string", 
+                      description: "The message content to send to the creator" 
+                    },
+                    contactInfo: { 
+                      type: "string", 
+                      description: "Optional email address or name of the sender for follow-up" 
+                    }
+                  },
+                  required: ["message"]
+                }
+              }]
+            }
+          });
+          console.log('✅ Tool definition sent to OpenAI API via session.update');
+        }
+        
+      } catch (error) {
+        console.error('❌ Failed to register email tool:', error);
+      }
       
       // Flush any pending external context
       if ((window as any).__pendingExternalContext) {

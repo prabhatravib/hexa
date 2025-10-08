@@ -165,6 +165,7 @@ export const registerVoiceSessionTranscriptHandlers = (
   session.on('conversation.item.input_audio_transcription.completed' as any, (event: any) => {
     console.log('dYO? User transcription completed:', event);
     const transcript = event?.transcript || event?.text || event?.content;
+    
     if (!commitTranscriptText(transcript, 'transcription.completed')) {
       console.log('dYO? No usable transcript in transcription.completed event.');
     }

@@ -1,4 +1,4 @@
-import { initializeAudioAnalysis } from './voiceAudioAnalysis';
+import { initializeAudioAnalysis, stopAudioAnalysis } from './voiceAudioAnalysis';
 import { setupAudioElementHandlers } from './voiceAudioElementManager';
 import { useAnimationStore } from '@/store/animationStore';
 
@@ -156,6 +156,10 @@ export const initializeWebRTCConnection = async (
       event.track.addEventListener('ended', () => {
         console.log('dY"? Audio track ended - stopping speech and mouth animation');
         if (setSpeechIntensity) setSpeechIntensity(0);
+        
+        // Stop the audio analyzer
+        stopAudioAnalysis();
+        
         if (stopSpeaking) {
           stopSpeaking();
         } else {

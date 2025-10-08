@@ -1,6 +1,7 @@
 {
   "name": "hexa-worker",
   "compatibility_date": "2025-08-16",
+  "compatibility_flags": ["nodejs_compat"],
   "assets": {
     "directory": "./dist"
   },
@@ -13,6 +14,10 @@
       }
     ]
   },
+
+  "send_email": [
+    { "name": "SEB", "destination_address": "prabhatravib@gmail.com" }
+  ],
 
   "migrations": [
     {

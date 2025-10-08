@@ -149,6 +149,13 @@ export const AnimatedMouth: React.FC<AnimatedMouthProps> = ({
     if (currentVoiceState === 'idle') {
       // console.log('👄 Voice state is idle, stopping mouth animation');
       currentOpenness.set(0); // Reset to closed
+      
+      // Reset store target only if it's not already 0 (avoid hammering store)
+      const currentTarget = useAnimationStore.getState().mouthOpennessTarget;
+      if (currentTarget !== 0) {
+        useAnimationStore.getState().setMouthTarget(0);
+      }
+      
       if (animationFrameRef.current) {
         cancelAnimationFrame(animationFrameRef.current);
         animationFrameRef.current = null;
