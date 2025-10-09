@@ -20,7 +20,6 @@ export const setupAudioElementHandlers = (
   let audioPlaying = false;
   let analysisStarted = false;
   let audioDurationTimeout: NodeJS.Timeout | null = null;
-  let lastMouthUpdateTime = Date.now();
   
   // Fallback: ensure analyser is running even if remote_track isn't emitted
   audioEl.addEventListener('playing', async () => {
@@ -85,12 +84,8 @@ export const setupAudioElementHandlers = (
         console.log(`🎵 Audio playing: time=${audioEl.currentTime.toFixed(2)}s, duration=${audioEl.duration.toFixed(2)}s`);
       }
       
-      const store = useAnimationStore.getState();
+      // Ensure we're in speaking state while audio is playing
       const currentState = (window as any).__currentVoiceState;
-      const vadSpeaking = store.vadSpeaking;
-      const mouthTarget = store.mouthOpennessTarget;
-      
-      // Check 1: Ensure we're in speaking state while audio is playing
       if (currentState !== 'speaking') {
         console.log('⚠️ Audio playing but not in speaking state, fixing...');
         if (startSpeaking) {
@@ -98,21 +93,6 @@ export const setupAudioElementHandlers = (
         } else {
           setVoiceState('speaking');
         }
-      }
-      
-      // Check 2: Watchdog - If VAD detects speech but mouth isn't moving, restart animation
-      const timeSinceLastCheck = Date.now() - lastMouthUpdateTime;
-      if (vadSpeaking && mouthTarget < 0.05 && currentState === 'speaking' && timeSinceLastCheck > 300) {
-        console.log('⚠️ VAD detects speech but mouth stuck at', mouthTarget.toFixed(3), '- restarting animation');
-        if (startSpeaking) {
-          startSpeaking();
-        }
-        lastMouthUpdateTime = Date.now(); // Reset timer to avoid spam
-      }
-      
-      // Update mouth check timer if mouth is moving
-      if (mouthTarget > 0.05) {
-        lastMouthUpdateTime = Date.now();
       }
     }
   });
@@ -176,9 +156,12 @@ export const setupAudioElementHandlers = (
     analysisStarted = false;
     if (setSpeechIntensity) setSpeechIntensity(0);
     
-    // Reset mouth animation target (SSR-safe)
+    // Reset VAD flag and mouth animation target (SSR-safe)
     try {
       const store = useAnimationStore.getState();
+      if (store.setVadSpeaking) {
+        store.setVadSpeaking(false);
+      }
       if (store.setMouthTarget) {
         store.setMouthTarget(0);
       }

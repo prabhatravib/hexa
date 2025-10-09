@@ -1,8 +1,7 @@
 import { useEffect, useRef, useCallback } from 'react';
 import { useAnimationStore } from '@/store/animationStore';
 
-// Global references for immediate control from non-React modules
-let globalStopFallbackFlap: (() => void) | null = null;
+// Global reference for immediate control from non-React modules
 let globalHandleSilence: (() => void) | null = null;
 
 export const useVoiceAnimation = () => {
@@ -28,9 +27,8 @@ export const useVoiceAnimation = () => {
   const emaAccumulatorRef = useRef(0); // EMA accumulator for speech intensity
   const lastUpdateTimeRef = useRef(0); // Last store update time for throttling
   const lastTargetRef = useRef(0); // Last target value for change-based throttling
-  const lastAnalyzerWriteRef = useRef(0); // Last time real analyser updated the mouth
-  const fallbackFlapRafRef = useRef<number | null>(null); // RAF id for synthetic flap
   const silenceDetectedRef = useRef(false);
+  const mouthAnimationRafRef = useRef<number | null>(null);
   
   // Performance instrumentation
   const performanceRef = useRef({
@@ -90,30 +88,14 @@ export const useVoiceAnimation = () => {
     }
   }, [setMouthTarget]);
 
-  const stopFallbackFlap = useCallback(() => {
-    if (fallbackFlapRafRef.current) {
-      cancelAnimationFrame(fallbackFlapRafRef.current);
-      fallbackFlapRafRef.current = null;
-    }
-  }, []);
-
-  // Register the stopFallbackFlap function globally for immediate access
-  useEffect(() => {
-    globalStopFallbackFlap = stopFallbackFlap;
-    return () => {
-      globalStopFallbackFlap = null;
-    };
-  }, [stopFallbackFlap]);
-
   const handleImmediateSilence = useCallback(() => {
     silenceDetectedRef.current = true;
-    stopFallbackFlap();
     setMouthTarget(0);
     resetMouth();
     setSpeechIntensity(0);
     emaAccumulatorRef.current = 0;
     lastTargetRef.current = 0;
-  }, [resetMouth, setMouthTarget, setSpeechIntensity, stopFallbackFlap]);
+  }, [resetMouth, setMouthTarget, setSpeechIntensity]);
 
   useEffect(() => {
     globalHandleSilence = handleImmediateSilence;
@@ -124,101 +106,83 @@ export const useVoiceAnimation = () => {
     };
   }, [handleImmediateSilence]);
 
-  // Fallback: If we are in 'speaking' but no analyser updates are coming, drive a synthetic flap
-  const startFallbackFlap = useCallback(() => {
-    // Always stop any existing flap first
-    stopFallbackFlap();
-    
-    // console.log('🎯 Starting fallback flap animation');
+  // Mouth animation based on voiceState
+  const startMouthAnimation = useCallback(() => {
+    if (mouthAnimationRafRef.current) return; // Already running
     
     let frameCount = 0;
-    const maxFrames = 1200; // 20 seconds maximum for very long responses
+    const maxFrames = 1200; // 20 seconds maximum
     
-    const loop = () => {
+    const animate = () => {
       frameCount++;
       
       if (silenceDetectedRef.current) {
-        fallbackFlapRafRef.current = null;
+        mouthAnimationRafRef.current = null;
         setMouthTarget(0);
         resetMouth();
         return;
       }
-
-      // Check current state from store directly
+      
+      // Check current state from store
       const currentState = useAnimationStore.getState().voiceState;
       
-      // Stop only if voice state changes or we hit max frames
       if (currentState !== 'speaking' || frameCount > maxFrames) {
-        // console.log(`🎯 Stopping fallback flap: state=${currentState}, frames=${frameCount}`);
-        fallbackFlapRafRef.current = null;
+        mouthAnimationRafRef.current = null;
         setMouthTarget(0);
         resetMouth();
         
-        // Force stop speaking if we hit max frames
         if (frameCount > maxFrames && currentState === 'speaking') {
-          // console.log('🔇 Forcing stop speaking due to timeout');
           useAnimationStore.getState().stopSpeaking();
         }
         return;
       }
       
-      // Continue flapping
-      const sinceAnalyzer = Date.now() - lastAnalyzerWriteRef.current;
-      if (sinceAnalyzer > 150) {
-        const t = performance.now() / 1000;
-        const base = 0.35;
-        const amp = 0.25;
-        const value = base + Math.max(0, Math.sin(t * 6.0)) * amp;
-        // console.log(`🎯 Fallback flap setting mouth target: ${value.toFixed(3)}`);
-        setMouthTarget(value);
-      }
+      // Generate smooth mouth movement
+      const t = performance.now() / 1000;
+      const base = 0.35;
+      const amp = 0.25;
+      const value = base + Math.max(0, Math.sin(t * 6.0)) * amp;
+      setMouthTarget(value);
       
-      fallbackFlapRafRef.current = requestAnimationFrame(loop);
+      mouthAnimationRafRef.current = requestAnimationFrame(animate);
     };
     
-    fallbackFlapRafRef.current = requestAnimationFrame(loop);
-  }, [setMouthTarget, resetMouth, stopFallbackFlap]);
+    mouthAnimationRafRef.current = requestAnimationFrame(animate);
+  }, [setMouthTarget, resetMouth]);
 
-  // Handle voice state changes for mouth target management
+  const stopMouthAnimation = useCallback(() => {
+    if (mouthAnimationRafRef.current) {
+      cancelAnimationFrame(mouthAnimationRafRef.current);
+      mouthAnimationRafRef.current = null;
+    }
+  }, []);
+
+  // Start/stop animation based on voiceState
   useEffect(() => {
-    // console.log(`🎤 Voice state changed to: ${voiceState}`);
-    
     if (voiceState === 'speaking') {
-      // console.log('🎤 Starting speaking mode - initializing fallback flap');
-      // When speaking starts, ensure EMA accumulator is ready
+      // When speaking starts, ensure EMA is ready
       if (emaAccumulatorRef.current === 0) {
-        emaAccumulatorRef.current = 0.1; // Small initial value to avoid jump
+        emaAccumulatorRef.current = 0.1;
       }
       silenceDetectedRef.current = false;
-      // Begin fallback flapping in case analyser isn't feeding us
-      startFallbackFlap();
+      startMouthAnimation();
     } else {
-      // console.log('🎤 Not speaking - stopping all mouth animations');
-      // When not speaking, stop everything and reset
-      stopFallbackFlap();
+      // When not speaking, stop and reset
+      stopMouthAnimation();
       resetMouth();
       setMouthTarget(0);
-      setSpeechIntensity(0); // Ensure speech intensity is reset for graceful closing
+      setSpeechIntensity(0);
       emaAccumulatorRef.current = 0;
       lastTargetRef.current = 0;
-      
-      if (process.env.NODE_ENV === 'development') {
-        // console.log('🔄 Voice state changed to non-speaking, stopped all animations');
-      }
     }
     
-    // Cleanup on unmount
     return () => {
-      stopFallbackFlap();
+      stopMouthAnimation();
     };
-  }, [voiceState, resetMouth, setMouthTarget, startFallbackFlap, stopFallbackFlap]);
+  }, [voiceState, resetMouth, setMouthTarget, setSpeechIntensity, startMouthAnimation, stopMouthAnimation]);
 
   // Enhanced speech intensity handler with mouth target updates
   const handleSpeechIntensity = useCallback((rawIntensity: number) => {
-    // console.log(`🎤 handleSpeechIntensity called with: ${rawIntensity.toFixed(3)}`);
-    
-    // Mark that we received a real analyser update
-    lastAnalyzerWriteRef.current = Date.now();
     // Update legacy speech intensity for backward compatibility
     setSpeechIntensity(rawIntensity);
     
@@ -226,10 +190,6 @@ export const useVoiceAnimation = () => {
     // The WebRTC session will call this during audio playback
     const processedIntensity = processSpeechIntensity(rawIntensity);
     updateMouthTarget(processedIntensity);
-    
-    if (process.env.NODE_ENV === 'development') {
-      // console.log(`🎤 handleSpeechIntensity: raw=${rawIntensity.toFixed(3)}, processed=${processedIntensity.toFixed(3)}`);
-    }
   }, [setSpeechIntensity, processSpeechIntensity, updateMouthTarget]);
 
   return {
@@ -248,13 +208,6 @@ export const useVoiceAnimation = () => {
     stopSpeaking,
     setInitializationState,
   };
-};
-
-// Export the global stopFallbackFlap function for immediate access
-export const stopFallbackFlapImmediately = () => {
-  if (globalStopFallbackFlap) {
-    globalStopFallbackFlap();
-  }
 };
 
 export const handleSilenceImmediately = () => {

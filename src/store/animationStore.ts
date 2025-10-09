@@ -1,5 +1,4 @@
 import { create } from 'zustand';
-import { stopFallbackFlapImmediately } from '@/hooks/useVoiceAnimation';
 import { TIMING, getRandomBlinkDelay } from '@/animations/constants';
 
 export type AnimationState = 'idle' | 'hover' | 'active';
@@ -216,9 +215,6 @@ export const useAnimationStore = create<AnimationStore>((set, get) => ({
   stopSpeaking: () => {
     console.log('🔇 stopSpeaking() called - stopping voice interaction');
     
-    // Immediately stop the fallback flap animation to prevent race condition
-    stopFallbackFlapImmediately();
-    
     set({ 
       voiceState: 'idle',
       isSpeaking: false,
@@ -226,7 +222,8 @@ export const useAnimationStore = create<AnimationStore>((set, get) => ({
       animationState: 'idle',
       expressionState: 'happy',
       speechIntensity: 0,
-      mouthOpennessTarget: 0 // Reset mouth to closed position
+      mouthOpennessTarget: 0, // Reset mouth to closed position
+      vadSpeaking: false // Reset VAD flag
     });
     
     // Clear global voice state

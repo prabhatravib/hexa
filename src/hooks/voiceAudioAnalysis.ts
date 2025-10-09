@@ -105,8 +105,11 @@ export const initializeAudioAnalysis = async (
       const alpha = speaking ? ATTACK : RELEASE;
       level += alpha * ((speaking ? norm : 0) - level);
       
-      // Update VAD flag in store
+      // Update VAD flag in store (for potential future use)
       useAnimationStore.getState().setVadSpeaking(speaking);
+      
+      // Note: VAD flag is tracked but animation is controlled by voiceState
+      // The voiceState is driven by OpenAI's agent_start/agent_end events
       
       // Add debugging for analyzer output
       if (process.env.NODE_ENV === 'development' && Math.random() < 0.01) { // Log 1% of the time
