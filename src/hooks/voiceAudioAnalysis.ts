@@ -57,8 +57,23 @@ export const initializeAudioAnalysis = async (
       }
     }
 
-    const srcNode = makeSource(ctx);
-    console.log('🎵 Created audio source node:', srcNode.constructor.name);
+    let srcNode: AudioNode;
+    try {
+      srcNode = makeSource(ctx);
+      console.log('🎵 Created audio source node:', srcNode.constructor.name);
+    } catch (error) {
+      console.error('❌ Failed to create audio source node:', {
+        error,
+        errorMessage: error instanceof Error ? error.message : String(error),
+        errorName: error instanceof Error ? error.name : 'Unknown',
+        contextState: ctx.state,
+        hasPreviousSource: !!(audioContextRef?.current)
+      });
+      // Clear the flag so future attempts can retry
+      analysisStarted = false;
+      throw error;
+    }
+    
     const analyser = ctx.createAnalyser();
     analyser.fftSize = 512;
     analyser.smoothingTimeConstant = 0.25;
@@ -75,11 +90,12 @@ export const initializeAudioAnalysis = async (
     const RELEASE = 0.06;
 
     const tick = () => {
-      // Check if analysis should continue - stop if voice state is idle
-      const currentVoiceState = useAnimationStore.getState().voiceState;
-      if (currentVoiceState === 'idle' || !analysisStarted) {
-        console.log('🎵 Stopping audio analysis - voice state is idle or analysis stopped');
+      // Stop only if analysis was explicitly stopped, not based on voice state
+      // The analyzer should run as long as audio is playing
+      if (!analysisStarted) {
+        console.log('🎵 Stopping audio analysis - analysis flag cleared');
         analysisRafId = null;
+        analysisStarted = false; // Ensure flag is cleared
         if (setSpeechIntensity) setSpeechIntensity(0);
         useAnimationStore.getState().setVadSpeaking(false);
         return;
@@ -135,7 +151,15 @@ export const initializeAudioAnalysis = async (
 
 export const stopAudioAnalysis = () => {
   console.log('🎵 Stopping audio analysis...');
+  
+  // Always clear the flag to allow re-initialization
   analysisStarted = false;
+  
+  // Cancel any running animation frame
+  if (analysisRafId !== null) {
+    cancelAnimationFrame(analysisRafId);
+    analysisRafId = null;
+  }
   
   // Reset mouth animation target to prevent stuck-open mouth (SSR-safe)
   try {
@@ -145,11 +169,6 @@ export const stopAudioAnalysis = () => {
     }
   } catch (error) {
     // Store not available (SSR or unmounted), ignore
-  }
-  
-  if (analysisRafId !== null) {
-    cancelAnimationFrame(analysisRafId);
-    analysisRafId = null;
   }
 };
 

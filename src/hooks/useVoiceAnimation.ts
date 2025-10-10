@@ -111,7 +111,7 @@ export const useVoiceAnimation = () => {
     if (mouthAnimationRafRef.current) return; // Already running
     
     let frameCount = 0;
-    const maxFrames = 1200; // 20 seconds maximum
+    let lastAnalyzerUpdateCheck = Date.now();
     
     const animate = () => {
       frameCount++;
@@ -126,18 +126,35 @@ export const useVoiceAnimation = () => {
       // Check current state from store
       const currentState = useAnimationStore.getState().voiceState;
       
-      if (currentState !== 'speaking' || frameCount > maxFrames) {
+      if (currentState !== 'speaking') {
         mouthAnimationRafRef.current = null;
         setMouthTarget(0);
         resetMouth();
-        
-        if (frameCount > maxFrames && currentState === 'speaking') {
-          useAnimationStore.getState().stopSpeaking();
-        }
         return;
       }
       
-      // Generate smooth mouth movement
+      // Check if analyzer is providing updates (instead of arbitrary time limit)
+      const now = Date.now();
+      if (now - lastAnalyzerUpdateCheck > 2000) { // Check every 2 seconds
+        lastAnalyzerUpdateCheck = now;
+        const store = useAnimationStore.getState();
+        const lastUpdate = store.mouthTargetUpdatedAt || 0;
+        const staleDuration = now - lastUpdate;
+        
+        // Only stop if analyzer hasn't updated in 30+ seconds AND we've been running for a while
+        // This allows long responses to continue with fallback animation
+        if (staleDuration > 30000 && frameCount > 60) {
+          console.warn('⚠️ Fallback animation: No analyzer updates for 30s, stopping');
+          mouthAnimationRafRef.current = null;
+          setMouthTarget(0);
+          resetMouth();
+          useAnimationStore.getState().stopSpeaking();
+          return;
+        }
+      }
+      
+      // Generate smooth mouth movement as fallback
+      // This will be overridden by analyzer data when available
       const t = performance.now() / 1000;
       const base = 0.35;
       const amp = 0.25;

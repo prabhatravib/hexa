@@ -20,6 +20,72 @@ export const setupAudioElementHandlers = (
   let audioPlaying = false;
   let analysisStarted = false;
   let audioDurationTimeout: NodeJS.Timeout | null = null;
+  let watchdogInterval: NodeJS.Timeout | null = null;
+  
+  // Watchdog: Monitor mouth target freshness and re-initialize analyzer if stale
+  const startWatchdog = () => {
+    if (watchdogInterval) return; // Already running
+    
+    console.log('🐕 Starting analyzer watchdog');
+    watchdogInterval = setInterval(() => {
+      // Only check if audio is actually playing
+      const isPlaying = !audioEl.paused && audioEl.currentTime > 0 && audioEl.readyState >= 2;
+      if (!isPlaying) return;
+      
+      const store = useAnimationStore.getState();
+      const currentState = (window as any).__currentVoiceState;
+      
+      // If we're in speaking state but mouth target hasn't updated recently, analyzer is stale
+      if (currentState === 'speaking') {
+        const now = Date.now();
+        const lastUpdate = store.mouthTargetUpdatedAt || 0;
+        const staleDuration = now - lastUpdate;
+        
+        // If no update in 500ms while audio is playing, analyzer is probably stuck
+        if (staleDuration > 500 && lastUpdate > 0) {
+          console.warn('⚠️ Analyzer watchdog: Mouth target stale for', staleDuration, 'ms while audio playing');
+          console.log('🔄 Re-initializing analyzer...');
+          
+          // Stop and restart the analyzer
+          stopAudioAnalysis();
+          analysisStarted = false;
+          
+          // Re-initialize with a small delay to let cleanup complete
+          setTimeout(async () => {
+            try {
+              await initializeAudioAnalysis(null, audioEl, {
+                audioContextRef: undefined,
+                setSpeechIntensity,
+                startSpeaking,
+                stopSpeaking,
+                setVoiceState
+              });
+              analysisStarted = true;
+              
+              // Ensure speaking state is active
+              if (startSpeaking) {
+                startSpeaking();
+              } else {
+                setVoiceState('speaking');
+              }
+              
+              console.log('✅ Analyzer re-initialized successfully');
+            } catch (error) {
+              console.error('❌ Failed to re-initialize analyzer:', error);
+            }
+          }, 50);
+        }
+      }
+    }, 100); // Check every 100ms
+  };
+  
+  const stopWatchdog = () => {
+    if (watchdogInterval) {
+      console.log('🐕 Stopping analyzer watchdog');
+      clearInterval(watchdogInterval);
+      watchdogInterval = null;
+    }
+  };
   
   // Fallback: ensure analyser is running even if remote_track isn't emitted
   audioEl.addEventListener('playing', async () => {
@@ -56,6 +122,9 @@ export const setupAudioElementHandlers = (
     } else {
       setVoiceState('speaking');
     }
+    
+    // Start the watchdog to monitor analyzer health
+    startWatchdog();
   });
   
   // Also handle play event
@@ -74,6 +143,9 @@ export const setupAudioElementHandlers = (
     } else {
       setVoiceState('speaking');
     }
+    
+    // Start the watchdog to monitor analyzer health
+    startWatchdog();
   });
   
   // Monitor time updates to ensure mouth stays animated during playback
@@ -120,6 +192,9 @@ export const setupAudioElementHandlers = (
     analysisStarted = false;
     if (setSpeechIntensity) setSpeechIntensity(0);
     
+    // Stop the watchdog
+    stopWatchdog();
+    
     // Reset mouth animation target (SSR-safe)
     try {
       const store = useAnimationStore.getState();
@@ -156,6 +231,9 @@ export const setupAudioElementHandlers = (
     analysisStarted = false;
     if (setSpeechIntensity) setSpeechIntensity(0);
     
+    // Stop the watchdog
+    stopWatchdog();
+    
     // Reset VAD flag and mouth animation target (SSR-safe)
     try {
       const store = useAnimationStore.getState();
@@ -187,6 +265,9 @@ export const setupAudioElementHandlers = (
     analysisStarted = false;
     if (setSpeechIntensity) setSpeechIntensity(0);
     
+    // Stop the watchdog
+    stopWatchdog();
+    
     // Reset mouth animation target (SSR-safe)
     try {
       const store = useAnimationStore.getState();
@@ -215,6 +296,9 @@ export const setupAudioElementHandlers = (
     audioPlaying = false;
     analysisStarted = false;
     if (setSpeechIntensity) setSpeechIntensity(0);
+    
+    // Stop the watchdog
+    stopWatchdog();
     
     // Reset mouth animation target (SSR-safe)
     try {

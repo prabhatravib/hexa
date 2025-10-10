@@ -33,6 +33,12 @@ interface AnimationStore {
    */
   mouthOpennessTarget: number;
   
+  /**
+   * Timestamp (Date.now()) of the last time mouthOpennessTarget was updated with a non-zero value.
+   * Used by the watchdog to detect stale analyzer data.
+   */
+  mouthTargetUpdatedAt: number;
+  
 
   
   // State setters
@@ -106,6 +112,7 @@ export const useAnimationStore = create<AnimationStore>((set, get) => ({
   
   // Mouth animation target
   mouthOpennessTarget: 0,
+  mouthTargetUpdatedAt: 0,
   
   // State setters
   setAnimationState: (state) => set({ animationState: state }),
@@ -147,7 +154,16 @@ export const useAnimationStore = create<AnimationStore>((set, get) => ({
     // Clamp value to valid range and set target
     const clampedValue = Math.max(0, Math.min(1, value));
     // console.log(`🎯 Setting mouth target to: ${clampedValue.toFixed(3)}`);
-    set({ mouthOpennessTarget: clampedValue });
+    
+    // Update timestamp when setting non-zero values (indicates active analyzer data)
+    const updates: { mouthOpennessTarget: number; mouthTargetUpdatedAt?: number } = {
+      mouthOpennessTarget: clampedValue
+    };
+    if (clampedValue > 0.02) { // Only update timestamp for meaningful mouth movement
+      updates.mouthTargetUpdatedAt = Date.now();
+    }
+    
+    set(updates);
   },
   
   resetMouth: () => set({ mouthOpennessTarget: 0 }),
