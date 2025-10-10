@@ -83,6 +83,7 @@ export const useVoiceConnectionService = ({
   const lastProcessedDataRef = useRef<string | null>(null);
   const lastSessionIdRef = useRef<string | null>(null);
   const sessionRefreshInFlightRef = useRef(false);
+  const pendingSessionInfoRef = useRef<any>(null);
   
   // Helper function to check if data is duplicate
   const isDuplicateData = (data: any): boolean => {
@@ -120,6 +121,131 @@ export const useVoiceConnectionService = ({
   };
 
   // Connect using SSE for receiving messages
+  const handleSessionInfo = useCallback(
+    async (d: any) => {
+      console.log('Session info received, updating OpenAI Agent...');
+      console.log('dY"? Received session_info with sessionId:', d.sessionId);
+      setInitializationProgress(80);
+      setSessionInfo(d);
+
+      const newSessionId = d.sessionId ?? null;
+      if (newSessionId) {
+        localStorage.setItem('voiceSessionId', newSessionId);
+        console.log('dY"? Stored voice session ID for external data sync:', newSessionId);
+        console.log('dY"? localStorage now contains:', localStorage.getItem('voiceSessionId'));
+      }
+
+      const voiceDisabled = useAnimationStore.getState().isVoiceDisabled;
+      const existingSession = openaiAgentRef.current;
+      const existingSessionId = lastSessionIdRef.current;
+      const rtcState = existingSession?._pc?.connectionState;
+      const transportReady = isRealtimeReady(existingSession);
+      const sessionChanged =
+        !!existingSession && !!newSessionId && !!existingSessionId && newSessionId !== existingSessionId;
+      const rtcLost =
+        !!existingSession &&
+        (!transportReady || (rtcState && rtcState !== 'connected' && rtcState !== 'completed'));
+
+      if (voiceDisabled && existingSession && !sessionChanged && !rtcLost) {
+        console.log('🔇 Voice disabled: preserving session without refresh');
+        pendingSessionInfoRef.current = d;
+        return;
+      }
+
+      if (!existingSession || sessionChanged || rtcLost) {
+        if (sessionRefreshInFlightRef.current) {
+          console.log('dY"? Reinitialization already in progress; skipping duplicate session_info handling');
+          if (newSessionId) {
+            lastSessionIdRef.current = newSessionId;
+          }
+          return;
+        }
+
+        sessionRefreshInFlightRef.current = true;
+        try {
+          if (existingSession) {
+            console.warn('dY"? Closing stale OpenAI Realtime session before reinitializing', {
+              existingSessionId,
+              newSessionId,
+              rtcState,
+              transportReady,
+            });
+            try {
+              existingSession.close?.();
+            } catch (error) {
+              console.error('Failed to close existing session:', error);
+            }
+            openaiAgentRef.current = null;
+            try {
+              (window as any).activeSession = null;
+            } catch (clearError) {
+              console.warn('Failed to clear active session reference:', clearError);
+            }
+            stopSyntheticFlap();
+            setSpeechIntensity?.(0);
+            stopSpeaking?.();
+            setVoiceState('idle');
+          }
+
+          const session = await initializeOpenAIAgent(d);
+
+          if (session) {
+            openaiAgentRef.current = session;
+            lastSessionIdRef.current = newSessionId ?? null;
+            if (externalData) {
+              console.log('dY"? Passing external data to refreshed agent:', externalData);
+            }
+            setInitializationProgress(100);
+            setInitializationState('ready');
+            console.log('�o. OpenAI Agent initialized successfully');
+          } else {
+            console.error('�?O initializeOpenAIAgent returned null during session refresh');
+            setInitializationState('error');
+          }
+        } finally {
+          sessionRefreshInFlightRef.current = false;
+        }
+        return;
+      }
+
+      if (newSessionId) {
+        lastSessionIdRef.current = newSessionId;
+        try {
+          (existingSession as any).__hexaSessionId = newSessionId;
+        } catch {}
+      }
+      if (externalData) {
+        console.log('dY"\u0015 Passing external data to existing agent:', externalData);
+      }
+      console.log('dY"? Existing OpenAI session still healthy', {
+        sessionId: newSessionId,
+        rtcState,
+        transportReady,
+      });
+      setInitializationProgress(100);
+      setInitializationState('ready');
+    },
+    [
+      setInitializationProgress,
+      setSessionInfo,
+      openaiAgentRef,
+      initializeOpenAIAgent,
+      externalData,
+      setInitializationState,
+      stopSyntheticFlap,
+      setSpeechIntensity,
+      stopSpeaking,
+      setVoiceState,
+    ]
+  );
+
+  const flushPendingSessionInfo = useCallback(async () => {
+    if (!pendingSessionInfoRef.current) return;
+    const info = pendingSessionInfoRef.current;
+    pendingSessionInfoRef.current = null;
+    await handleSessionInfo(info);
+  }, [handleSessionInfo]);
+
   const connect = useCallback(async () => {
     try {
       setInitializationState('connecting');
@@ -214,102 +340,7 @@ export const useVoiceConnectionService = ({
               console.log('Voice session ready:', d.sessionId);
               setInitializationProgress(60);
             },
-            session_info: async (d) => {
-              console.log('Session info received, updating OpenAI Agent...');
-              console.log('dY"? Received session_info with sessionId:', d.sessionId);
-              setInitializationProgress(80);
-              setSessionInfo(d);
-
-              const newSessionId = d.sessionId ?? null;
-              if (newSessionId) {
-                localStorage.setItem('voiceSessionId', newSessionId);
-                console.log('dY"? Stored voice session ID for external data sync:', newSessionId);
-                console.log('dY"? localStorage now contains:', localStorage.getItem('voiceSessionId'));
-              }
-
-              const existingSession = openaiAgentRef.current;
-              const existingSessionId = lastSessionIdRef.current;
-              const rtcState = existingSession?._pc?.connectionState;
-              const transportReady = isRealtimeReady(existingSession);
-              const sessionChanged =
-                !!existingSession && !!newSessionId && !!existingSessionId && newSessionId !== existingSessionId;
-              const rtcLost =
-                !!existingSession &&
-                (!transportReady || (rtcState && rtcState !== 'connected' && rtcState !== 'completed'));
-
-              if (!existingSession || sessionChanged || rtcLost) {
-                if (sessionRefreshInFlightRef.current) {
-                  console.log('dY"? Reinitialization already in progress; skipping duplicate session_info handling');
-                  if (newSessionId) {
-                    lastSessionIdRef.current = newSessionId;
-                  }
-                  return;
-                }
-
-                sessionRefreshInFlightRef.current = true;
-                try {
-                  if (existingSession) {
-                    console.warn('dY"? Closing stale OpenAI Realtime session before reinitializing', {
-                      existingSessionId,
-                      newSessionId,
-                      rtcState,
-                      transportReady,
-                    });
-                    try {
-                      existingSession.close?.();
-                    } catch (error) {
-                      console.error('Failed to close existing session:', error);
-                    }
-                    openaiAgentRef.current = null;
-                    try {
-                      (window as any).activeSession = null;
-                    } catch (clearError) {
-                      console.warn('Failed to clear active session reference:', clearError);
-                    }
-                    stopSyntheticFlap();
-                    setSpeechIntensity?.(0);
-                    stopSpeaking?.();
-                    setVoiceState('idle');
-                  }
-
-                  const session = await initializeOpenAIAgent(d);
-
-                  if (session) {
-                    openaiAgentRef.current = session;
-                    lastSessionIdRef.current = newSessionId ?? null;
-                    if (externalData) {
-                      console.log('dY"? Passing external data to refreshed agent:', externalData);
-                    }
-                    setInitializationProgress(100);
-                    setInitializationState('ready');
-                    console.log('�o. OpenAI Agent initialized successfully');
-                  } else {
-                    console.error('�?O initializeOpenAIAgent returned null during session refresh');
-                    setInitializationState('error');
-                  }
-                } finally {
-                  sessionRefreshInFlightRef.current = false;
-                }
-                return;
-              }
-
-              if (newSessionId) {
-                lastSessionIdRef.current = newSessionId;
-                try {
-                  (existingSession as any).__hexaSessionId = newSessionId;
-                } catch {}
-              }
-              if (externalData) {
-                console.log('dY"\u0015 Passing external data to existing agent:', externalData);
-              }
-              console.log('dY"? Existing OpenAI session still healthy', {
-                sessionId: newSessionId,
-                rtcState,
-                transportReady,
-              });
-              setInitializationProgress(100);
-              setInitializationState('ready');
-            },
+            session_info: handleSessionInfo,
             transcription: (d) => {
               if (isVoiceDisabledNow()) return console.log('🔇 Voice disabled: ignoring transcription');
               console.log('User transcription received:', d.text);

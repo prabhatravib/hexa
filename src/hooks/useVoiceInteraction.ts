@@ -91,6 +91,9 @@ export const useVoiceInteraction = (options: UseVoiceInteractionOptions = {}) =>
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const audioQueueRef = useRef<ArrayBuffer[]>([]);
   const isPlayingRef = useRef(false);
+  const hasAutoConnectedRef = useRef(false);
+  const lastRecordingStateRef = useRef(false);
+  const resumeRecordingOnEnableRef = useRef(false);
 
 const waitForConversationAck = useCallback(async (session: any, text: string) => {
   if (!session?.on) return true;
@@ -378,13 +381,39 @@ const waitForConversationAck = useCallback(async (session: any, text: string) =>
     });
   }, [currentData, isConnected, sessionInfo]);
 
-  // Clean up
+  // Track recording state to know whether we should resume after pause
   useEffect(() => {
-    if (autoStart && !isVoiceDisabled) {
-      setInitializationState('initializing');
-      connect();
+    lastRecordingStateRef.current = isRecording;
+  }, [isRecording]);
+
+  // When voice is re-enabled, resume recording if we were recording before disabling
+  useEffect(() => {
+    if (isVoiceDisabled) {
+      resumeRecordingOnEnableRef.current = lastRecordingStateRef.current;
+      return;
     }
 
+    if (resumeRecordingOnEnableRef.current) {
+      resumeRecordingOnEnableRef.current = false;
+      // Let audio buffers re-enable before restarting recording
+      setTimeout(() => {
+        startRecording();
+      }, 50);
+    }
+  }, [isVoiceDisabled, startRecording]);
+
+  // Auto-connect once when allowed
+  useEffect(() => {
+    if (!autoStart || hasAutoConnectedRef.current) return;
+    if (isVoiceDisabled) return;
+
+    hasAutoConnectedRef.current = true;
+    setInitializationState('initializing');
+    connect();
+  }, [autoStart, isVoiceDisabled, connect, setInitializationState]);
+
+  // Clean up on unmount
+  useEffect(() => {
     return () => {
       if (wsRef.current) {
         // Handle both WebSocket and EventSource cleanup
@@ -400,7 +429,7 @@ const waitForConversationAck = useCallback(async (session: any, text: string) =>
       }
       stopRecording();
     };
-  }, [autoStart, isVoiceDisabled, connect, setInitializationState]);
+  }, [stopRecording]);
 
   return {
     isConnected,
