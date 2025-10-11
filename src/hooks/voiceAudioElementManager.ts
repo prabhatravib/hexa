@@ -1,7 +1,7 @@
 import { initializeAudioAnalysis, stopAudioAnalysis } from './voiceAudioAnalysis';
-import { useAnimationStore } from '@/store/animationStore';
+import { useAnimationStore, VoiceState } from '@/store/animationStore';
 
-type VoiceState = 'idle' | 'listening' | 'thinking' | 'speaking' | 'error';
+
 
 interface AudioElementHandlersOptions {
   setVoiceState: (state: VoiceState) => void;
@@ -20,6 +20,9 @@ export const setupAudioElementHandlers = (
   let audioPlaying = false;
   let analysisStarted = false;
   let audioDurationTimeout: NodeJS.Timeout | null = null;
+  let lastForcedIdleAt = 0;
+  let lastHandledEnergyTs = 0;
+  let lastVoiceState: VoiceState = 'idle';
   
   // Fallback: ensure analyser is running even if remote_track isn't emitted
   audioEl.addEventListener('playing', async () => {
@@ -79,22 +82,68 @@ export const setupAudioElementHandlers = (
   
   // Monitor time updates to ensure mouth stays animated during playback
   audioEl.addEventListener('timeupdate', () => {
-    if (audioPlaying && !audioEl.paused && audioEl.currentTime > 0) {
-      // Log audio playback progress occasionally
-      if (Math.random() < 0.01) {
-        console.log(`🎵 Audio playing: time=${audioEl.currentTime.toFixed(2)}s, duration=${audioEl.duration.toFixed(2)}s`);
+    if (!audioPlaying || audioEl.paused || audioEl.currentTime <= 0) {
+      return;
+    }
+
+    // Log audio playback progress occasionally
+    if (Math.random() < 0.01) {
+      console.log(`🎵 Audio playing: time=${audioEl.currentTime.toFixed(2)}s, duration=${audioEl.duration.toFixed(2)}s`);
+    }
+    
+    const store = useAnimationStore.getState();
+    const now = Date.now();
+    const lastMouthMotion = store.mouthTargetUpdatedAt || 0;
+    const energyAge = lastMouthMotion > 0 ? now - lastMouthMotion : Number.POSITIVE_INFINITY;
+    const hasRecentEnergy = energyAge < 600;
+    const currentState = store.voiceState;
+    const prevState = lastVoiceState;
+    lastVoiceState = currentState;
+
+    if (currentState !== 'speaking') {
+      if (prevState === 'speaking') {
+        lastForcedIdleAt = now;
+        lastHandledEnergyTs = Math.max(lastHandledEnergyTs, lastMouthMotion);
       }
-      
-      // Ensure we're in speaking state while audio is playing
-      const currentState = (window as any).__currentVoiceState;
-      if (currentState !== 'speaking') {
-        console.log('⚠️ Audio playing but not in speaking state, fixing...');
-        if (startSpeaking) {
-          startSpeaking();
-        } else {
-          setVoiceState('speaking');
-        }
+
+      if (now - lastForcedIdleAt < 400) {
+        return;
       }
+
+      if (!hasRecentEnergy) {
+        lastHandledEnergyTs = Math.max(lastHandledEnergyTs, lastMouthMotion);
+        return;
+      }
+
+      if (lastMouthMotion <= lastHandledEnergyTs) {
+        lastHandledEnergyTs = Math.max(lastHandledEnergyTs, lastMouthMotion);
+        return;
+      }
+
+      lastHandledEnergyTs = lastMouthMotion;
+      console.log('⚠️ Audio playing with recent energy; re-entering speaking state');
+      if (startSpeaking) {
+        startSpeaking();
+      } else {
+        setVoiceState('speaking');
+      }
+      return;
+    }
+
+    if (!hasRecentEnergy && energyAge > 1500) {
+      if (now - lastForcedIdleAt < 500) {
+        return;
+      }
+      lastForcedIdleAt = now;
+      lastHandledEnergyTs = Math.max(lastHandledEnergyTs, lastMouthMotion);
+      console.warn('⚠️ Audio element playing but analyzer silent - forcing idle state');
+      setSpeechIntensity?.(0);
+      if (stopSpeaking) {
+        stopSpeaking();
+      } else {
+        setVoiceState('idle');
+      }
+      (window as any).__currentVoiceState = 'idle';
     }
   });
   
@@ -144,6 +193,14 @@ export const setupAudioElementHandlers = (
     
     // Update global state for debugging
     (window as any).__currentVoiceState = 'idle';
+
+    // Record latest idle transition for playback guard
+    try {
+      const storeState = useAnimationStore.getState();
+      lastHandledEnergyTs = Math.max(lastHandledEnergyTs, storeState.mouthTargetUpdatedAt || 0);
+    } catch {}
+    lastVoiceState = 'idle';
+    lastForcedIdleAt = Date.now();
     
     // Clear duration timeout
     if (audioDurationTimeout) {
@@ -181,6 +238,14 @@ export const setupAudioElementHandlers = (
     }
     
     (window as any).__currentVoiceState = 'idle';
+
+    // Record latest idle transition for playback guard
+    try {
+      const storeState = useAnimationStore.getState();
+      lastHandledEnergyTs = Math.max(lastHandledEnergyTs, storeState.mouthTargetUpdatedAt || 0);
+    } catch {}
+    lastVoiceState = 'idle';
+    lastForcedIdleAt = Date.now();
   });
 
   audioEl.addEventListener('emptied', () => {
@@ -210,6 +275,14 @@ export const setupAudioElementHandlers = (
     }
     
     (window as any).__currentVoiceState = 'idle';
+
+    // Record latest idle transition for playback guard
+    try {
+      const storeState = useAnimationStore.getState();
+      lastHandledEnergyTs = Math.max(lastHandledEnergyTs, storeState.mouthTargetUpdatedAt || 0);
+    } catch {}
+    lastVoiceState = 'idle';
+    lastForcedIdleAt = Date.now();
   });
 
   // Add error handler to stop animation on audio errors
@@ -235,5 +308,13 @@ export const setupAudioElementHandlers = (
     
     if (stopSpeaking) stopSpeaking();
     (window as any).__currentVoiceState = 'idle';
+
+    // Record latest idle transition for playback guard
+    try {
+      const storeState = useAnimationStore.getState();
+      lastHandledEnergyTs = Math.max(lastHandledEnergyTs, storeState.mouthTargetUpdatedAt || 0);
+    } catch {}
+    lastVoiceState = 'idle';
+    lastForcedIdleAt = Date.now();
   });
 };

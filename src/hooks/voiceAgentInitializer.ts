@@ -4,10 +4,10 @@ import { initializeWebRTCConnection } from './voiceWebRTCConnection';
 import { voiceContextManager } from './voiceContextManager';
 import { setActiveSession, clearActiveSession, injectExternalContext, injectExternalDataFromStore, setBaseInstructions } from '@/lib/externalContext';
 import { useExternalDataStore } from '@/store/externalDataStore';
-import { useAnimationStore } from '@/store/animationStore';
+import { useAnimationStore, VoiceState } from '@/store/animationStore';
 import { getSessionSend } from '@/lib/voiceSessionUtils';
 
-type VoiceState = 'idle' | 'listening' | 'thinking' | 'speaking' | 'error';
+
 
 interface VoiceAgentInitializerOptions {
   setVoiceState: (state: VoiceState) => void;

@@ -278,8 +278,8 @@ export const useVoiceControlService = ({
       if (s) {
         try {
           // Best-effort set of cancellation events used across SDK versions
+          // Note: response.cancel_all was removed in newer SDK versions - only response.cancel is valid
           await safeSessionSend(s, { type: 'response.cancel' });
-          await safeSessionSend(s, { type: 'response.cancel_all' });
           await safeSessionSend(s, { type: 'input_audio_buffer.clear' });
           await safeSessionSend(s, { type: 'output_audio_buffer.clear' });
         } catch (e) {

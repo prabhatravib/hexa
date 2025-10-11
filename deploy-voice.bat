@@ -29,6 +29,8 @@ echo 🌐 Your voice-enabled hexagon should now be available at your Cloudflare 
 echo 🎤 Make sure to update your OpenAI API key in wrangler.jsonc before deploying!
 echo.
 echo 🔊 Playing completion sound...
+echo ✅ Deployment completed at %date% %time%
+
 powershell -c "[console]::beep(800,500)"
 echo 🎉 Deployment finished successfully!
 

@@ -1,7 +1,8 @@
 import { useCallback } from 'react';
 import { initializeOpenAIAgent } from './voiceAgentInitializer';
+import { VoiceState } from '@/store/animationStore';
 
-type VoiceState = 'idle' | 'listening' | 'thinking' | 'speaking' | 'error';
+
 
 interface VoiceAgentServiceOptions {
   setVoiceState: (state: VoiceState) => void;

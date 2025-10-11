@@ -1,8 +1,8 @@
 import { initializeAudioAnalysis, stopAudioAnalysis } from './voiceAudioAnalysis';
 import { setupAudioElementHandlers } from './voiceAudioElementManager';
-import { useAnimationStore } from '@/store/animationStore';
+import { useAnimationStore, VoiceState } from '@/store/animationStore';
 
-type VoiceState = 'idle' | 'listening' | 'thinking' | 'speaking' | 'error';
+
 
 interface WebRTCConnectionOptions {
   audioEl: HTMLAudioElement;
