@@ -104,6 +104,7 @@ export const setupAudioElementHandlers = (
       currentTime: audioEl.currentTime
     });
     audioPlaying = true;
+    useAnimationStore.getState().setAudioPlaying(true);
     if (!analysisStarted) {
       console.log('🎵 Starting analysis with MediaElementSource');
       await initializeAudioAnalysis(null, audioEl, {
@@ -198,6 +199,7 @@ export const setupAudioElementHandlers = (
     // Reset mouth animation target (SSR-safe)
     try {
       const store = useAnimationStore.getState();
+      store.setAudioPlaying(false);
       if (store.setMouthTarget) {
         store.setMouthTarget(0);
       }
@@ -237,6 +239,7 @@ export const setupAudioElementHandlers = (
     // Reset VAD flag and mouth animation target (SSR-safe)
     try {
       const store = useAnimationStore.getState();
+      store.setAudioPlaying(false);
       if (store.setVadSpeaking) {
         store.setVadSpeaking(false);
       }
@@ -271,6 +274,7 @@ export const setupAudioElementHandlers = (
     // Reset mouth animation target (SSR-safe)
     try {
       const store = useAnimationStore.getState();
+      store.setAudioPlaying(false);
       if (store.setMouthTarget) {
         store.setMouthTarget(0);
       }
@@ -303,6 +307,7 @@ export const setupAudioElementHandlers = (
     // Reset mouth animation target (SSR-safe)
     try {
       const store = useAnimationStore.getState();
+      store.setAudioPlaying(false);
       if (store.setMouthTarget) {
         store.setMouthTarget(0);
       }
