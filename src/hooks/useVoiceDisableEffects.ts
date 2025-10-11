@@ -83,26 +83,28 @@ export function useVoiceDisableEffects({
         if (s) {
           const send = (evt: any) => fireAndForget(s, evt);
 
+          // Cancel any active responses
           send({ type: 'response.cancel' });
-
-          send({ type: 'response.cancel_all' });
-
-          send({ type: 'input_audio_buffer.clear' });
-
-          send({ type: 'output_audio_buffer.clear' });
-
+          
+          // Send fully-formed session.update with complete turn_detection config
+          // This prevents OpenAI API from rejecting the update due to missing fields
           send({
             type: 'session.update',
-
             session: {
-              turn_detection: { create_response: false, threshold: 0, silence_duration_ms: 0 },
+              turn_detection: {
+                type: 'server_vad',
+                threshold: 0.5,
+                prefix_padding_ms: 300,
+                silence_duration_ms: 500,
+                create_response: false, // Disable auto-response when voice is off
+              },
             },
           });
 
-          send({ type: 'input_audio_buffer.disable' });
+          try {
+            (s as any).mute?.(true);
+          } catch {}
 
-          send({ type: 'output_audio_buffer.disable' });
-          
           console.log('🔇 Audio buffers disabled - voice processing paused');
         }
       } catch (error) {
@@ -130,19 +132,26 @@ export function useVoiceDisableEffects({
         
         if (s) {
           console.log('🔄 Session found, re-enabling audio buffers');
+          
+          // Send fully-formed session.update with complete turn_detection config
+          // This prevents OpenAI API from rejecting the update due to missing fields
           fireAndForget(s, {
             type: 'session.update',
             session: {
               turn_detection: {
-                create_response: true,
+                type: 'server_vad',
                 threshold: 0.5,
+                prefix_padding_ms: 300,
                 silence_duration_ms: 500,
+                create_response: true, // Re-enable auto-response when voice is on
               },
             },
           });
 
-          fireAndForget(s, { type: 'input_audio_buffer.enable' });
-          fireAndForget(s, { type: 'output_audio_buffer.enable' });
+          try {
+            (s as any).mute?.(false);
+          } catch {}
+
           console.log('✅ Audio buffers re-enabled - voice processing resumed');
         } else {
           console.warn('⚠️ No active session found when trying to re-enable');
@@ -155,8 +164,8 @@ export function useVoiceDisableEffects({
         console.error('Failed to process deferred session info:', error);
       });
 
-    // Unmute audio elements
-    muteAllAudio(false);
+      // Unmute audio elements
+      muteAllAudio(false);
     }
   }, [isVoiceDisabled, stopRecording, interrupt, flushPendingSessionInfo]);
 }

@@ -54,7 +54,7 @@ export const initializeOpenAIAgent = async (
     });
     
     // Import OpenAI Agents Realtime SDK dynamically
-    const { RealtimeAgent, RealtimeSession } = await import('@openai/agents-realtime');
+    const { RealtimeAgent, RealtimeSession, OpenAIRealtimeWebRTC } = await import('@openai/agents-realtime');
     
     // Get current context from voice context manager
     const currentContext = voiceContextManager.getFormattedContext();
@@ -181,8 +181,16 @@ ${getLanguageInstructions()}`;
       });
     });
     
-    // Create session and connect
-    const session = new RealtimeSession(agent);
+    // Create a WebRTC transport that allows ephemeral client secrets issued by our worker
+    const transport = new OpenAIRealtimeWebRTC({
+      useInsecureApiKey: true,
+      audioElement: audioEl
+    });
+
+    // Create session and connect using the shared transport
+    const session = new RealtimeSession(agent, {
+      transport
+    });
     (session as any).__hexaSessionId = sessionData?.sessionId ?? null;
 
     // Add debug updater for session instructions
@@ -286,15 +294,10 @@ ${getLanguageInstructions()}`;
     
     // External data injection is now handled via Zustand subscription
     
-    // Clear active session when disconnected
+    // Clear active session ONLY when explicitly disconnected
+    // Do NOT clear on error events - this allows the WebRTC session to survive transient errors
     (session as any).on('disconnected', () => {
       console.log('🔗 Session disconnected, clearing active session');
-      clearActiveSession();
-      unsubscribe(); // Clean up Zustand subscription
-    });
-    
-    (session as any).on('error', () => {
-      console.log('🔗 Session error, clearing active session');
       clearActiveSession();
       unsubscribe(); // Clean up Zustand subscription
     });
@@ -458,4 +461,3 @@ ${getLanguageInstructions()}`;
     return null;
   }
 };
-

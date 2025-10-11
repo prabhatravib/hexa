@@ -44,9 +44,7 @@ export const initializeWebRTCConnection = async (
   
   console.log('🔧 Connecting with client secret...');
   const connectionOptions = {
-    apiKey: sessionData.clientSecret,
-    useInsecureApiKey: true,
-    transport: 'webrtc' as const
+    apiKey: sessionData.clientSecret
   };
   
   console.log('🔧 Connecting with client secret options:', connectionOptions);
