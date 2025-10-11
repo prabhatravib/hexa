@@ -90,8 +90,10 @@ export const AnimatedMouth: React.FC<AnimatedMouthProps> = ({
       const halfWidth = width / 2;
       
       // Dynamic mouth curve based on openness - INVERTED for smiling expression
-      const maxCurveHeight = 25; // Increased from 15 for more visible animation
-      const curveHeight = clampedOpenness * maxCurveHeight;
+      // Maintain baseline smile even at 0 openness to prevent horizontal line
+      const baselineSmile = 15; // Minimum smile curve (matches HAPPY mouth)
+      const additionalRange = 10; // Extra range for speech animation
+      const curveHeight = baselineSmile + (clampedOpenness * additionalRange);
       const controlY = centerY + curveHeight; // INVERTED: + instead of - for upward curve
       
       // Create smooth curve path with enhanced opening
@@ -108,8 +110,10 @@ export const AnimatedMouth: React.FC<AnimatedMouthProps> = ({
     const centerX = position.x;
     const centerY = position.y;
     const halfWidth = width / 2;
-    const maxCurveHeight = 25; // Match the increased height
-    const curveHeight = initialOpenness * maxCurveHeight;
+    // Match the baseline smile calculation
+    const baselineSmile = 15;
+    const additionalRange = 10;
+    const curveHeight = baselineSmile + (initialOpenness * additionalRange);
     const controlY = centerY + curveHeight; // INVERTED: + instead of - for upward curve
     const widthScale = 1 + (initialOpenness * 0.1);
     const adjustedHalfWidth = halfWidth * widthScale;

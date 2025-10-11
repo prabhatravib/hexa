@@ -13,6 +13,9 @@ export const useVoiceAnimation = () => {
     setMouthTarget,
     resetMouth,
     voiceState,
+    isAudioPlaying,
+    speechIntensity: storeSpeechIntensity,
+    vadSpeaking,
     startListening,
     stopListening,
     startSpeaking,
@@ -29,6 +32,8 @@ export const useVoiceAnimation = () => {
   const lastTargetRef = useRef(0); // Last target value for change-based throttling
   const silenceDetectedRef = useRef(false);
   const mouthAnimationRafRef = useRef<number | null>(null);
+  const latestIntensityRef = useRef(0);
+  const lastEnergySampleTimeRef = useRef(0); // Timestamp of last analyzer energy sample
   
   // Performance instrumentation
   const performanceRef = useRef({
@@ -90,11 +95,18 @@ export const useVoiceAnimation = () => {
 
   const handleImmediateSilence = useCallback(() => {
     silenceDetectedRef.current = true;
+    lastEnergySampleTimeRef.current = 0;
+    latestIntensityRef.current = 0;
     setMouthTarget(0);
     resetMouth();
     setSpeechIntensity(0);
     emaAccumulatorRef.current = 0;
     lastTargetRef.current = 0;
+    lastUpdateTimeRef.current = Date.now();
+    if (mouthAnimationRafRef.current) {
+      cancelAnimationFrame(mouthAnimationRafRef.current);
+      mouthAnimationRafRef.current = null;
+    }
   }, [resetMouth, setMouthTarget, setSpeechIntensity]);
 
   useEffect(() => {
@@ -106,49 +118,47 @@ export const useVoiceAnimation = () => {
     };
   }, [handleImmediateSilence]);
 
-  // Mouth animation based on voiceState
   const startMouthAnimation = useCallback(() => {
-    if (mouthAnimationRafRef.current) return; // Already running
-    
-    let frameCount = 0;
-    const maxFrames = 1200; // 20 seconds maximum
-    
+    if (mouthAnimationRafRef.current) return;
+    silenceDetectedRef.current = false;
+
     const animate = () => {
-      frameCount++;
-      
       if (silenceDetectedRef.current) {
         mouthAnimationRafRef.current = null;
         setMouthTarget(0);
         resetMouth();
         return;
       }
-      
-      // Check current state from store
-      const currentState = useAnimationStore.getState().voiceState;
-      
-      if (currentState !== 'speaking' || frameCount > maxFrames) {
+
+      const storeState = useAnimationStore.getState();
+      const allowAnimation =
+        storeState.voiceState === 'speaking' ||
+        storeState.vadSpeaking ||
+        storeState.isAudioPlaying;
+
+      if (!allowAnimation) {
         mouthAnimationRafRef.current = null;
         setMouthTarget(0);
         resetMouth();
-        
-        if (frameCount > maxFrames && currentState === 'speaking') {
-          useAnimationStore.getState().stopSpeaking();
-        }
         return;
       }
-      
-      // Generate smooth mouth movement
-      const t = performance.now() / 1000;
-      const base = 0.35;
-      const amp = 0.25;
-      const value = base + Math.max(0, Math.sin(t * 6.0)) * amp;
-      setMouthTarget(value);
-      
+
+      const now = performance.now() / 1000;
+      const energy = Math.max(0, Math.min(1, latestIntensityRef.current));
+
+      const base = 0.18 + energy * 0.55;
+      const amplitude = 0.15 + energy * 0.45;
+      const frequency = 4.2 + energy * 4.5;
+      const wave = Math.max(0, Math.sin(now * frequency));
+      const dynamicTarget = Math.min(1, base + wave * amplitude);
+
+      updateMouthTarget(dynamicTarget);
+
       mouthAnimationRafRef.current = requestAnimationFrame(animate);
     };
-    
+
     mouthAnimationRafRef.current = requestAnimationFrame(animate);
-  }, [setMouthTarget, resetMouth]);
+  }, [resetMouth, setMouthTarget, updateMouthTarget]);
 
   const stopMouthAnimation = useCallback(() => {
     if (mouthAnimationRafRef.current) {
@@ -157,40 +167,112 @@ export const useVoiceAnimation = () => {
     }
   }, []);
 
-  // Start/stop animation based on voiceState
+  // Watch voice state to prime smoothing and clamp mouth when not speaking
   useEffect(() => {
-    if (voiceState === 'speaking') {
-      // When speaking starts, ensure EMA is ready
+    const shouldAnimate =
+      voiceState === 'speaking' ||
+      vadSpeaking ||
+      isAudioPlaying;
+
+    if (shouldAnimate) {
       if (emaAccumulatorRef.current === 0) {
         emaAccumulatorRef.current = 0.1;
       }
       silenceDetectedRef.current = false;
+      lastUpdateTimeRef.current = Date.now();
+      if (lastEnergySampleTimeRef.current === 0) {
+        lastEnergySampleTimeRef.current = Date.now();
+      }
       startMouthAnimation();
-    } else {
-      // When not speaking, stop and reset
-      stopMouthAnimation();
-      resetMouth();
-      setMouthTarget(0);
-      setSpeechIntensity(0);
-      emaAccumulatorRef.current = 0;
-      lastTargetRef.current = 0;
+      return;
     }
-    
+
+    handleImmediateSilence();
+    stopMouthAnimation();
+  }, [
+    voiceState,
+    vadSpeaking,
+    isAudioPlaying,
+    handleImmediateSilence,
+    startMouthAnimation,
+    stopMouthAnimation
+  ]);
+
+  // Watchdog: if analyzer stops updating while we're in speaking state, force silence
+  useEffect(() => {
+    const shouldWatch =
+      voiceState === 'speaking' ||
+      vadSpeaking ||
+      isAudioPlaying;
+
+    if (!shouldWatch) {
+      return;
+    }
+
+    const watchdogInterval = window.setInterval(() => {
+      const now = Date.now();
+      const energyAge = lastEnergySampleTimeRef.current
+        ? now - lastEnergySampleTimeRef.current
+        : Number.POSITIVE_INFINITY;
+      const hasStoreEnergy = vadSpeaking || storeSpeechIntensity > 0.02;
+      const hasCurrentAudio = hasStoreEnergy || isAudioPlaying;
+
+      if (hasCurrentAudio) {
+        return;
+      }
+
+      if (energyAge > 450) {
+        handleImmediateSilence();
+      }
+    }, 200);
+
     return () => {
-      stopMouthAnimation();
+      window.clearInterval(watchdogInterval);
     };
-  }, [voiceState, resetMouth, setMouthTarget, setSpeechIntensity, startMouthAnimation, stopMouthAnimation]);
+  }, [voiceState, vadSpeaking, storeSpeechIntensity, isAudioPlaying, handleImmediateSilence]);
 
   // Enhanced speech intensity handler with mouth target updates
   const handleSpeechIntensity = useCallback((rawIntensity: number) => {
     // Update legacy speech intensity for backward compatibility
     setSpeechIntensity(rawIntensity);
     
-    // Process mouth targets for all intensity levels (including zero)
-    // The WebRTC session will call this during audio playback
     const processedIntensity = processSpeechIntensity(rawIntensity);
-    updateMouthTarget(processedIntensity);
-  }, [setSpeechIntensity, processSpeechIntensity, updateMouthTarget]);
+    latestIntensityRef.current = processedIntensity;
+    const storeState = useAnimationStore.getState();
+
+    const shouldAnimate =
+      storeState.voiceState === 'speaking' ||
+      storeState.vadSpeaking ||
+      storeState.isAudioPlaying;
+
+    if (shouldAnimate) {
+      if (rawIntensity > 0.002 || processedIntensity > 0.002) {
+        lastEnergySampleTimeRef.current = Date.now();
+      }
+      silenceDetectedRef.current = false;
+      if (!mouthAnimationRafRef.current) {
+        startMouthAnimation();
+      }
+
+      const expressiveFloor = 0.14;
+      const expressiveScale = 0.78;
+
+      const expressiveTarget =
+        rawIntensity > 0.002 || processedIntensity > 0.01
+          ? Math.min(1, expressiveFloor + processedIntensity * expressiveScale)
+          : processedIntensity * 0.45;
+
+      updateMouthTarget(expressiveTarget);
+    } else if (!silenceDetectedRef.current) {
+      handleImmediateSilence();
+    }
+  }, [
+    setSpeechIntensity,
+    processSpeechIntensity,
+    updateMouthTarget,
+    handleImmediateSilence,
+    startMouthAnimation
+  ]);
 
   return {
     audioContextRef,
