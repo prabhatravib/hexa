@@ -30,10 +30,6 @@ export const useVoiceAnimation = () => {
   const silenceDetectedRef = useRef(false);
   const mouthAnimationRafRef = useRef<number | null>(null);
   
-  // Silence watchdog: track last time we saw meaningful activity
-  const lastMeaningfulIntensityTimeRef = useRef<number>(Date.now());
-  const silenceWatchdogIntervalRef = useRef<NodeJS.Timeout | null>(null);
-  
   // Performance instrumentation
   const performanceRef = useRef({
     writeCount: 0,
@@ -110,79 +106,12 @@ export const useVoiceAnimation = () => {
     };
   }, [handleImmediateSilence]);
 
-  // Silence watchdog: monitors for true silence (not brief pauses)
-  const startSilenceWatchdog = useCallback(() => {
-    if (silenceWatchdogIntervalRef.current) return; // Already running
-    
-    console.log('🐕 Starting silence watchdog');
-    const SILENCE_TIMEOUT = 1000; // 1000ms = 1 second
-    const MEANINGFUL_INTENSITY_THRESHOLD = 0.05;
-    
-    silenceWatchdogIntervalRef.current = setInterval(() => {
-      const store = useAnimationStore.getState();
-      const { mouthOpennessTarget, vadSpeaking, isAudioPlaying, voiceState: currentVoiceState } = store;
-      
-      // Only run watchdog when we're supposed to be speaking
-      if (currentVoiceState !== 'speaking') {
-        return;
-      }
-      
-      // Check if we have meaningful activity
-      const hasMeaningfulIntensity = mouthOpennessTarget > MEANINGFUL_INTENSITY_THRESHOLD;
-      const hasVadActivity = vadSpeaking === true;
-      
-      if (hasMeaningfulIntensity || hasVadActivity) {
-        // Update last meaningful activity time
-        lastMeaningfulIntensityTimeRef.current = Date.now();
-        return;
-      }
-      
-      // Calculate how long we've been silent
-      const now = Date.now();
-      const silenceDuration = now - lastMeaningfulIntensityTimeRef.current;
-      
-      // Only trigger if:
-      // 1. We've been silent for >= SILENCE_TIMEOUT
-      // 2. Audio element has stopped playing (paused or ended)
-      if (silenceDuration >= SILENCE_TIMEOUT && !isAudioPlaying) {
-        console.log(`🐕 Silence watchdog triggered: ${silenceDuration}ms of silence, audio not playing`);
-        
-        // Stop the watchdog
-        if (silenceWatchdogIntervalRef.current) {
-          clearInterval(silenceWatchdogIntervalRef.current);
-          silenceWatchdogIntervalRef.current = null;
-        }
-        
-        // Call stopSpeaking to close the mouth
-        stopSpeaking();
-      } else if (silenceDuration >= SILENCE_TIMEOUT * 2) {
-        // Failsafe: if we've been silent for 2+ seconds, stop regardless
-        console.warn(`🐕 Silence watchdog failsafe: ${silenceDuration}ms of silence (audio playing: ${isAudioPlaying})`);
-        
-        if (silenceWatchdogIntervalRef.current) {
-          clearInterval(silenceWatchdogIntervalRef.current);
-          silenceWatchdogIntervalRef.current = null;
-        }
-        
-        stopSpeaking();
-      }
-    }, 100); // Check every 100ms
-  }, [stopSpeaking]);
-
-  const stopSilenceWatchdog = useCallback(() => {
-    if (silenceWatchdogIntervalRef.current) {
-      console.log('🐕 Stopping silence watchdog');
-      clearInterval(silenceWatchdogIntervalRef.current);
-      silenceWatchdogIntervalRef.current = null;
-    }
-  }, []);
-
   // Mouth animation based on voiceState
   const startMouthAnimation = useCallback(() => {
     if (mouthAnimationRafRef.current) return; // Already running
     
     let frameCount = 0;
-    let lastAnalyzerUpdateCheck = Date.now();
+    const maxFrames = 1200; // 20 seconds maximum
     
     const animate = () => {
       frameCount++;
@@ -197,35 +126,18 @@ export const useVoiceAnimation = () => {
       // Check current state from store
       const currentState = useAnimationStore.getState().voiceState;
       
-      if (currentState !== 'speaking') {
+      if (currentState !== 'speaking' || frameCount > maxFrames) {
         mouthAnimationRafRef.current = null;
         setMouthTarget(0);
         resetMouth();
+        
+        if (frameCount > maxFrames && currentState === 'speaking') {
+          useAnimationStore.getState().stopSpeaking();
+        }
         return;
       }
       
-      // Check if analyzer is providing updates (instead of arbitrary time limit)
-      const now = Date.now();
-      if (now - lastAnalyzerUpdateCheck > 2000) { // Check every 2 seconds
-        lastAnalyzerUpdateCheck = now;
-        const store = useAnimationStore.getState();
-        const lastUpdate = store.mouthTargetUpdatedAt || 0;
-        const staleDuration = now - lastUpdate;
-        
-        // Only stop if analyzer hasn't updated in 30+ seconds AND we've been running for a while
-        // This allows long responses to continue with fallback animation
-        if (staleDuration > 30000 && frameCount > 60) {
-          console.warn('⚠️ Fallback animation: No analyzer updates for 30s, stopping');
-          mouthAnimationRafRef.current = null;
-          setMouthTarget(0);
-          resetMouth();
-          useAnimationStore.getState().stopSpeaking();
-          return;
-        }
-      }
-      
-      // Generate smooth mouth movement as fallback
-      // This will be overridden by analyzer data when available
+      // Generate smooth mouth movement
       const t = performance.now() / 1000;
       const base = 0.35;
       const amp = 0.25;
@@ -253,13 +165,10 @@ export const useVoiceAnimation = () => {
         emaAccumulatorRef.current = 0.1;
       }
       silenceDetectedRef.current = false;
-      lastMeaningfulIntensityTimeRef.current = Date.now(); // Reset watchdog timer
       startMouthAnimation();
-      startSilenceWatchdog(); // Start monitoring for true silence
     } else {
       // When not speaking, stop and reset
       stopMouthAnimation();
-      stopSilenceWatchdog(); // Stop the watchdog
       resetMouth();
       setMouthTarget(0);
       setSpeechIntensity(0);
@@ -269,9 +178,8 @@ export const useVoiceAnimation = () => {
     
     return () => {
       stopMouthAnimation();
-      stopSilenceWatchdog();
     };
-  }, [voiceState, resetMouth, setMouthTarget, setSpeechIntensity, startMouthAnimation, stopMouthAnimation, startSilenceWatchdog, stopSilenceWatchdog]);
+  }, [voiceState, resetMouth, setMouthTarget, setSpeechIntensity, startMouthAnimation, stopMouthAnimation]);
 
   // Enhanced speech intensity handler with mouth target updates
   const handleSpeechIntensity = useCallback((rawIntensity: number) => {
