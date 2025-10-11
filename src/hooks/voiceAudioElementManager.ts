@@ -94,11 +94,18 @@ export const setupAudioElementHandlers = (
     const store = useAnimationStore.getState();
     const now = Date.now();
     const lastMouthMotion = store.mouthTargetUpdatedAt || 0;
+    const speechIntensity = store.speechIntensity || 0;
+    const vadSpeaking = !!store.vadSpeaking;
     const energyAge = lastMouthMotion > 0 ? now - lastMouthMotion : Number.POSITIVE_INFINITY;
-    const hasRecentEnergy = energyAge < 600;
+    const hasRecentAnalyzerEnergy = energyAge < 900;
     const currentState = store.voiceState;
     const prevState = lastVoiceState;
     lastVoiceState = currentState;
+
+    const hasLiveEnergy =
+      vadSpeaking ||
+      speechIntensity > 0.015 ||
+      hasRecentAnalyzerEnergy;
 
     if (currentState !== 'speaking') {
       if (prevState === 'speaking') {
@@ -106,11 +113,11 @@ export const setupAudioElementHandlers = (
         lastHandledEnergyTs = Math.max(lastHandledEnergyTs, lastMouthMotion);
       }
 
-      if (now - lastForcedIdleAt < 400) {
+      if (now - lastForcedIdleAt < 250) {
         return;
       }
 
-      if (!hasRecentEnergy) {
+      if (!hasLiveEnergy) {
         lastHandledEnergyTs = Math.max(lastHandledEnergyTs, lastMouthMotion);
         return;
       }
@@ -130,7 +137,9 @@ export const setupAudioElementHandlers = (
       return;
     }
 
-    if (!hasRecentEnergy && energyAge > 1500) {
+    const analyzerFullySilent = !vadSpeaking && speechIntensity < 0.01 && !hasRecentAnalyzerEnergy;
+
+    if (analyzerFullySilent && energyAge > 2000) {
       if (now - lastForcedIdleAt < 500) {
         return;
       }
