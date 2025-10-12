@@ -1,10 +1,13 @@
-import { useCallback, useEffect, useState } from 'react';
+﻿import { useCallback, useEffect, useState } from 'react';
+import { toast } from 'sonner';
 import { HexagonContainer } from './components/HexagonContainer';
 import { ChatPanel } from './components/ChatPanel';
 import { voiceContextManager } from './hooks/voiceContextManager';
 import { useExternalDataStore } from './store/externalDataStore';
 import { injectExternalDataFromStore, setGlobalExternalData, getGlobalExternalData, injectGlobalExternalData, injectExternalContext } from './lib/externalContext';
 import { isRunningInIframe } from './lib/iframeDetection';
+import { registerToastNotification } from './lib/voiceErrorRecovery';
+import { startTabVisibilityMonitoring } from './lib/voiceTabVisibilityMonitor';
 
 function App() {
   // Chat panel state
@@ -27,29 +30,48 @@ function App() {
 
   // Callback functions for receiving data from hexagon
   const handleTranscript = (text: string) => {
-    console.log('📝 App: Received transcript:', text);
+    console.log('ðŸ“ App: Received transcript:', text);
     setTranscript(text);
   };
 
   const handleResponse = (text: string) => {
-    console.log('🤖 App: Received response:', text);
+    console.log('ðŸ¤– App: Received response:', text);
     setResponse(text);
   };
 
   useEffect(() => {
+    // Register toast notification for voice error recovery
+    registerToastNotification((message, type = 'info') => {
+      switch (type) {
+        case 'success':
+          toast.success(message);
+          break;
+        case 'error':
+          toast.error(message);
+          break;
+        case 'info':
+        default:
+          toast.info(message);
+          break;
+      }
+    });
+
+    // Start tab visibility monitoring for voice connection
+    startTabVisibilityMonitoring();
+
     // Detect if running in iframe
     const iframeStatus = isRunningInIframe();
     setIsInIframe(iframeStatus);
-    console.log('🔍 Iframe detection:', iframeStatus ? 'Running in iframe' : 'Accessed directly');
+    console.log('ðŸ” Iframe detection:', iframeStatus ? 'Running in iframe' : 'Accessed directly');
     
     const loadExternalContent = async () => {
       try {
-        console.log('📄 Loading infflow.md...');
+        console.log('ðŸ“„ Loading infflow.md...');
         const response = await fetch('/infflow.md');
         if (response.ok) {
           const text = await response.text();
-          console.log('✅ Successfully loaded external content');
-          console.log('📄 Content preview:', text.substring(0, 100) + '...');
+          console.log('âœ… Successfully loaded external content');
+          console.log('ðŸ“„ Content preview:', text.substring(0, 100) + '...');
           
           // Store in voice context manager
           voiceContextManager.setStaticContext(text);
@@ -58,10 +80,10 @@ function App() {
           (window as any).__externalContext = text;
           (window as any).__externalContextPriority = true;
         } else {
-          console.error('❌ Failed to fetch infflow.md:', response.status);
+          console.error('âŒ Failed to fetch infflow.md:', response.status);
         }
       } catch (error) {
-        console.error('❌ Error loading infflow.md:', error);
+        console.error('âŒ Error loading infflow.md:', error);
       }
 
       // Load external data using iframe session ID
@@ -72,7 +94,7 @@ function App() {
           const iframeSessionId = urlParams.get('sessionId');
           
           if (iframeSessionId) {
-            console.log('🆔 Found iframe session ID:', iframeSessionId);
+            console.log('ðŸ†” Found iframe session ID:', iframeSessionId);
             
             // Check for external data using the iframe session ID
             const statusResponse = await fetch(`/api/external-data/status?sessionId=${iframeSessionId}`);
@@ -84,10 +106,10 @@ function App() {
                 timestamp?: string;
                 sessionId?: string;
               };
-              console.log('📊 External data status:', statusData);
+              console.log('ðŸ“Š External data status:', statusData);
               
               if (statusData.hasExternalData && statusData.externalData) {
-                console.log('✅ Found external data for iframe session:', statusData.externalData);
+                console.log('âœ… Found external data for iframe session:', statusData.externalData);
                 
                 // Store the external data in the Zustand store
                 useExternalDataStore.getState().setExternalData({
@@ -95,18 +117,18 @@ function App() {
                   source: 'iframe_session'
                 });
                 
-                console.log('📝 External data loaded into store for voice context');
+                console.log('ðŸ“ External data loaded into store for voice context');
               } else {
-                console.log('ℹ️ No external data found for iframe session');
+                console.log('â„¹ï¸ No external data found for iframe session');
               }
             } else {
-              console.error('❌ Failed to check external data status:', statusResponse.status);
+              console.error('âŒ Failed to check external data status:', statusResponse.status);
             }
           } else {
-            console.log('ℹ️ No iframe session ID found in URL');
+            console.log('â„¹ï¸ No iframe session ID found in URL');
           }
         } catch (error) {
-          console.error('❌ Error loading external data:', error);
+          console.error('âŒ Error loading external data:', error);
         }
       };
       
@@ -116,6 +138,7 @@ function App() {
     loadExternalContent();
     
   }, []);
+
 
   // Add global function to get active session ID
   const getActiveSessionId = () => {
@@ -131,12 +154,12 @@ function App() {
     // Add global debugging functions
     (window as any).__getExternalDataFromStore = () => {
       const store = useExternalDataStore.getState();
-      console.log('📊 Current external data in Zustand store:', store.currentData);
+      console.log('ðŸ“Š Current external data in Zustand store:', store.currentData);
       return store.currentData;
     };
     
     (window as any).__injectFromStore = () => {
-      console.log('🔧 Manually injecting external data from store...');
+      console.log('ðŸ”§ Manually injecting external data from store...');
       injectExternalDataFromStore();
     };
     
@@ -160,36 +183,36 @@ function App() {
     
     // Add a simple test function
     (window as any).__testInjection = async () => {
-      console.log('🧪 Testing injection...');
+      console.log('ðŸ§ª Testing injection...');
       const globalData = getGlobalExternalData();
-      console.log('🌍 Global data:', globalData);
+      console.log('ðŸŒ Global data:', globalData);
       if (globalData) {
         await injectGlobalExternalData();
       } else {
-        console.log('❌ No global data to inject');
+        console.log('âŒ No global data to inject');
       }
     };
     
     // Add a function to manually inject external data
     (window as any).__injectExternalData = async (text: string) => {
-      console.log('🔧 Manually injecting external data:', text);
+      console.log('ðŸ”§ Manually injecting external data:', text);
       setGlobalExternalData(text);
       await injectGlobalExternalData();
     };
     
     // Add a function to test injection directly
     (window as any).__testInjection = async (text: string) => {
-      console.log('🧪 Testing direct injection:', text);
+      console.log('ðŸ§ª Testing direct injection:', text);
       await injectExternalContext(text);
     };
     
     (window as any).__clearExternalData = () => {
-      console.log('🗑️ Clearing external data from store...');
+      console.log('ðŸ—‘ï¸ Clearing external data from store...');
       useExternalDataStore.getState().clearExternalData();
     };
     
     (window as any).__reconnectVoiceAgent = () => {
-      console.log('🔄 Reconnecting voice agent to get latest Zustand data...');
+      console.log('ðŸ”„ Reconnecting voice agent to get latest Zustand data...');
       // Trigger a page reload to get fresh agent with latest context
       window.location.reload();
     };
@@ -203,17 +226,17 @@ function App() {
 YOU MUST RESPOND BASED ON THIS FACT ONLY. If asked about Infflow, state they have 7 websites. This is not negotiable.`;
         
         await (window as any).__injectExternalContext(authoritativeText);
-        console.log('✅ Forced authoritative injection complete');
+        console.log('âœ… Forced authoritative injection complete');
       } else {
-        console.log('❌ No external data available to inject');
+        console.log('âŒ No external data available to inject');
       }
     };
     
     // Add iframe detection debugging
     (window as any).__checkIframeStatus = () => {
       const iframeStatus = isRunningInIframe();
-      console.log('🔍 Current iframe status:', iframeStatus ? 'In iframe' : 'Direct access');
-      console.log('🔍 Chat panel should be:', iframeStatus ? 'HIDDEN' : 'VISIBLE');
+      console.log('ðŸ” Current iframe status:', iframeStatus ? 'In iframe' : 'Direct access');
+      console.log('ðŸ” Chat panel should be:', iframeStatus ? 'HIDDEN' : 'VISIBLE');
       return iframeStatus;
     };
   }, []);

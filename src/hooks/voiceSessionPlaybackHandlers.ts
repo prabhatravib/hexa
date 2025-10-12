@@ -325,22 +325,22 @@ export const registerVoiceSessionPlaybackHandlers = (
     }
   });
 
-  session.on('error' as any, (error: any) => {
+  session.on('error' as any, async (error: any) => {
     // Handle array case - OpenAI SDK sometimes sends errors as arrays
     const errorObj = Array.isArray(error) ? error[0] : error;
-    
+
     // Extract error code from nested structure (handle double nesting)
     const errorCode = errorObj?.error?.error?.code || errorObj?.error?.code || errorObj?.code || '';
     const errorType = errorObj?.error?.type || errorObj?.type || '';
     const errorMessage = errorObj?.error?.message || errorObj?.message || 'No message provided';
-    
+
     // List of non-critical error codes that should be ignored or downgraded to warnings
     const nonCriticalErrorCodes = [
       'response_cancel_not_active',  // Trying to cancel when there's no active response
       'response_cancel_failed',      // Similar cancellation issues
       'invalid_value',               // Invalid API command (e.g., response.cancel_all in newer SDK)
     ];
-    
+
     // Check if this is a non-critical error
     if (nonCriticalErrorCodes.includes(errorCode)) {
       console.warn('⚠️ Non-critical OpenAI session notice:', {
@@ -351,9 +351,27 @@ export const registerVoiceSessionPlaybackHandlers = (
       // Don't set error state for non-critical errors
       return;
     }
-    
-    // For critical errors, log and set error state
-    console.error('ÏżŇ?O OpenAI session error:', error);
+
+    // For critical errors, log and trigger auto-recovery
+    console.error('🚨 OpenAI session error:', error);
+    console.error('Error details:', { code: errorCode, type: errorType, message: errorMessage });
     debugSetVoiceState('error');
+
+    // Trigger auto-recovery for critical errors
+    console.log('🔄 Critical error detected - triggering auto-recovery...');
+    try {
+      const { triggerRecoveryIfNeeded } = await import('../lib/voiceErrorRecovery');
+      const recovered = await triggerRecoveryIfNeeded();
+
+      if (recovered) {
+        console.log('✅ Auto-recovery successful after session error');
+        // Reset voice state back to idle after successful recovery
+        debugSetVoiceState('idle');
+      } else {
+        console.warn('⚠️ Auto-recovery not triggered (may already be in progress)');
+      }
+    } catch (recoveryError) {
+      console.error('❌ Failed to trigger auto-recovery:', recoveryError);
+    }
   });
 };

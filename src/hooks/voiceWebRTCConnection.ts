@@ -58,32 +58,24 @@ export const initializeWebRTCConnection = async (
     console.log('🔧 Session state set to open');
   } catch (error) {
     console.error('❌ WebRTC connection failed:', error);
-    
+
     // Check if it's a session description parsing error
     const errorMessage = error instanceof Error ? error.message : String(error);
     if (errorMessage.includes('setRemoteDescription') || errorMessage.includes('SessionDescription')) {
-      console.log('🔧 Session description error detected. This usually means:');
-      console.log('1. Previous session is still active');
-      console.log('2. Worker needs to be restarted');
-      console.log('3. OpenAI session is stale');
-      
-      // Try to reset the session
-      try {
-        const resetResponse = await fetch('/voice/reset', { method: 'POST' });
-        if (resetResponse.ok) {
-          console.log('✅ Session reset successful, retrying connection...');
-          // Wait a moment for cleanup
-          await new Promise(resolve => setTimeout(resolve, 2000));
-          
-          // Try connecting again
-          await session.connect(connectionOptions);
-          console.log('✅ WebRTC connection successful after reset');
-        } else {
-          throw new Error('Failed to reset session');
-        }
-      } catch (resetError) {
-        console.error('❌ Failed to reset and retry:', resetError);
-        throw error; // Re-throw original error
+      console.log('🔧 Session description error detected - triggering auto-recovery');
+
+      // Use the centralized auto-recovery system instead of inline reset
+      const { autoRecoverVoiceConnection } = await import('../lib/voiceErrorRecovery');
+      const recovered = await autoRecoverVoiceConnection();
+
+      if (recovered) {
+        console.log('✅ Connection recovered - session will reinitialize automatically');
+        // Return false to indicate this session failed but recovery was triggered
+        // The parent will handle reinitializing with the new session
+        return false;
+      } else {
+        console.error('❌ Auto-recovery failed after all attempts');
+        throw error; // Re-throw if recovery failed
       }
     } else {
       throw error; // Re-throw if it's not a session description error
@@ -194,20 +186,25 @@ export const initializeWebRTCConnection = async (
     try {
       // Check if WebRTC connection is still healthy
       const pc = (session as any)._pc;
-      if (pc && (pc.connectionState === 'failed' || pc.iceConnectionState === 'failed')) {
-        console.warn('⚠️ WebRTC connection unhealthy, attempting recovery...');
-        
-        // Try to reset and reconnect
-        try {
-          const resetResponse = await fetch('/voice/reset', { method: 'POST' });
-          if (resetResponse.ok) {
-            console.log('✅ Health check: Session reset successful');
-            // The page will reload after reset, so clear the interval
-            clearInterval(healthCheckInterval);
-          }
-        } catch (resetError) {
-          console.error('❌ Health check: Failed to reset session:', resetError);
-        }
+
+      if (!pc) {
+        console.warn('⚠️ No peer connection found during health check');
+        return;
+      }
+
+      const connectionState = pc.connectionState;
+      const iceConnectionState = pc.iceConnectionState;
+
+      // Trigger auto-recovery on failed connections
+      if (connectionState === 'failed' || iceConnectionState === 'failed') {
+        console.warn('⚠️ WebRTC connection failed, triggering auto-recovery...');
+
+        // Use centralized auto-recovery
+        const { autoRecoverVoiceConnection } = await import('../lib/voiceErrorRecovery');
+        await autoRecoverVoiceConnection();
+
+        // Clear this interval since a new one will be created on reconnection
+        clearInterval(healthCheckInterval);
       }
     } catch (error) {
       console.warn('⚠️ Health check error:', error);
