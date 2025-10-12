@@ -199,6 +199,7 @@ export const useVoiceAnimation = () => {
   ]);
 
   // Watchdog: if analyzer stops updating while we're in speaking state, force silence
+  // FIXED: Single 250ms timeout for all interactions - no special case for first load
   useEffect(() => {
     const shouldWatch =
       voiceState === 'speaking' ||
@@ -209,22 +210,68 @@ export const useVoiceAnimation = () => {
       return;
     }
 
+    const SILENCE_TIMEOUT = 500; // Single timeout for all interactions
+    const WATCHDOG_CHECK_INTERVAL = 100; // Check every 100ms
+
+    if (process.env.NODE_ENV === 'development') {
+      console.log(`🐕 Watchdog monitoring with ${SILENCE_TIMEOUT}ms timeout`);
+    }
+
     const watchdogInterval = window.setInterval(() => {
       const now = Date.now();
       const energyAge = lastEnergySampleTimeRef.current
         ? now - lastEnergySampleTimeRef.current
         : Number.POSITIVE_INFINITY;
-      const hasStoreEnergy = vadSpeaking || storeSpeechIntensity > 0.02;
-      const hasCurrentAudio = hasStoreEnergy || isAudioPlaying;
 
-      if (hasCurrentAudio) {
+      // Get current store state for audio playing check
+      const storeState = useAnimationStore.getState();
+      const hasStoreEnergy = vadSpeaking || storeSpeechIntensity > 0.02;
+      const hasCurrentAudio = hasStoreEnergy || storeState.isAudioPlaying;
+
+      // DEFENSIVE CHECK: Verify actual audio element state directly
+      // This catches cases where store state might be stale or incorrect
+      let audioElementActuallyPlaying = false;
+      try {
+        const audioEl = (window as any).__hexaAudioEl as HTMLAudioElement | undefined;
+        if (audioEl) {
+          // Check if audio element is actually playing and has valid source
+          audioElementActuallyPlaying =
+            !audioEl.paused &&
+            audioEl.srcObject !== null &&
+            audioEl.readyState >= 2; // HAVE_CURRENT_DATA or higher
+
+          if (audioElementActuallyPlaying && process.env.NODE_ENV === 'development') {
+            console.log(`🐕 Watchdog: Audio element is actually playing (paused=${audioEl.paused}, readyState=${audioEl.readyState})`);
+          }
+        }
+      } catch (error) {
+        console.error('Watchdog failed to check audio element state:', error);
+      }
+
+      // CRITICAL FIX: If audio is actually playing (either store says so OR element check confirms), don't fire watchdog
+      // This prevents premature timeout when audio is playing but analyzer hasn't warmed up yet
+      if (hasCurrentAudio || audioElementActuallyPlaying) {
         return;
       }
 
-      if (energyAge > 450) {
+      // Force silence if no audio energy detected for SILENCE_TIMEOUT
+      if (energyAge > SILENCE_TIMEOUT) {
+        console.log(`🐕 Watchdog triggered: No audio energy for ${energyAge}ms (threshold: ${SILENCE_TIMEOUT}ms)`);
+
+        // CRITICAL: Also pause the audio element to ensure consistency
+        // This prevents the audio element from continuing to play while animation stops
+        try {
+          if ((window as any).__pauseAudioElement) {
+            (window as any).__pauseAudioElement();
+            console.log('🐕 Watchdog paused audio element for consistency');
+          }
+        } catch (error) {
+          console.error('Watchdog failed to pause audio element:', error);
+        }
+
         handleImmediateSilence();
       }
-    }, 200);
+    }, WATCHDOG_CHECK_INTERVAL);
 
     return () => {
       window.clearInterval(watchdogInterval);

@@ -13,6 +13,7 @@ interface AudioAnalysisOptions {
 
 let analysisStarted = false; // guard so analyser is wired only once
 let analysisRafId: number | null = null; // RAF ID for the analysis loop
+let cachedMediaElementSource: MediaElementAudioSourceNode | null = null; // Cache source node to avoid "already connected" error
 
 export const initializeAudioAnalysis = async (
   stream: MediaStream | null,
@@ -145,7 +146,19 @@ export const initializeAudioAnalysis = async (
     await startAnalysisWithNodes((ctx) => ctx.createMediaStreamSource(stream));
   } else if (audioEl) {
     // Otherwise use MediaElementSource
-    await startAnalysisWithNodes((ctx) => ctx.createMediaElementSource(audioEl));
+    // CRITICAL FIX: Reuse cached source node to avoid "already connected" error
+    // Web Audio API only allows one MediaElementSourceNode per audio element per context
+    if (cachedMediaElementSource) {
+      console.log('🎵 Reusing cached MediaElementSourceNode');
+      await startAnalysisWithNodes(() => cachedMediaElementSource!);
+    } else {
+      console.log('🎵 Creating new MediaElementSourceNode (first time)');
+      await startAnalysisWithNodes((ctx) => {
+        const source = ctx.createMediaElementSource(audioEl);
+        cachedMediaElementSource = source;
+        return source;
+      });
+    }
   }
 };
 
@@ -178,4 +191,6 @@ export const resetAudioAnalysis = () => {
     cancelAnimationFrame(analysisRafId);
     analysisRafId = null;
   }
+  // Clear cached source node so it can be recreated if needed
+  cachedMediaElementSource = null;
 };

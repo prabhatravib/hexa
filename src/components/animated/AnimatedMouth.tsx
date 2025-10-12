@@ -278,9 +278,14 @@ export const AnimatedMouth: React.FC<AnimatedMouthProps> = ({
   const isCurrentlySpeaking = voiceState === 'speaking';
   const hasTargetValue = mouthOpennessTarget > 0; // Allow even tiny targets to use dynamic path
   const isAnimating = animationFrameRef.current !== null;
-  
-  // Use dynamic path when there's a target value, speaking, or animating
-  const shouldUseDynamicPath = hasTargetValue || isCurrentlySpeaking || isAnimating;
+
+  // STRICT PRODUCTION MODE: Use dynamic path ONLY when ALL conditions are met
+  // This prevents phantom mouth animation when no audio is actually playing
+  const { isAudioPlaying } = useAnimationStore();
+  const shouldUseDynamicPath =
+    isCurrentlySpeaking &&           // Voice state must be 'speaking'
+    isAudioPlaying &&                 // Audio element must be actively playing
+    (hasTargetValue || isAnimating);  // Must have energy OR already animating
   
   // Select the appropriate path - only one path should be used
   const finalPath = shouldUseDynamicPath && pathD ? pathD : getExpressionPath();

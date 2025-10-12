@@ -1,7 +1,94 @@
 import { initializeAudioAnalysis, stopAudioAnalysis } from './voiceAudioAnalysis';
 import { useAnimationStore, VoiceState } from '@/store/animationStore';
 
+/**
+ * Validates that an audio element has a valid, active audio stream.
+ * This prevents starting animation/analysis when no real audio is present.
+ *
+ * @param audioEl - The HTML audio element to validate
+ * @returns true if the audio element has active audio tracks, false otherwise
+ */
+export const isAudioStreamValid = (audioEl: HTMLAudioElement): boolean => {
+  // Check if srcObject exists
+  if (!audioEl.srcObject) {
+    console.log('🔍 Audio stream validation failed: No srcObject');
+    return false;
+  }
 
+  // Check if srcObject is a MediaStream
+  if (!(audioEl.srcObject instanceof MediaStream)) {
+    console.log('🔍 Audio stream validation failed: srcObject is not a MediaStream');
+    return false;
+  }
+
+  // Get audio tracks from the stream
+  const audioTracks = audioEl.srcObject.getAudioTracks();
+  if (audioTracks.length === 0) {
+    console.log('🔍 Audio stream validation failed: No audio tracks in MediaStream');
+    return false;
+  }
+
+  // Check if at least one track is enabled, live, and not muted
+  const hasLiveTrack = audioTracks.some(track =>
+    track.enabled &&
+    track.readyState === 'live' &&
+    track.muted === false
+  );
+
+  if (!hasLiveTrack) {
+    console.log('🔍 Audio stream validation failed: No live, enabled, unmuted tracks');
+    return false;
+  }
+
+  console.log('✅ Audio stream validation passed: Stream has active audio tracks');
+  return true;
+};
+
+/**
+ * Monitors MediaStream audio tracks for events that indicate audio has stopped.
+ * When a track ends or is muted, triggers the provided callback to stop animation.
+ *
+ * @param stream - The MediaStream to monitor
+ * @param onTrackStopped - Callback to invoke when any audio track stops/mutes
+ * @returns Cleanup function to remove event listeners
+ */
+export const monitorAudioTracks = (
+  stream: MediaStream,
+  onTrackStopped: () => void
+): (() => void) => {
+  const audioTracks = stream.getAudioTracks();
+  const cleanupFunctions: (() => void)[] = [];
+
+  audioTracks.forEach((track, index) => {
+    console.log(`🎧 Monitoring audio track ${index}: ${track.id} (state: ${track.readyState})`);
+
+    // Handle track ended event
+    const handleEnded = () => {
+      console.log(`🔇 Audio track ${index} ended: ${track.id}`);
+      onTrackStopped();
+    };
+
+    // Handle track mute event
+    const handleMute = () => {
+      console.log(`🔇 Audio track ${index} muted: ${track.id}`);
+      onTrackStopped();
+    };
+
+    track.addEventListener('ended', handleEnded);
+    track.addEventListener('mute', handleMute);
+
+    // Store cleanup functions
+    cleanupFunctions.push(() => {
+      track.removeEventListener('ended', handleEnded);
+      track.removeEventListener('mute', handleMute);
+    });
+  });
+
+  // Return cleanup function that removes all listeners
+  return () => {
+    cleanupFunctions.forEach(cleanup => cleanup());
+  };
+};
 
 interface AudioElementHandlersOptions {
   setVoiceState: (state: VoiceState) => void;
@@ -11,11 +98,11 @@ interface AudioElementHandlersOptions {
 }
 
 export const setupAudioElementHandlers = (
-  audioEl: HTMLAudioElement, 
+  audioEl: HTMLAudioElement,
   handlers: AudioElementHandlersOptions
 ) => {
   const { setVoiceState, startSpeaking, stopSpeaking, setSpeechIntensity } = handlers;
-  
+
   // Track audio element state for mouth animation
   let audioPlaying = false;
   let analysisStarted = false;
@@ -23,7 +110,27 @@ export const setupAudioElementHandlers = (
   let lastForcedIdleAt = 0;
   let lastHandledEnergyTs = 0;
   let lastVoiceState: VoiceState = 'idle';
-  
+  let trackMonitorCleanup: (() => void) | null = null;
+  let lastTransportStopAt = 0; // Track when transport stop events occur
+
+  // Expose transport stop tracker globally for coordination with transport event handlers
+  (window as any).__notifyTransportStop = () => {
+    lastTransportStopAt = Date.now();
+    console.log('📡 Transport stop notified to audio element manager');
+  };
+
+  // Expose audio element pause function for watchdog coordination
+  (window as any).__pauseAudioElement = () => {
+    if (audioEl && !audioEl.paused) {
+      try {
+        audioEl.pause();
+        console.log('🔇 Audio element paused by external trigger (watchdog)');
+      } catch (error) {
+        console.error('Failed to pause audio element externally:', error);
+      }
+    }
+  };
+
   // Fallback: ensure analyser is running even if remote_track isn't emitted
   audioEl.addEventListener('playing', async () => {
     if (useAnimationStore.getState().isVoiceDisabled) {
@@ -33,6 +140,14 @@ export const setupAudioElementHandlers = (
       setVoiceState('idle');
       return;
     }
+
+    // STRICT VALIDATION: Verify audio stream is valid before starting animation
+    if (!isAudioStreamValid(audioEl)) {
+      console.warn('⚠️ Audio playing event fired but stream validation failed - not starting animation');
+      useAnimationStore.getState().setAudioPlaying(false);
+      return;
+    }
+
     console.log('🎵 Audio playing - ensuring analyser is running and mouth animating');
     console.log('🎵 Audio element state during playing:', {
       srcObject: audioEl.srcObject,
@@ -42,6 +157,31 @@ export const setupAudioElementHandlers = (
     });
     audioPlaying = true;
     useAnimationStore.getState().setAudioPlaying(true);
+
+    // Set up audio track monitoring for this stream
+    if (audioEl.srcObject instanceof MediaStream) {
+      // Clean up previous monitor if exists
+      if (trackMonitorCleanup) {
+        trackMonitorCleanup();
+        trackMonitorCleanup = null;
+      }
+
+      // Start monitoring audio tracks
+      trackMonitorCleanup = monitorAudioTracks(audioEl.srcObject, () => {
+        console.log('🔇 Audio track stopped - forcing idle state');
+        audioPlaying = false;
+        analysisStarted = false;
+        useAnimationStore.getState().setAudioPlaying(false);
+        stopAudioAnalysis();
+        if (stopSpeaking) {
+          stopSpeaking();
+        } else {
+          setVoiceState('idle');
+        }
+        (window as any).__currentVoiceState = 'idle';
+      });
+    }
+
     if (!analysisStarted) {
       console.log('🎵 Starting analysis with MediaElementSource');
       await initializeAudioAnalysis(null, audioEl, {
@@ -71,6 +211,13 @@ export const setupAudioElementHandlers = (
       setVoiceState('idle');
       return;
     }
+
+    // STRICT VALIDATION: Verify audio stream is valid before starting animation
+    if (!isAudioStreamValid(audioEl)) {
+      console.warn('⚠️ Audio play event fired but stream validation failed - not starting animation');
+      return;
+    }
+
     console.log('🎵 Audio play event - starting mouth animation');
     audioPlaying = true;
     if (startSpeaking) {
@@ -113,7 +260,24 @@ export const setupAudioElementHandlers = (
         lastHandledEnergyTs = Math.max(lastHandledEnergyTs, lastMouthMotion);
       }
 
-      if (now - lastForcedIdleAt < 250) {
+      // INCREASED COOLDOWN: Changed from 250ms to 1000ms
+      // This prevents recovery logic from overriding authoritative transport stop events
+      // during buffered audio playback. 1 second is long enough to prevent false recoveries
+      // from buffered audio, yet short enough to catch genuinely missed events.
+      if (now - lastForcedIdleAt < 1000) {
+        if (process.env.NODE_ENV === 'development') {
+          console.log(`⏸️ Cooldown active: ${now - lastForcedIdleAt}ms since forced idle (threshold: 1000ms)`);
+        }
+        return;
+      }
+
+      // ADDITIONAL CHECK: Respect transport stop events with extended cooldown
+      // If a transport stop event occurred recently, don't allow recovery for longer
+      const timeSinceTransportStop = lastTransportStopAt > 0 ? now - lastTransportStopAt : Number.POSITIVE_INFINITY;
+      if (timeSinceTransportStop < 1000) {
+        if (process.env.NODE_ENV === 'development') {
+          console.log(`⏸️ Transport stop cooldown active: ${timeSinceTransportStop}ms since transport stop`);
+        }
         return;
       }
 
@@ -128,7 +292,7 @@ export const setupAudioElementHandlers = (
       }
 
       lastHandledEnergyTs = lastMouthMotion;
-      console.log('⚠️ Audio playing with recent energy; re-entering speaking state');
+      console.log('⚠️ Audio playing with recent energy; re-entering speaking state (cooldown expired)');
       if (startSpeaking) {
         startSpeaking();
       } else {
@@ -178,7 +342,13 @@ export const setupAudioElementHandlers = (
     audioPlaying = false;
     analysisStarted = false;
     if (setSpeechIntensity) setSpeechIntensity(0);
-    
+
+    // Clean up track monitoring
+    if (trackMonitorCleanup) {
+      trackMonitorCleanup();
+      trackMonitorCleanup = null;
+    }
+
     // Reset mouth animation target (SSR-safe)
     try {
       const store = useAnimationStore.getState();
@@ -189,17 +359,17 @@ export const setupAudioElementHandlers = (
     } catch (error) {
       // Store not available, ignore
     }
-    
+
     // Stop the audio analyzer
     stopAudioAnalysis();
-    
+
     // Force stop speaking state
     if (stopSpeaking) {
       stopSpeaking();
     } else {
       setVoiceState('idle');
     }
-    
+
     // Update global state for debugging
     (window as any).__currentVoiceState = 'idle';
 
@@ -210,7 +380,7 @@ export const setupAudioElementHandlers = (
     } catch {}
     lastVoiceState = 'idle';
     lastForcedIdleAt = Date.now();
-    
+
     // Clear duration timeout
     if (audioDurationTimeout) {
       clearTimeout(audioDurationTimeout);
@@ -223,7 +393,13 @@ export const setupAudioElementHandlers = (
     audioPlaying = false;
     analysisStarted = false;
     if (setSpeechIntensity) setSpeechIntensity(0);
-    
+
+    // Clean up track monitoring
+    if (trackMonitorCleanup) {
+      trackMonitorCleanup();
+      trackMonitorCleanup = null;
+    }
+
     // Reset VAD flag and mouth animation target (SSR-safe)
     try {
       const store = useAnimationStore.getState();
@@ -236,16 +412,16 @@ export const setupAudioElementHandlers = (
     } catch (error) {
       // Store not available, ignore
     }
-    
+
     // Stop the audio analyzer
     stopAudioAnalysis();
-    
+
     if (stopSpeaking) {
       stopSpeaking();
     } else {
       setVoiceState('idle');
     }
-    
+
     (window as any).__currentVoiceState = 'idle';
 
     // Record latest idle transition for playback guard

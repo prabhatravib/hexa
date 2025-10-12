@@ -69,17 +69,46 @@ export const registerVoiceSessionPlaybackHandlers = (
 
     console.log(`dY"ÃƒÂ¯Ã‚Â¿Ã‚Â½ ${reason} - leaving speaking state`);
     runtimeState.isCurrentlySpeaking = false;
-    
+
+    // Notify audio element manager that transport stop occurred
+    // This helps coordinate cooldown periods between transport events and recovery logic
+    try {
+      if ((window as any).__notifyTransportStop) {
+        (window as any).__notifyTransportStop();
+      }
+    } catch (error) {
+      console.error('Failed to notify transport stop:', error);
+    }
+
+    // CRITICAL FIX: Pause audio element to prevent timeupdate recovery loop
+    // When transport events say audio is done, we must stop playback immediately
+    if (audioEl && !audioEl.paused) {
+      try {
+        audioEl.pause();
+        console.log('🔇 Force paused audio element after transport stop event');
+      } catch (error) {
+        console.error('Failed to pause audio element:', error);
+      }
+    }
+
     // Reset mouth animation target to prevent stuck-open mouth
     try {
       useAnimationStore.getState().setMouthTarget(0);
     } catch (error) {
       console.error('Failed to reset mouth target:', error);
     }
-    
+
+    // Set isAudioPlaying = false to indicate audio has stopped
+    try {
+      useAnimationStore.getState().setAudioPlaying(false);
+      console.log('✅ Set isAudioPlaying = false on transport stop');
+    } catch (error) {
+      console.error('Failed to set isAudioPlaying:', error);
+    }
+
     // Stop the audio analyzer
     stopAudioAnalysis();
-    
+
     if (stopSpeaking) {
       stopSpeaking();
     } else {
@@ -168,6 +197,18 @@ export const registerVoiceSessionPlaybackHandlers = (
       return;
     }
     console.log('dY"ÃƒÂ¯Ã‚Â¿Ã‚Â½ agent_start - entering speaking state');
+
+    // CRITICAL FIX: Set isAudioPlaying = true optimistically
+    // On first load, audio element is already playing (MediaStream auto-plays)
+    // But 'play'/'playing' events don't fire again when audio data starts flowing
+    // This ensures watchdog knows audio is active even without new play events
+    try {
+      useAnimationStore.getState().setAudioPlaying(true);
+      console.log('✅ Set isAudioPlaying = true on agent_start (optimistic)');
+    } catch (error) {
+      console.error('Failed to set isAudioPlaying:', error);
+    }
+
     markSpeaking();
   });
 
