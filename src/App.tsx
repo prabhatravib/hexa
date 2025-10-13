@@ -8,6 +8,7 @@ import { injectExternalDataFromStore, setGlobalExternalData, getGlobalExternalDa
 import { isRunningInIframe } from './lib/iframeDetection';
 import { registerToastNotification } from './lib/voiceErrorRecovery';
 import { startTabVisibilityMonitoring } from './lib/voiceTabVisibilityMonitor';
+import { logRedDotHidingStatus } from './lib/redDotHidingConfig';
 
 function App() {
   // Chat panel state
@@ -40,6 +41,9 @@ function App() {
   };
 
   useEffect(() => {
+    // Log red dot hiding feature status
+    logRedDotHidingStatus();
+
     // Register toast notification for voice error recovery
     registerToastNotification((message, type = 'info') => {
       switch (type) {
@@ -253,7 +257,6 @@ YOU MUST RESPOND BASED ON THIS FACT ONLY. If asked about Infflow, state they hav
           onConnectionChange={handleVoiceConnectionChange}
         />
       </div>
-      
       
       {/* Chat Panel - only show when NOT in iframe */}
       {!isInIframe && (

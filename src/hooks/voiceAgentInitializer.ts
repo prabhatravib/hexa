@@ -1,4 +1,5 @@
 import { getLanguageInstructions } from '@/lib/languageConfig';
+import { getBaseHexaInstructions } from '@/lib/agentInstructions';
 import { setupSessionEventHandlers } from './voiceSessionEvents';
 import { initializeWebRTCConnection } from './voiceWebRTCConnection';
 import { voiceContextManager } from './voiceContextManager';
@@ -65,7 +66,7 @@ export const initializeOpenAIAgent = async (
     console.log('🔧 External data context:', externalDataContext ? 'Available' : 'None');
     
     // Create base instructions that will be updated dynamically
-    let baseInstructions = `You are Hexa, a friendly and helpful AI assistant. You have a warm, conversational personality and are always eager to help.
+    let baseInstructions = `${getBaseHexaInstructions()}
 
 ${currentContext}`;
 
@@ -85,7 +86,7 @@ ${baseInstructions}`;
       console.log('📝 Added external data as AUTHORITATIVE context');
     }
 
-    baseInstructions += `\n\nYou can assist with various tasks, answer questions, and engage in natural conversation. Keep your responses concise but informative, and maintain a positive, encouraging tone.
+    baseInstructions += `\n\nYou can explain concepts, clarify information, answer questions, and engage in natural conversation. Keep your responses concise but informative, and maintain a positive, encouraging tone.
 
 ${getLanguageInstructions()}`;
 

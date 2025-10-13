@@ -7,6 +7,7 @@ interface Message {
   role: 'user' | 'assistant';
   text: string;
   timestamp: Date;
+  type: 'voice' | 'text';
 }
 
 interface ChatPanelProps {
@@ -18,15 +19,18 @@ interface ChatPanelProps {
   isAgentReady?: boolean;
 }
 
-export const ChatPanel: React.FC<ChatPanelProps> = ({ 
-  transcript, 
+export const ChatPanel: React.FC<ChatPanelProps> = ({
+  transcript,
   response,
   isMinimized = false,
   onToggleMinimize,
   onSendMessage,
   isAgentReady = false
 }) => {
-  const [messages, setMessages] = useState<Message[]>([]);
+  const [activeTab, setActiveTab] = useState<'voice' | 'text'>('voice');
+  const [responseDestination, setResponseDestination] = useState<'voice' | 'text'>('voice');
+  const [voiceMessages, setVoiceMessages] = useState<Message[]>([]);
+  const [textMessages, setTextMessages] = useState<Message[]>([]);
   const [draft, setDraft] = useState('');
   const [isSending, setIsSending] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
@@ -41,27 +45,40 @@ export const ChatPanel: React.FC<ChatPanelProps> = ({
         id: `user-${Date.now()}`,
         role: 'user',
         text: transcript,
-        timestamp: new Date()
+        timestamp: new Date(),
+        type: 'voice'
       };
-      setMessages(prev => [...prev, newMessage]);
+      setVoiceMessages(prev => [...prev, newMessage]);
     }
   }, [transcript]);
 
   useEffect(() => {
     if (response && response.trim()) {
+      const destination = responseDestination;
       const newMessage: Message = {
         id: `assistant-${Date.now()}`,
         role: 'assistant',
         text: response,
-        timestamp: new Date()
+        timestamp: new Date(),
+        type: destination
       };
-      setMessages(prev => [...prev, newMessage]);
+
+      if (destination === 'voice') {
+        setVoiceMessages(prev => [...prev, newMessage]);
+      } else {
+        setTextMessages(prev => [...prev, newMessage]);
+      }
     }
-  }, [response]);
+  }, [response, responseDestination]);
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [messages]);
+  }, [activeTab === 'voice' ? voiceMessages : textMessages]);
+
+  useEffect(() => {
+    // Update response destination when active tab changes
+    setResponseDestination(activeTab);
+  }, [activeTab]);
 
   useEffect(() => {
     if (errorMessage && draft.length === 0) {
@@ -90,6 +107,15 @@ export const ChatPanel: React.FC<ChatPanelProps> = ({
     try {
       const success = await onSendMessage(trimmed);
       if (success) {
+        // Add user message to text messages
+        const userMessage: Message = {
+          id: `user-${Date.now()}`,
+          role: 'user',
+          text: trimmed,
+          timestamp: new Date(),
+          type: 'text'
+        };
+        setTextMessages(prev => [...prev, userMessage]);
         setDraft('');
       } else {
         setErrorMessage('Message could not be delivered');
@@ -134,84 +160,142 @@ export const ChatPanel: React.FC<ChatPanelProps> = ({
 
   return (
     <motion.div
-      className={`fixed bottom-4 right-4 bg-white dark:bg-gray-800 rounded-lg shadow-2xl border border-gray-200 dark:border-gray-600 transition-all duration-300 ${
-        isMinimized ? 'w-80 h-12' : 'w-96 h-[500px]'
+      className={`fixed bottom-4 right-4 bg-white dark:bg-gray-800 rounded-lg shadow-2xl border border-gray-200 dark:border-gray-600 transition-all duration-300 flex flex-col ${
+        isMinimized ? 'w-80' : 'w-96 h-[500px]'
       }`}
       initial={{ opacity: 0, y: 20 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.3 }}
     >
-      <div className="flex items-center justify-between px-4 py-2 border-b border-gray-200 dark:border-gray-600 bg-gray-50 dark:bg-gray-700 rounded-t-lg">
-        <div className="flex items-center gap-2">
-          <div className={`w-2 h-2 rounded-full ${
-            voiceState === 'speaking' ? 'bg-green-500 animate-pulse' : 
-            voiceState === 'listening' ? 'bg-blue-500 animate-pulse' : 
-            'bg-gray-400'
-          }`} />
-          <h3 className="text-sm font-semibold text-gray-700 dark:text-gray-300">
-            Voice Chat
-          </h3>
-        </div>
+      {/* Horizontal Tabs */}
+      <div className="flex border-b border-gray-200 dark:border-gray-600 bg-gray-50 dark:bg-gray-700">
         <button
-          onClick={onToggleMinimize}
-          className="text-gray-500 hover:text-gray-700 dark:hover:text-gray-300 p-1 rounded transition-colors"
-          aria-label={isMinimized ? 'Expand chat' : 'Minimize chat'}
+          onClick={() => setActiveTab('voice')}
+          className={`flex-1 px-4 py-3 text-sm font-medium transition-colors ${
+            activeTab === 'voice'
+              ? 'bg-white dark:bg-gray-800 text-blue-600 dark:text-blue-400 border-b-2 border-blue-500'
+              : 'text-gray-600 dark:text-gray-400 hover:text-gray-800 dark:hover:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-600'
+          }`}
+          aria-label="Voice conversations"
         >
-          {isMinimized ? (
-            <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
-              <path fillRule="evenodd" d="M14.707 12.707a1 1 0 01-1.414 0L10 9.414l-3.293 3.293a1 1 0 01-1.414-1.414l4-4a1 1 0 011.414 0l4 4a1 1 0 010 1.414z" clipRule="evenodd" />
-            </svg>
-
-          ) : (
-            <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
-              <path fillRule="evenodd" d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z" clipRule="evenodd" />
-            </svg>
-
-          )}
+          🎤 Voice
+        </button>
+        <button
+          onClick={() => setActiveTab('text')}
+          className={`flex-1 px-4 py-3 text-sm font-medium transition-colors ${
+            activeTab === 'text'
+              ? 'bg-white dark:bg-gray-800 text-blue-600 dark:text-blue-400 border-b-2 border-blue-500'
+              : 'text-gray-600 dark:text-gray-400 hover:text-gray-800 dark:hover:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-600'
+          }`}
+          aria-label="Text conversations"
+        >
+          💬 Text
         </button>
       </div>
 
-      <AnimatePresence>
-        {!isMinimized && (
-          <motion.div
-            initial={{ height: 0, opacity: 0 }}
-            animate={{ height: 'calc(100% - 48px)', opacity: 1 }}
-            exit={{ height: 0, opacity: 0 }}
-            className="flex flex-col h-full overflow-hidden"
+      {/* Status Bar with expand button - Always visible */}
+      <div className="flex items-center justify-between px-4 py-2 border-b border-gray-200 dark:border-gray-600 bg-gray-50 dark:bg-gray-700">
+        <div className="flex items-center gap-2">
+          <div className={`w-2 h-2 rounded-full ${
+            voiceState === 'speaking' ? 'bg-green-500 animate-pulse' :
+            voiceState === 'listening' ? 'bg-blue-500 animate-pulse' :
+            'bg-gray-400'
+          }`} />
+          <span className="text-xs text-gray-600 dark:text-gray-400">
+            {activeTab === 'voice' ? 'Voice conversations' : 'Text conversations'}
+          </span>
+        </div>
+        {onToggleMinimize && (
+          <button
+            onClick={onToggleMinimize}
+            className="text-gray-500 hover:text-gray-700 dark:hover:text-gray-300 p-1 rounded transition-colors"
+            aria-label={isMinimized ? 'Expand chat' : 'Minimize chat'}
           >
-            <div className="flex-1 overflow-y-auto p-4 space-y-3">
-              {messages.length === 0 && (
-                <div className="text-center text-gray-400 text-sm mt-8">
-                  Click the hexagon to start talking
-                </div>
-              )}
+            {isMinimized ? (
+              <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
+                <path fillRule="evenodd" d="M14.707 12.707a1 1 0 01-1.414 0L10 9.414l-3.293 3.293a1 1 0 01-1.414-1.414l4-4a1 1 0 011.414 0l4 4a1 1 0 010 1.414z" clipRule="evenodd" />
+              </svg>
+            ) : (
+              <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
+                <path fillRule="evenodd" d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z" clipRule="evenodd" />
+              </svg>
+            )}
+          </button>
+        )}
+      </div>
 
-              {messages.map((message) => (
-                <motion.div
-                  key={message.id}
-                  initial={{ opacity: 0, x: message.role === 'user' ? 20 : -20 }}
-                  animate={{ opacity: 1, x: 0 }}
-                  className={`flex ${message.role === 'user' ? 'justify-end' : 'justify-start'}`}
-                >
-                  <div className={`max-w-[80%] px-4 py-2 rounded-lg ${
-                    message.role === 'user' 
-                      ? 'bg-blue-500 text-white' 
-                      : 'bg-gray-100 dark:bg-gray-700 text-gray-800 dark:text-gray-200'
-                  }`}>
-                    <p className="text-sm whitespace-pre-wrap">{message.text}</p>
-                    <p className={`text-xs mt-1 ${
-                      message.role === 'user' ? 'text-blue-100' : 'text-gray-500 dark:text-gray-400'
-                    }`}>
-                      {message.timestamp.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: true })}
-                    </p>
+      {/* Content Area - Only show when not minimized */}
+      {!isMinimized && (
+        <>
+          <div className="flex-1 overflow-y-auto p-4 space-y-3">
+            {activeTab === 'voice' ? (
+              <>
+                {voiceMessages.length === 0 && (
+                  <div className="text-center text-gray-400 text-sm mt-8">
+                    Click the hexagon to start talking
                   </div>
-                </motion.div>
-              ))}
+                )}
 
-              <div ref={messagesEndRef} />
-            </div>
+                {voiceMessages.map((message) => (
+                  <motion.div
+                    key={message.id}
+                    initial={{ opacity: 0, x: message.role === 'user' ? 20 : -20 }}
+                    animate={{ opacity: 1, x: 0 }}
+                    className={`flex ${message.role === 'user' ? 'justify-end' : 'justify-start'}`}
+                  >
+                    <div className={`max-w-[80%] px-4 py-2 rounded-lg ${
+                      message.role === 'user'
+                        ? 'bg-blue-500 text-white'
+                        : 'bg-gray-100 dark:bg-gray-700 text-gray-800 dark:text-gray-200'
+                    }`}>
+                      <p className="text-sm whitespace-pre-wrap">{message.text}</p>
+                      <p className={`text-xs mt-1 ${
+                        message.role === 'user' ? 'text-blue-100' : 'text-gray-500 dark:text-gray-400'
+                      }`}>
+                        {message.timestamp.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: true })}
+                      </p>
+                    </div>
+                  </motion.div>
+                ))}
+              </>
+            ) : (
+              <>
+                {textMessages.length === 0 && (
+                  <div className="text-center text-gray-400 text-sm mt-8">
+                    Start typing to begin text conversation
+                  </div>
+                )}
 
-            <div className="px-4 py-3 border-t border-gray-200 dark:border-gray-600 bg-gray-50 dark:bg-gray-700">
+                {textMessages.map((message) => (
+                  <motion.div
+                    key={message.id}
+                    initial={{ opacity: 0, x: message.role === 'user' ? 20 : -20 }}
+                    animate={{ opacity: 1, x: 0 }}
+                    className={`flex ${message.role === 'user' ? 'justify-end' : 'justify-start'}`}
+                  >
+                    <div className={`max-w-[80%] px-4 py-2 rounded-lg ${
+                      message.role === 'user'
+                        ? 'bg-blue-500 text-white'
+                        : 'bg-gray-100 dark:bg-gray-700 text-gray-800 dark:text-gray-200'
+                    }`}>
+                      <p className="text-sm whitespace-pre-wrap">{message.text}</p>
+                      <p className={`text-xs mt-1 ${
+                        message.role === 'user' ? 'text-blue-100' : 'text-gray-500 dark:text-gray-400'
+                      }`}>
+                        {message.timestamp.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: true })}
+                      </p>
+                    </div>
+                  </motion.div>
+                ))}
+              </>
+            )}
+
+            <div ref={messagesEndRef} />
+          </div>
+
+          {/* Input Area - Only show in Text Chat mode */}
+          {activeTab === 'text' && (
+            <div className="px-4 py-3 border-t border-gray-200 dark:border-gray-600 bg-gray-50 dark:bg-gray-700 flex-shrink-0">
               <form onSubmit={handleSubmit} className="flex flex-col gap-2">
                 <div className="flex gap-2">
                   <textarea
@@ -242,16 +326,34 @@ export const ChatPanel: React.FC<ChatPanelProps> = ({
                 </span>
                 <button
                   type="button"
-                  onClick={() => setMessages([])}
+                  onClick={() => setTextMessages([])}
                   className="text-xs text-gray-500 hover:text-gray-700 dark:hover:text-gray-300"
                 >
                   Clear
                 </button>
               </div>
             </div>
-          </motion.div>
-        )}
-      </AnimatePresence>
+          )}
+
+          {/* Clear button for Voice Chat - Show when in voice mode */}
+          {activeTab === 'voice' && !isMinimized && (
+            <div className="px-4 py-3 border-t border-gray-200 dark:border-gray-600 bg-gray-50 dark:bg-gray-700 flex-shrink-0">
+              <div className="flex items-center justify-between">
+                <span className={`text-xs ${errorMessage ? 'text-red-500' : 'text-gray-500 dark:text-gray-400'}`}>
+                  {statusText}
+                </span>
+                <button
+                  type="button"
+                  onClick={() => setVoiceMessages([])}
+                  className="text-xs text-gray-500 hover:text-gray-700 dark:hover:text-gray-300"
+                >
+                  Clear
+                </button>
+              </div>
+            </div>
+          )}
+        </>
+      )}
     </motion.div>
   );
 };
