@@ -44,29 +44,6 @@ src/
     └── agent-manager.ts           # Hexagon-only agent announcements
 ```
 
-## 🎯 Agent Personalities
-
-### Hexagon Assistant
-- **Identity**: Friendly AI with hexagonal character
-- **Tone**: Warm and conversational
-- **Enthusiasm**: Medium
-- **Formality**: Casual
-- **Best for**: General assistance, creative tasks, entertainment
-
-### Customer Support Agent
-- **Identity**: Professional customer service representative
-- **Tone**: Polite and authoritative
-- **Enthusiasm**: Medium
-- **Formality**: Semi-formal
-- **Best for**: Order management, returns, billing issues
-
-### Language Tutor
-- **Identity**: Enthusiastic language learning partner
-- **Tone**: Warm and educational
-- **Enthusiasm**: High
-- **Formality**: Semi-formal
-- **Best for**: Language learning, pronunciation, grammar
-
 ## 🛠️ Setup Instructions
 
 ### 1. Install Dependencies

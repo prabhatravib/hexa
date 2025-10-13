@@ -384,15 +384,19 @@ Use this over prior knowledge. "Infflow" with two f's is the user's company, not
         return this.core.createErrorResponse('Method not allowed. Use POST.', 405);
       }
 
-      const body = await request.json() as { 
-        text?: string; 
-        image?: string; 
-        prompt?: string; 
+      const body = await request.json() as {
+        text?: string;
+        image?: string;
+        prompt?: string;
         type?: string;
         mermaidCode?: string;
         diagramImage?: string;
         sessionId?: string;
         context?: string; // narrator mode context
+        // Hover-specific fields
+        nodeText?: string;
+        nodeId?: string;
+        timestamp?: number;
       };
 
       // Handle different input formats from external websites
@@ -403,18 +407,100 @@ Use this over prior knowledge. "Infflow" with two f's is the user's company, not
       const context = (body.context || '').trim();
       const sessionId = body.sessionId || this.core.getSessionId();
 
-      if (!text && !image) {
-        return this.core.createErrorResponse('no_text_or_image', 400);
+      // Hover-specific data
+      const nodeText = body.nodeText || '';
+      const nodeId = body.nodeId || '';
+      const hoverTimestamp = body.timestamp || Date.now();
+
+      // For hover events, we need either nodeText or nodeId
+      if (type === 'hover') {
+        if (!nodeText && !nodeId) {
+          return this.core.createErrorResponse('no_node_data', 400);
+        }
+        // For hover events, we don't need text or image content
+      } else {
+        // For non-hover events, we need either text or image
+        if (!text && !image) {
+          return this.core.createErrorResponse('no_text_or_image', 400);
+        }
       }
 
-      console.log('📥 Received external data:', { 
-        text: text.substring(0, 100), 
-        hasImage: !!image, 
-        prompt, 
+      console.log('📥 Received external data:', {
+        text: text.substring(0, 100),
+        hasImage: !!image,
+        prompt,
         type,
         hasNarratorContext: !!context,
-        sessionId 
+        sessionId,
+        isHover: type === 'hover',
+        nodeText,
+        nodeId,
+        bodyType: body.type,
+        bodyNodeText: body.nodeText,
+        bodyNodeId: body.nodeId
       });
+
+      // Handle hover events - retrieve diagram context and combine with node info
+      if (type === 'hover') {
+        console.log('🔍 Processing hover event for session:', sessionId);
+
+        // Retrieve stored diagram data for this session
+        const storedDiagramData = await this.getExternalDataBySessionId(sessionId);
+
+        if (!storedDiagramData) {
+          console.log('⚠️ No diagram context found for hover session:', sessionId);
+          return this.core.createJsonResponse({
+            success: false,
+            error: 'no_diagram_context',
+            message: 'No diagram data found for this session. Please send diagram data first.',
+            sessionId,
+            hoverData: {
+              nodeText,
+              nodeId,
+              timestamp: hoverTimestamp
+            }
+          }, 404);
+        }
+
+        console.log('✅ Found diagram context for hover:', {
+          hasMermaidCode: !!storedDiagramData.text,
+          hasDiagramImage: !!storedDiagramData.image,
+          diagramType: storedDiagramData.type,
+          originalPrompt: storedDiagramData.prompt
+        });
+
+        // Create combined response with both node and diagram context
+        const combinedResponse = {
+          success: true,
+          type: 'hover_with_context',
+          sessionId,
+          hoverData: {
+            nodeText,
+            nodeId,
+            timestamp: hoverTimestamp
+          },
+          diagramContext: {
+            mermaidCode: storedDiagramData.text,
+            diagramImage: storedDiagramData.image,
+            originalPrompt: storedDiagramData.prompt,
+            diagramType: storedDiagramData.type,
+            storedAt: storedDiagramData.timestamp
+          },
+          message: `Hovering over node "${nodeText}" (ID: ${nodeId}) in diagram context`
+        };
+
+        // Broadcast the combined context to frontend for voice injection
+        this.core.broadcastToClients({
+          type: 'hover_with_diagram_context',
+          sessionId,
+          hoverData: combinedResponse.hoverData,
+          diagramContext: combinedResponse.diagramContext,
+          message: 'Hover event with full diagram context for voice response'
+        });
+
+        console.log('📡 Broadcasted hover with diagram context to frontend');
+        return this.core.createJsonResponse(combinedResponse);
+      }
 
       // Narrator mode: store and apply system prompt override
       if (type === 'narrator' && context) {
@@ -483,7 +569,7 @@ Use this over prior knowledge. "Infflow" with two f's is the user's company, not
       });
       console.log('📡 Broadcasted external data to frontend for WebRTC injection');
 
-      return this.core.createJsonResponse({ 
+      return this.core.createJsonResponse({
         success: true,
         message: 'External data received and broadcasted for injection',
         sessionId: sessionId

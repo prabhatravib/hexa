@@ -216,3 +216,67 @@ The implementation is successful when:
 5. **Optimize performance** if needed based on usage patterns
 
 The implementation is now complete and ready for deployment and testing.
+
+## External Data Endpoint
+
+The External Data Endpoint allows you to send any type of external data (images, text, documents, code, etc.) to your Hexagon Worker for voice discussions and AI interactions.
+
+- **URL**: `https://hexa-worker.prabhatravib.workers.dev/api/external-data`
+- **Method**: `POST`
+- **Content-Type**: `application/json`
+
+### Request Body
+
+The endpoint accepts a flexible JSON payload with the following optional fields:
+
+```json
+{
+  "image": "data:image/png;base64,...",    // Optional: Base64 encoded image
+  "text": "Some text input",                // Optional: Text content
+  "prompt": "Context or prompt",            // Optional: Context for AI
+  "type": "diagram|document|code|image",     // Optional: Data type identifier
+  "sessionId": "uuid-v4-session-id"
+}
+```
+
+### Field Descriptions
+
+- **`image`**: Base64 encoded image data (e.g., `data:image/png;base64,...`)
+- **`text`**: Any text content you want to discuss (code, documents, notes, etc.)
+- **`prompt`**: Context or instructions for how the AI should handle the data
+- **`type`**: Optional identifier for the type of data (helps with categorization)
+- **`sessionId`**: The session ID to associate the data with.
+
+### Success Response (200)
+```json
+{
+  "success": true,
+  "message": "External data received and stored for voice context",
+  "sessionId": "uuid-here"
+}
+```
+
+### Error Responses
+
+#### Method Not Allowed (405)
+```json
+{
+  "success": false,
+  "error": "Method not allowed. Use POST."
+}
+```
+
+#### Server Error (500)
+```json
+{
+  "success": false,
+  "error": "Failed to process external data"
+}
+```
+
+### CORS Support
+
+The endpoint supports CORS and includes proper headers:
+- `Access-Control-Allow-Origin: *`
+- `Access-Control-Allow-Methods: POST, OPTIONS`
+- `Access-Control-Allow-Headers: Content-Type`

@@ -1,6 +1,7 @@
 import { initializeAudioAnalysis, stopAudioAnalysis } from './voiceAudioAnalysis';
 import { setupAudioElementHandlers } from './voiceAudioElementManager';
 import { useAnimationStore, VoiceState } from '@/store/animationStore';
+import { isConnectionHealthCheckEnabled } from '../lib/connectionHealthConfig';
 
 
 
@@ -181,44 +182,48 @@ export const initializeWebRTCConnection = async (
   // Audio stream detection is handled by the remote_track event listener above
   // No need for polling - the WebRTC connection will fire remote_track when audio is available
   
-  // Set up periodic connection health check
-  const healthCheckInterval = setInterval(async () => {
-    try {
-      // Check if WebRTC connection is still healthy
-      const pc = (session as any)._pc;
+  // Set up periodic connection health check (only if enabled)
+  if (isConnectionHealthCheckEnabled()) {
+    const healthCheckInterval = setInterval(async () => {
+      try {
+        // Check if WebRTC connection is still healthy
+        const pc = (session as any)._pc;
 
-      if (!pc) {
-        console.warn('⚠️ No peer connection found during health check');
-        return;
+        if (!pc) {
+          console.warn('⚠️ No peer connection found during health check');
+          return;
+        }
+
+        const connectionState = pc.connectionState;
+        const iceConnectionState = pc.iceConnectionState;
+
+        // Trigger auto-recovery on failed connections
+        if (connectionState === 'failed' || iceConnectionState === 'failed') {
+          console.warn('⚠️ WebRTC connection failed, triggering auto-recovery...');
+
+          // Use centralized auto-recovery
+          const { autoRecoverVoiceConnection } = await import('../lib/voiceErrorRecovery');
+          await autoRecoverVoiceConnection();
+
+          // Clear this interval since a new one will be created on reconnection
+          clearInterval(healthCheckInterval);
+        }
+      } catch (error) {
+        console.warn('⚠️ Health check error:', error);
       }
-
-      const connectionState = pc.connectionState;
-      const iceConnectionState = pc.iceConnectionState;
-
-      // Trigger auto-recovery on failed connections
-      if (connectionState === 'failed' || iceConnectionState === 'failed') {
-        console.warn('⚠️ WebRTC connection failed, triggering auto-recovery...');
-
-        // Use centralized auto-recovery
-        const { autoRecoverVoiceConnection } = await import('../lib/voiceErrorRecovery');
-        await autoRecoverVoiceConnection();
-
-        // Clear this interval since a new one will be created on reconnection
-        clearInterval(healthCheckInterval);
-      }
-    } catch (error) {
-      console.warn('⚠️ Health check error:', error);
-    }
-  }, 30000); // Check every 30 seconds
-  
-  // Clean up interval when connection is lost
-  const cleanup = () => {
-    clearInterval(healthCheckInterval);
-  };
-  
-  // Set up cleanup on session events
-  session.on('disconnected' as any, cleanup);
-  session.on('error' as any, cleanup);
+    }, 30000); // Check every 30 seconds
+    
+    // Clean up interval when connection is lost
+    const cleanup = () => {
+      clearInterval(healthCheckInterval);
+    };
+    
+    // Set up cleanup on session events
+    session.on('disconnected' as any, cleanup);
+    session.on('error' as any, cleanup);
+  } else {
+    console.log('🔇 Connection health checks disabled - skipping WebRTC monitoring');
+  }
   
   // Set up audio element event handlers
   setupAudioElementHandlers(audioEl, {

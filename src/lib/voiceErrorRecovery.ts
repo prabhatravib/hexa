@@ -9,6 +9,9 @@
  * - Success/failure tracking
  */
 
+import { resetAudioAnalysis } from '../hooks/voiceAudioAnalysis';
+import { isConnectionHealthCheckEnabled } from './connectionHealthConfig';
+
 let isRecovering = false;
 let recoveryAttempts = 0;
 const MAX_RECOVERY_ATTEMPTS = 5;
@@ -95,7 +98,11 @@ const cleanupOldSession = async (): Promise<boolean> => {
       console.log('ℹ️ No active session found to clean up');
     }
 
-    // Step 2: Clear audio element
+    // Step 2: Reset audio analysis (clear cached audio contexts)
+    console.log('🎵 Resetting audio analysis and clearing cached contexts...');
+    resetAudioAnalysis();
+
+    // Step 3: Clear audio element
     const audioEl = (window as any).__hexaAudioEl as HTMLAudioElement | undefined;
     if (audioEl) {
       try {
@@ -110,7 +117,7 @@ const cleanupOldSession = async (): Promise<boolean> => {
       }
     }
 
-    // Step 3: Wait for cleanup to propagate
+    // Step 4: Wait for cleanup to propagate
     console.log(`⏳ Waiting ${CLEANUP_DELAY}ms for cleanup to complete...`);
     await new Promise(resolve => setTimeout(resolve, CLEANUP_DELAY));
 
@@ -280,6 +287,11 @@ export const triggerRecoveryIfNeeded = async (): Promise<boolean> => {
  * Check if voice connection is healthy
  */
 export const isVoiceConnectionHealthy = (): boolean => {
+  if (!isConnectionHealthCheckEnabled()) {
+    console.log('🔇 Connection health checks disabled - skipping health check');
+    return true; // Return true to avoid triggering recovery
+  }
+
   const session = (window as any).activeSession;
   if (!session) {
     console.log('⚠️ Health check: No active session');

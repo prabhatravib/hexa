@@ -186,6 +186,7 @@ export const stopAudioAnalysis = () => {
 };
 
 export const resetAudioAnalysis = () => {
+  console.log('🎵 Resetting audio analysis completely...');
   analysisStarted = false;
   if (analysisRafId !== null) {
     cancelAnimationFrame(analysisRafId);

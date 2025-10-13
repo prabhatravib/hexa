@@ -8,6 +8,7 @@
  */
 
 import { isVoiceConnectionHealthy, triggerRecoveryIfNeeded } from './voiceErrorRecovery';
+import { isConnectionHealthCheckEnabled } from './connectionHealthConfig';
 
 let isMonitoring = false;
 let wasHidden = false;
@@ -51,6 +52,11 @@ const handleVisibilityChange = async () => {
  * Start monitoring tab visibility changes
  */
 export const startTabVisibilityMonitoring = () => {
+  if (!isConnectionHealthCheckEnabled()) {
+    console.log('🔇 Connection health checks disabled - skipping tab visibility monitoring');
+    return;
+  }
+
   if (isMonitoring) {
     console.log('ℹ️ Tab visibility monitoring already active');
     return;

@@ -53,7 +53,7 @@ The system uses a **5-layer defense architecture** to ensure bulletproof synchro
 ┌─────────────────────────────────────────────────────────┐
 │ Layer 2: Optimistic Flag (agent_start)                 │
 │ ✓ Set isAudioPlaying = true when AI starts speaking    │
-└─────────────────────────────────────────────────────────┐
+└─────────────────────────────────────────────────────────┘
                           ↓
 ┌─────────────────────────────────────────────────────────┐
 │ Layer 3: Defensive Watchdog Check                       │
@@ -692,89 +692,99 @@ agent_start - entering speaking state
 
 ## Troubleshooting
 
-### Issue: Mouth animating without audio
+### 1. Audio Element Monitoring (`voiceAgentService.ts`)
+- **Global Debug Variables**: Added `window.__hexaAudioEl` and `window.__currentVoiceState` for easy access
+- **Global Debug Function**: Added `window.__hexaDebug()` to log comprehensive debug info
+- **Audio Event Monitoring**: Added listeners for all audio events (`loadstart`, `durationchange`, `loadedmetadata`, `canplay`, `canplaythrough`, `play`, `playing`, `pause`, `ended`, `error`)
+- **Audio State Logging**: Logs audio element state during key events
 
-**Symptoms:** Mouth is moving but no audio is heard
+### 2. WebRTC Session Debugging (`voiceAgentService.ts`)
+- **Session State Logging**: Logs session properties after connection (stream, RTCPeerConnection state, ICE state)
+- **Session Event Monitoring**: Monitors all session events (`track`, `stream`, `connectionstatechange`, `iceconnectionstatechange`, `signalingstatechange`)
+- **Remote Track Logging**: Enhanced logging for remote track events with track details
 
-**Diagnosis:**
-1. Check browser console for `🎵 Audio element loaded data`
-2. Check if `isAudioPlaying` is true in store
-3. Check if audio element has valid `srcObject`
+### 3. Audio Analyzer Debugging (`voiceAgentService.ts`)
+- **Analyzer Start Logging**: Logs when analysis starts and what type of source is created
+- **Analyzer Output Logging**: Logs analyzer RMS values and speech detection (1% of the time to avoid spam)
+- **Source Node Logging**: Logs the type of audio source node created
 
-**Fix:**
-- Verify `isAudioStreamValid()` is being called
-- Check audio element has MediaStream with live tracks
-- Verify strict AND logic in AnimatedMouth.tsx
+### 4. Stream Detection Enhancement (`voiceAgentService.ts`)
+- **Aggressive Stream Detection**: Replaced simple timeout with interval-based checking every 500ms
+- **Multiple Stream Sources**: Checks audio element srcObject, session stream, and RTCPeerConnection remote streams
+- **Fallback Trigger**: Automatically starts synthetic mouth flapping if no stream is found after 10 attempts
 
-### Issue: First load audio fails
+### 5. Voice State Debugging (`voiceAgentService.ts`, `animationStore.ts`)
+- **Voice State Change Logging**: Logs all voice state transitions with before/after values
+- **Function Call Logging**: Logs when `startSpeaking()` and `stopSpeaking()` are called
+- **Global State Updates**: Updates `window.__currentVoiceState` on all voice state changes
 
-**Symptoms:** No audio on first page load, subsequent interactions work
+### 6. Fallback Flap Debugging (`useVoiceInteraction.ts`)
+- **Flap Start/Stop Logging**: Logs when fallback flap animation starts and stops
+- **Flap Value Logging**: Logs each fallback flap value (can be commented out to reduce spam)
+- **Voice State Monitoring**: Logs voice state changes and fallback flap initialization
 
-**Diagnosis:**
-1. Check console for `✅ Set isAudioPlaying = true on agent_start (optimistic)`
-2. Check watchdog logs - should show "Audio element is actually playing"
-3. Check for premature watchdog triggers
+### 7. Speech Intensity Handler Debugging (`useVoiceInteraction.ts`)
+- **Handler Call Logging**: Logs when `handleSpeechIntensity` is called with values
+- **Mouth Target Updates**: Logs when mouth targets are updated via the analyzer
 
-**Fix:**
-- Verify optimistic flag is being set in voiceSessionPlaybackHandlers.ts
-- Verify defensive check in useVoiceAnimation.ts
-- Check `(window as any).__hexaAudioEl` is accessible
+### 8. Store Debugging (`animationStore.ts`)
+- **Mouth Target Logging**: Logs all calls to `setMouthTarget` with values
+- **Store Updates**: Logs when mouth target values are actually set in the store
 
-### Issue: Audio cuts off after a few seconds
+### 9. Component Debugging (`AnimatedMouth.tsx`)
+- **Animation Loop Logging**: Logs when animation loops start/stop
+- **Target Change Logging**: Logs when mouth targets change
+- **Motion Value Logging**: Logs changes to `currentOpenness`, `springOpenness`, and `gatedOpenness`
 
-**Symptoms:** Audio plays for 2-5 seconds then stops
+### 10. DevPanel Enhancement (`DevPanel.tsx`)
+- **Voice Debug Section**: Shows audio element status, srcObject, and playing state
+- **Debug Console Button**: Calls `window.__hexaDebug()` for comprehensive logging
+- **Manual Test Buttons**: Test buttons for mouth targets and speaking state
 
-**Diagnosis:**
-1. Check console for watchdog logs with timestamp
-2. Check if `isAudioPlaying` becomes false prematurely
-3. Check if watchdog timeout is too short
+## How to Use the Debugging
 
-**Fix:**
-- Verify 500ms timeout in useVoiceAnimation.ts
-- Verify optimistic flag + defensive check are both working
-- Check audio element readyState (should be >= 2)
+### 1. Open Browser Console
+- Press F12 and go to Console tab
+- Look for logs with emojis: 🎵 (audio), 🎤 (voice), 🎯 (mouth), 🔍 (debug)
 
-### Issue: Infinite watchdog loop
+### 2. Use DevPanel
+- Press the gear icon (⚙) on the hexagon to open DevPanel
+- Check the Voice Debug section for real-time status
+- Use the Debug Console button for comprehensive logging
 
-**Symptoms:** Watchdog repeatedly fires, mouth animation stuck
+### 3. Global Debug Functions
+```javascript
+// In browser console:
+window.__hexaDebug()           // Comprehensive debug info
+window.__hexaAudioEl          // Audio element reference
+window.__currentVoiceState    // Current voice state
+```
 
-**Diagnosis:**
-1. Check console for repeated "Watchdog triggered" messages
-2. Check if audio element is being paused after transport stop
-3. Check if cooldown periods are active
+### 4. Test Manual Controls
+- Use "Test Start Speaking" to manually trigger speaking state
+- Use "Mouth 0.8" and "Mouth 0.2" to test mouth animation
+- Check console for detailed logging of each action
 
-**Fix:**
-- Verify `audioEl.pause()` in `forceStopSpeaking()`
-- Verify 1000ms cooldown in voiceAudioElementManager.ts
-- Verify `__notifyTransportStop()` callback is registered
+## Expected Debug Output
 
-### Issue: MediaElementSourceNode "already connected" error
+### When Audio Works:
+1. 🎵 Audio element loaded data
+2. 🎵 Remote track received (with track details)
+3. 🎵 Audio track received, attaching to audio element
+4. 🎵 Starting audio analysis...
+5. 🎵 Created audio source node: MediaStreamAudioSourceNode
+6. 🎵 Connected source to analyzer, starting tick loop
+7. 🎵 Analyzer: rms=X.XXXX, level=X.XXXX, speaking=true
+8. 🎤 handleSpeechIntensity called with: X.XXX
+9. 🎯 setMouthTarget called with: X.XXX
+10. 🎯 Setting mouth target to: X.XXX
+11. 🎯 Mouth Target Changed: X.XXX
 
-**Symptoms:** Console error on second+ interactions
-
-**Diagnosis:**
-1. Check console for exact error message
-2. Check if source node is being created multiple times
-3. Check if cache is being used
-
-**Fix:**
-- Verify `cachedMediaElementSource` variable exists
-- Verify reuse logic in voiceAudioAnalysis.ts lines 151-161
-- Check console logs for "Reusing cached MediaElementSourceNode"
-
-### Issue: Mouth stuck open after audio ends
-
-**Symptoms:** Mouth remains partially open after audio finishes
-
-**Diagnosis:**
-1. Check if `setMouthTarget(0)` is being called
-2. Check if analyzer is stopped
-3. Check if voice state transitions to 'idle'
-
-**Fix:**
-- Verify `setMouthTarget(0)` in `forceStopSpeaking()`
-- Verify `stopAudioAnalysis()` is called
-- Check voice state in store (should be 'idle')
+### When Audio Fails (Fallback):
+1. ⚠️ Could not find audio stream after 10 attempts
+2. 🎯 Starting synthetic mouth flapping as fallback
+3. 🎤 Voice state changed to: speaking
+4. 🎯 Starting fallback flap animation
 
 ---
 
