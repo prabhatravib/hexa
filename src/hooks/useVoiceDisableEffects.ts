@@ -194,6 +194,8 @@ export function useVoiceDisableEffects({
         // The existing WebRTC connection maintains its media stream
         console.log('🔄 Voice re-enabled - restoring audio processing');
         
+        await flushPendingSessionInfo?.();
+
         try {
           const s: MaybeSession = (window as any).activeSession;
           
@@ -221,15 +223,11 @@ export function useVoiceDisableEffects({
 
             console.log('✅ Audio buffers re-enabled - voice processing resumed');
           } else {
-            console.warn('⚠️ No active session found when trying to re-enable');
+            console.warn('⚠️ No active session found after flushing pending info');
           }
         } catch (error) {
           console.error('Failed to enable voice processing:', error);
         }
-
-        flushPendingSessionInfo?.().catch(error => {
-          console.error('Failed to process deferred session info:', error);
-        });
 
         // Unmute audio elements
         muteAllAudio(false);

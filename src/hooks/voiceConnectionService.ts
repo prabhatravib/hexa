@@ -4,6 +4,7 @@ import { isVoiceDisabledNow, silenceAudioEverywhere } from '@/lib/voiceDisableGu
 import { getSessionSend, isRealtimeReady } from '@/lib/voiceSessionUtils';
 import { injectExternalContext } from '@/lib/externalContext';
 import { useExternalDataStore } from '@/store/externalDataStore';
+import { initializeOpenAIAgentOnce } from './voiceAgentInitializer';
 
 interface VoiceConnectionServiceOptions {
   setVoiceState: (state: VoiceState) => void;
@@ -161,6 +162,15 @@ export const useVoiceConnectionService = ({
           return;
         }
 
+        // Additional guard: check global init mutex
+        if ((window as any).__realtimeInitInFlight) {
+          console.log('⏳ Global realtime init already in flight; ignoring duplicate session_info');
+          if (newSessionId) {
+            lastSessionIdRef.current = newSessionId;
+          }
+          return;
+        }
+
         sessionRefreshInFlightRef.current = true;
         try {
           if (existingSession) {
@@ -187,7 +197,13 @@ export const useVoiceConnectionService = ({
             setVoiceState('idle');
           }
 
-          const session = await initializeOpenAIAgent(d);
+          const session = await initializeOpenAIAgentOnce(d, {
+            setVoiceState,
+            onError,
+            startSpeaking,
+            stopSpeaking,
+            setSpeechIntensity,
+          });
 
           if (session) {
             openaiAgentRef.current = session;

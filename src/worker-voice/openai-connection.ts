@@ -100,7 +100,7 @@ export class OpenAIConnection {
       turn_detection: {
         type: 'server_vad',
         // Ensure the model automatically creates a response after speech ends
-        create_response: false,
+        create_response: true,
         threshold: 0.3, // Lower threshold for more sensitive detection
         prefix_padding_ms: 500, // Capture more audio before speech
         silence_duration_ms: 1000, // Wait longer before considering speech ended
@@ -234,33 +234,6 @@ export class OpenAIConnection {
 
         if (response.ok) {
           console.log('✅ Text message sent to Realtime session');
-
-          // Now trigger a response
-          const responseTrigger = {
-            type: 'response.create',
-            response: {
-              modalities: ['text', 'audio'],
-              instructions: "Respond aloud to the user's message",
-            },
-          };
-
-          const triggerResponse = await fetch(
-            `https://api.openai.com/v1/realtime/sessions/${this.sessionId}/responses`,
-            {
-              method: 'POST',
-              headers: {
-                Authorization: `Bearer ${this.env.OPENAI_API_KEY}`,
-                'Content-Type': 'application/json',
-              },
-              body: JSON.stringify(responseTrigger),
-            }
-          );
-
-          if (triggerResponse.ok) {
-            console.log('✅ Response triggered for text message');
-          } else {
-            console.warn('⚠️ Could not trigger response');
-          }
         } else {
           const errorText = await response.text();
           console.error(

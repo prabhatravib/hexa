@@ -22,6 +22,31 @@ interface VoiceAgentInitializerOptions {
 // Export the injectExternalContext function for use by SSE handlers
 export { injectExternalContext };
 
+// Mutex to prevent duplicate initialization
+let __realtimeInitInFlight = false;
+let __realtimeRecoveryInFlight = false;
+
+export const initializeOpenAIAgentOnce = async (
+  sessionData: any,
+  options: VoiceAgentInitializerOptions
+) => {
+  if (__realtimeInitInFlight) {
+    console.log('⏳ Realtime init already in flight; ignoring duplicate call');
+    return null;
+  }
+  
+  __realtimeInitInFlight = true;
+  // Expose mutex globally for cross-module checks
+  (window as any).__realtimeInitInFlight = true;
+  
+  try {
+    return await initializeOpenAIAgent(sessionData, options);
+  } finally {
+    __realtimeInitInFlight = false;
+    (window as any).__realtimeInitInFlight = false;
+  }
+};
+
 export const initializeOpenAIAgent = async (
   sessionData: any,
   options: VoiceAgentInitializerOptions

@@ -1,4 +1,5 @@
-import { initializeAudioAnalysis, stopAudioAnalysis } from './voiceAudioAnalysis';
+import type { MutableRefObject } from 'react';
+import { initializeAudioAnalysis, resetAudioAnalysis, stopAudioAnalysis } from './voiceAudioAnalysis';
 import { useAnimationStore, VoiceState } from '@/store/animationStore';
 
 /**
@@ -95,6 +96,7 @@ interface AudioElementHandlersOptions {
   startSpeaking?: () => void;
   stopSpeaking?: () => void;
   setSpeechIntensity?: (intensity: number) => void;
+  audioContextRef?: MutableRefObject<AudioContext | null>;
 }
 
 export const setupAudioElementHandlers = (
@@ -172,7 +174,7 @@ export const setupAudioElementHandlers = (
         audioPlaying = false;
         analysisStarted = false;
         useAnimationStore.getState().setAudioPlaying(false);
-        stopAudioAnalysis();
+        resetAudioAnalysis();
         if (stopSpeaking) {
           stopSpeaking();
         } else {
@@ -360,8 +362,8 @@ export const setupAudioElementHandlers = (
       // Store not available, ignore
     }
 
-    // Stop the audio analyzer
-    stopAudioAnalysis();
+    // Stop the audio analyzer completely
+    resetAudioAnalysis();
 
     // Force stop speaking state
     if (stopSpeaking) {
@@ -400,21 +402,8 @@ export const setupAudioElementHandlers = (
       trackMonitorCleanup = null;
     }
 
-    // Reset VAD flag and mouth animation target (SSR-safe)
-    try {
-      const store = useAnimationStore.getState();
-      if (store.setVadSpeaking) {
-        store.setVadSpeaking(false);
-      }
-      if (store.setMouthTarget) {
-        store.setMouthTarget(0);
-      }
-    } catch (error) {
-      // Store not available, ignore
-    }
-
-    // Stop the audio analyzer
-    stopAudioAnalysis();
+    // Stop the audio analyzer completely
+    resetAudioAnalysis();
 
     if (stopSpeaking) {
       stopSpeaking();
@@ -449,9 +438,9 @@ export const setupAudioElementHandlers = (
     } catch (error) {
       // Store not available, ignore
     }
-    
-    // Stop the audio analyzer
-    stopAudioAnalysis();
+
+    // Stop the audio analyzer completely
+    resetAudioAnalysis();
     
     if (stopSpeaking) {
       stopSpeaking();
@@ -487,9 +476,9 @@ export const setupAudioElementHandlers = (
     } catch (error) {
       // Store not available, ignore
     }
-    
-    // Stop the audio analyzer
-    stopAudioAnalysis();
+
+    // Stop the audio analyzer completely
+    resetAudioAnalysis();
     
     if (stopSpeaking) stopSpeaking();
     (window as any).__currentVoiceState = 'idle';

@@ -1,5 +1,5 @@
 import { useCallback } from 'react';
-import { initializeOpenAIAgent } from './voiceAgentInitializer';
+import { initializeOpenAIAgentOnce } from './voiceAgentInitializer';
 import { VoiceState } from '@/store/animationStore';
 
 
@@ -16,7 +16,7 @@ interface VoiceAgentServiceOptions {
 export const useVoiceAgentService = ({ setVoiceState, onError, startSpeaking, stopSpeaking, setSpeechIntensity, audioContextRef }: VoiceAgentServiceOptions) => {
   // Initialize OpenAI Agent with WebRTC
   const initializeOpenAIAgentFromService = useCallback(async (sessionData: any) => {
-    return initializeOpenAIAgent(sessionData, {
+    return initializeOpenAIAgentOnce(sessionData, {
       setVoiceState,
       onError,
       startSpeaking,

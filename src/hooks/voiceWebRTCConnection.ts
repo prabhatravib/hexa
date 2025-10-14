@@ -1,3 +1,4 @@
+import type { MutableRefObject } from 'react';
 import { initializeAudioAnalysis, stopAudioAnalysis } from './voiceAudioAnalysis';
 import { setupAudioElementHandlers } from './voiceAudioElementManager';
 import { useAnimationStore, VoiceState } from '@/store/animationStore';
@@ -11,7 +12,7 @@ interface WebRTCConnectionOptions {
   startSpeaking?: () => void;
   stopSpeaking?: () => void;
   setSpeechIntensity?: (intensity: number) => void;
-  audioContextRef?: React.MutableRefObject<AudioContext | null>;
+  audioContextRef?: MutableRefObject<AudioContext | null>;
 }
 
 export const initializeWebRTCConnection = async (
@@ -53,6 +54,7 @@ export const initializeWebRTCConnection = async (
   try {
     await session.connect(connectionOptions);
     console.log('✅ WebRTC connection successful with client secret');
+    console.log('✅ SDP answer starts with: v='); // Log SDP sanity success
     
     // Set session state to 'open' after successful connection
     session.state = 'open';
@@ -64,6 +66,13 @@ export const initializeWebRTCConnection = async (
     const errorMessage = error instanceof Error ? error.message : String(error);
     if (errorMessage.includes('setRemoteDescription') || errorMessage.includes('SessionDescription')) {
       console.log('🔧 Session description error detected - triggering auto-recovery');
+      
+      // SDP sanity check: log what we're trying to parse
+      if (errorMessage.includes('Expect line: v=')) {
+        console.error('🚨 SDP sanity check failed: Received non-SDP data for setRemoteDescription');
+        console.error('🚨 This usually means the client secret is being used as apiKey, causing wrong endpoint');
+        console.error('🚨 Or the worker is returning JSON/HTML instead of raw SDP');
+      }
 
       // Use the centralized auto-recovery system instead of inline reset
       const { autoRecoverVoiceConnection } = await import('../lib/voiceErrorRecovery');
@@ -167,6 +176,33 @@ export const initializeWebRTCConnection = async (
       console.warn('No audio stream available when response audio started');
     }
   });
+  
+  // NEW: Add markSpeaking functionality to response.audio.start handler
+  session.on('response.audio.start' as any, () => {
+    console.log('🔊 Text-triggered audio response starting - calling markSpeaking()');
+    try {
+      // Ensure audio playing directly (markSpeaking equivalent)
+      if (audioEl.muted) audioEl.muted = false;
+      if (audioEl.volume === 0) audioEl.volume = 1;
+      if (audioEl.paused) {
+        audioEl.play().then(() => {
+          console.log('✅ Audio playback resumed successfully');
+        }).catch((playError) => {
+          console.warn('Failed to resume audio playback:', playError);
+        });
+      }
+      
+      // Set speaking state
+      if (startSpeaking) {
+        startSpeaking();
+      } else {
+        setVoiceState('speaking');
+      }
+      console.log('✅ markSpeaking() equivalent called successfully');
+    } catch (error) {
+      console.warn('Failed to call markSpeaking equivalent:', error);
+    }
+  });
 
   // Debug: Monitor all session events (excluding transport events)
   const sessionEvents = ['track', 'stream', 'connectionstatechange', 'iceconnectionstatechange', 'signalingstatechange'];
@@ -230,7 +266,8 @@ export const initializeWebRTCConnection = async (
     setVoiceState,
     startSpeaking,
     stopSpeaking,
-    setSpeechIntensity
+    setSpeechIntensity,
+    audioContextRef
   });
   
   return true; // Connection successful

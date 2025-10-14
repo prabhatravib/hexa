@@ -5,6 +5,7 @@ import { useVoiceControlService } from './voiceControlService';
 import { safeSessionSend, isRealtimeReady } from '@/lib/voiceSessionUtils';
 import { getBaseInstructions } from '@/lib/externalContext';
 import { useVoiceAnimation } from './useVoiceAnimation';
+import { extractTranscript } from './voiceSessionShared';
 import { getSupportedLanguageCodes, DEFAULT_LANGUAGE } from '@/lib/languageConfig';
 import { useExternalDataStore } from '@/store/externalDataStore';
 import { useAnimationStore } from '@/store/animationStore';
@@ -95,49 +96,257 @@ export const useVoiceInteraction = (options: UseVoiceInteractionOptions = {}) =>
   const lastRecordingStateRef = useRef(false);
   const resumeRecordingOnEnableRef = useRef(false);
 
-const waitForConversationAck = useCallback(async (session: any, text: string) => {
+const collectUserItemIds = (history: any): Set<string> => {
+  const ids = new Set<string>();
+  if (!Array.isArray(history)) return ids;
+  history.forEach(item => {
+    if (item?.role !== 'user') return;
+    const id = item?.itemId ?? item?.id;
+    if (id) ids.add(id);
+  });
+  return ids;
+};
+
+const collectAssistantSnapshot = (history: any): Map<string, string | null> => {
+  const snapshot = new Map<string, string | null>();
+  if (!Array.isArray(history)) return snapshot;
+  history.forEach(item => {
+    if (item?.role !== 'assistant') return;
+    const id = item?.itemId ?? item?.id;
+    if (!id) return;
+    const text = extractTranscript(item?.content);
+    const normalized = typeof text === 'string' ? text.trim() : null;
+    snapshot.set(String(id), normalized && normalized.length > 0 ? normalized : null);
+  });
+  return snapshot;
+};
+
+const waitForConversationAck = useCallback(async (session: any, text: string, previousUserIds: Set<string>) => {
   if (!session?.on) return true;
+
+  const normalize = (value: unknown) =>
+    typeof value === 'string' ? value.trim() : undefined;
+
+  const target = normalize(text);
 
   return await new Promise<boolean>(resolve => {
     let settled = false;
     let timeoutId: number | null = null;
+    let intervalId: number | null = null;
 
-    const cleanup = () => {
+    const cleanup = (result: boolean) => {
       if (settled) return;
       settled = true;
       if (timeoutId !== null) window.clearTimeout(timeoutId);
       session.off?.('conversation.item.created', onCreated);
       session.off?.('error', onError);
+      if (intervalId !== null) window.clearInterval(intervalId);
+      resolve(result);
     };
 
     const onCreated = (item: any) => {
       try {
         if (item?.role !== 'user') return;
-        const matches = Array.isArray(item?.content)
-          ? item.content.some((part: any) => part?.type === 'input_text' && part?.text === text)
-          : false;
+        const id = item?.itemId ?? item?.id;
+        if (id && previousUserIds.has(id)) return;
+        const content = Array.isArray(item?.content) ? item.content : [];
+        const matches = target
+          ? content.some((part: any) => normalize(part?.text ?? part?.transcript) === target)
+          : true;
         if (!matches) return;
+        if (id) previousUserIds.add(id);
       } catch {
         return;
       }
-      cleanup();
-      resolve(true);
+      cleanup(true);
     };
 
     const onError = () => {
-      cleanup();
-      resolve(false);
+      cleanup(false);
     };
 
+    const pollHistory = () => {
+      try {
+        const history = Array.isArray(session?.history) ? session.history : [];
+        for (const item of history) {
+          if (item?.role !== 'user') continue;
+          const id = item?.itemId ?? item?.id;
+          if (id && !previousUserIds.has(id)) {
+            previousUserIds.add(id);
+            cleanup(true);
+            return;
+          }
+          if (target) {
+            const textMatch = normalize(extractTranscript(item?.content)) === target;
+            if (textMatch && (!id || !previousUserIds.has(id))) {
+              if (id) previousUserIds.add(id);
+              cleanup(true);
+              return;
+            }
+          }
+        }
+      } catch (error) {
+        console.warn('Failed to inspect session history for ack:', error);
+      }
+    };
+
+    pollHistory();
+    if (!settled) {
+      intervalId = window.setInterval(pollHistory, 120);
+    }
+
     timeoutId = window.setTimeout(() => {
-      cleanup();
-      resolve(false);
-    }, 600);
+      pollHistory();
+      cleanup(false);
+    }, 2000);
 
     session.on?.('conversation.item.created', onCreated);
     session.on?.('error', onError);
   });
-}, []);
+}, [extractTranscript]);
+
+const waitForAssistantResponse = useCallback(async (session: any, previousAssistantSnapshot: Map<string, string | null>) => {
+  if (!session?.on) return false;
+
+  return await new Promise<boolean>(resolve => {
+    let settled = false;
+    let timeoutId: number | null = null;
+    let intervalId: number | null = null;
+
+    const normalize = (value: unknown) =>
+      typeof value === 'string' ? value.trim() : undefined;
+
+    const getAssistantId = (item: any): string | null => {
+      const raw =
+        item?.itemId ??
+        item?.id ??
+        item?.item_id ??
+        item?.response_id ??
+        null;
+      return raw ? String(raw) : null;
+    };
+
+    const markAssistant = (item: any) => {
+      if (!item || item.role !== 'assistant') return false;
+      const id = getAssistantId(item);
+      const text = normalize(extractTranscript(item?.content));
+
+      if (id) {
+        const previous = previousAssistantSnapshot.get(id);
+        if (previous === undefined) {
+          previousAssistantSnapshot.set(id, text ?? null);
+          if (text) {
+            cleanup(true);
+            return true;
+          }
+          return false;
+        }
+
+        if (previous === null && text) {
+          previousAssistantSnapshot.set(id, text);
+          cleanup(true);
+          return true;
+        }
+
+        if (previous !== null && text && previous !== text) {
+          previousAssistantSnapshot.set(id, text);
+          cleanup(true);
+          return true;
+        }
+
+        return false;
+      }
+
+      if (text) {
+        cleanup(true);
+        return true;
+      }
+
+      return false;
+    };
+
+    const checkHistory = () => {
+      try {
+        const history = Array.isArray(session?.history) ? session.history : [];
+        for (const item of history) {
+          if (markAssistant(item)) {
+            return;
+          }
+        }
+      } catch (error) {
+        console.warn('Failed to inspect history for assistant response:', error);
+      }
+    };
+
+    const cleanup = (result: boolean) => {
+      if (settled) return;
+      settled = true;
+      if (timeoutId !== null) window.clearTimeout(timeoutId);
+      if (intervalId !== null) window.clearInterval(intervalId);
+      session.off?.('history_added', onHistoryAdded);
+      session.off?.('history_updated', onHistoryUpdated);
+      session.off?.('response.output_item.added', onOutputItemAdded);
+      session.off?.('response.completed', onResponseCompleted);
+      session.off?.('agent_start', onAgentStart);
+      resolve(result);
+    };
+
+    const onHistoryAdded = (item: any) => {
+      try {
+        markAssistant(item);
+      } catch (error) {
+        console.warn('Failed to inspect history_added item for assistant response:', error);
+      }
+    };
+
+    const onHistoryUpdated = (history: any) => {
+      try {
+        if (!history) return;
+        if (Array.isArray(history)) {
+          for (const item of history) {
+            if (markAssistant(item)) return;
+          }
+        } else {
+          markAssistant(history);
+        }
+      } catch (error) {
+        console.warn('Failed to inspect history_updated payload for assistant response:', error);
+      }
+    };
+
+    const onOutputItemAdded = (item: any) => {
+      try {
+        markAssistant(item?.item ?? item);
+      } catch (error) {
+        console.warn('Failed to inspect response output item:', error);
+      }
+    };
+
+    const onResponseCompleted = () => {
+      checkHistory();
+    };
+
+    const onAgentStart = () => {
+      cleanup(true);
+    };
+
+    timeoutId = window.setTimeout(() => {
+      checkHistory();
+      cleanup(false);
+    }, 4000);
+
+    session.on?.('history_added', onHistoryAdded);
+    session.on?.('history_updated', onHistoryUpdated);
+    session.on?.('response.output_item.added', onOutputItemAdded);
+    session.on?.('response.completed', onResponseCompleted);
+    session.on?.('agent_start', onAgentStart);
+
+    checkHistory();
+    if (!settled) {
+      intervalId = window.setInterval(checkHistory, 200);
+    }
+  });
+}, [extractTranscript]);
 
   // External data management with guards
   const currentData = useExternalDataStore(s => s.currentData);
@@ -256,11 +465,13 @@ const waitForConversationAck = useCallback(async (session: any, text: string) =>
         try {
           console.log('dY"? Sending text via Realtime session');
 
-          // Clear any previous audio state so we start fresh
           if (stopSpeaking) {
             stopSpeaking();
           }
           setVoiceState('thinking');
+
+          const previousUserIds = collectUserItemIds(session?.history);
+          const previousAssistantSnapshot = collectAssistantSnapshot(session?.history);
 
           const queued = await safeSessionSend(session, {
             type: 'conversation.item.create',
@@ -275,10 +486,11 @@ const waitForConversationAck = useCallback(async (session: any, text: string) =>
             throw new Error('Realtime conversation.item.create failed');
           }
 
-          const acked = await waitForConversationAck(session, text);
+          const acked = await waitForConversationAck(session, text, previousUserIds);
+          console.log('dY"? Conversation item ack status:', acked);
           if (!acked) {
             console.warn('dY"? Conversation item create ack timed out, continuing anyway');
-            await new Promise(resolve => setTimeout(resolve, 120));
+            await new Promise(resolve => setTimeout(resolve, 300));
           }
 
           const triggered = await safeSessionSend(session, {
@@ -295,6 +507,18 @@ const waitForConversationAck = useCallback(async (session: any, text: string) =>
 
           if (!triggered) {
             throw new Error('Realtime response.create failed');
+          }
+
+          const assistantResponded = await waitForAssistantResponse(session, previousAssistantSnapshot);
+          if (!assistantResponded) {
+            console.warn('dY"? Assistant response detection failed, falling back to HTTP');
+            const fallbackSuccess = await sendTextControl(text);
+            if (!fallbackSuccess) {
+              throw new Error('HTTP fallback send failed');
+            }
+            setTranscript(text);
+            setVoiceState('thinking');
+            return true;
           }
 
           console.log('dY"? Text sent and voice response requested');
@@ -320,7 +544,15 @@ const waitForConversationAck = useCallback(async (session: any, text: string) =>
         return false;
       }
     },
-    [sendTextControl, onError, isVoiceDisabled, setVoiceState, stopSpeaking, waitForConversationAck]
+    [
+      sendTextControl,
+      onError,
+      isVoiceDisabled,
+      setVoiceState,
+      stopSpeaking,
+      waitForConversationAck,
+      waitForAssistantResponse,
+    ]
   );
 
   // Switch agent

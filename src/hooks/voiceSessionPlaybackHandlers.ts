@@ -31,6 +31,7 @@ export const registerVoiceSessionPlaybackHandlers = (
       if (audioEl.muted) audioEl.muted = false;
       if (audioEl.volume === 0) audioEl.volume = 1;
       if (audioEl.paused) {
+        console.log('🔊 ensureAudioPlaying: calling audioEl.play()');
         const playResult = audioEl.play();
         if (playResult && typeof playResult.catch === 'function') {
           playResult.catch(err => {

@@ -79,6 +79,28 @@ export const initializeAudioAnalysis = async (
     analyser.fftSize = 512;
     analyser.smoothingTimeConstant = 0.25;
     srcNode.connect(analyser);
+
+    // Ensure audio continues to reach the output when using MediaElementSource.
+    // Without connecting to the destination, subsequent plays can become silent
+    // because the element's audio is routed exclusively through the Web Audio graph.
+    try {
+      const isMediaElementSource =
+        typeof MediaElementAudioSourceNode !== 'undefined' &&
+        srcNode instanceof MediaElementAudioSourceNode;
+
+      if (isMediaElementSource) {
+        const mediaElementSource = srcNode as MediaElementAudioSourceNode & {
+          __hexaConnectedToDestination?: boolean;
+        };
+
+        if (!mediaElementSource.__hexaConnectedToDestination) {
+          mediaElementSource.connect(ctx.destination);
+          mediaElementSource.__hexaConnectedToDestination = true;
+        }
+      }
+    } catch (error) {
+      console.warn('Failed to ensure media element audio output:', error);
+    }
     console.log('🎵 Connected source to analyzer, starting tick loop');
 
     // Dynamic gate with hysteresis for natural mouth movement
