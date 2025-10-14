@@ -95,6 +95,9 @@ export const useVoiceInteraction = (options: UseVoiceInteractionOptions = {}) =>
   const hasAutoConnectedRef = useRef(false);
   const lastRecordingStateRef = useRef(false);
   const resumeRecordingOnEnableRef = useRef(false);
+  
+  // Track current response ID to prevent cancelling active responses
+  const currentResponseIdRef = useRef<string | null>(null);
 
 const collectUserItemIds = (history: any): Set<string> => {
   const ids = new Set<string>();
@@ -405,6 +408,9 @@ const waitForAssistantResponse = useCallback(async (session: any, previousAssist
           const hasResponse = args && args.length > 2 && args[2] && args[2].trim() !== '';
           if (hasResponse) {
             console.log('🎵 waitForAssistantResponse: Valid response found in agent_end');
+            // Clear current response ID when response completes
+            currentResponseIdRef.current = null;
+            (window as any).__currentResponseId = null;
             cleanup(true);
           } else {
             console.log('🎵 waitForAssistantResponse: Empty response in agent_end - continuing to wait');
@@ -419,6 +425,16 @@ const waitForAssistantResponse = useCallback(async (session: any, previousAssist
       audioListeners.push({ event, handler });
       session.on?.(event as any, handler as any);
     };
+
+    // Listen for response.created to track response ID
+    session.on?.('response.created', (response: any) => {
+      console.log('🎵 waitForAssistantResponse: Response created with ID:', response?.id);
+      if (response?.id) {
+        currentResponseIdRef.current = response.id;
+        // Expose globally for interrupt function to access
+        (window as any).__currentResponseId = response.id;
+      }
+    });
 
     // Listen for various audio-related events
     const audioEvents = [
@@ -560,9 +576,9 @@ const waitForAssistantResponse = useCallback(async (session: any, previousAssist
         try {
           console.log('dY"? Sending text via Realtime session');
 
-          if (stopSpeaking) {
-            stopSpeaking();
-          }
+          // FIXED: Don't call stopSpeaking() before response.create to prevent interrupt race condition
+          // The stopSpeaking() call was triggering interrupt commands that cancelled the new response
+          // Only set voice state to thinking, let the response.create handle the transition
           setVoiceState('thinking');
 
           const previousUserIds = collectUserItemIds(session?.history);

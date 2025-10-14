@@ -277,6 +277,14 @@ export const useVoiceControlService = ({
       const s: any = openaiAgentRef.current;
       if (s) {
         try {
+          // FIXED: Only cancel if there's no active response being created
+          // This prevents cancelling new responses that are just starting
+          const currentResponseId = (window as any).__currentResponseId;
+          if (currentResponseId) {
+            console.log('🛑 Interrupt blocked: Active response in progress, ID:', currentResponseId);
+            return true; // Don't interrupt, let the response complete
+          }
+          
           // Best-effort set of cancellation events used across SDK versions
           // Note: response.cancel_all was removed in newer SDK versions - only response.cancel is valid
           await safeSessionSend(s, { type: 'response.cancel' });
