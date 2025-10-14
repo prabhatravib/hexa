@@ -15,6 +15,10 @@ let analysisStarted = false; // guard so analyser is wired only once
 let analysisRafId: number | null = null; // RAF ID for the analysis loop
 let cachedMediaElementSource: MediaElementAudioSourceNode | null = null; // Cache source node to avoid "already connected" error
 
+// Track the currently active audio graph so we can cleanly disconnect when stopping
+let currentAnalyser: AnalyserNode | null = null;
+let currentSourceNode: AudioNode | null = null;
+
 export const initializeAudioAnalysis = async (
   stream: MediaStream | null,
   audioEl: HTMLAudioElement,
@@ -43,7 +47,8 @@ export const initializeAudioAnalysis = async (
 
   // Helper to start analyser using either a MediaStreamSource or MediaElementSource
   const startAnalysisWithNodes = async (
-    makeSource: (ctx: AudioContext) => AudioNode
+    makeSource: (ctx: AudioContext) => AudioNode,
+    options?: { connectToDestination?: boolean }
   ) => {
     // Prefer shared AudioContext (resumed on user gesture)
     let ctx: AudioContext;
@@ -78,7 +83,29 @@ export const initializeAudioAnalysis = async (
     const analyser = ctx.createAnalyser();
     analyser.fftSize = 512;
     analyser.smoothingTimeConstant = 0.25;
+    try {
+      // Disconnect previous nodes if they exist to avoid stacking connections
+      currentSourceNode?.disconnect();
+    } catch (error) {
+      console.warn('⚠️ Failed to disconnect previous audio source node:', error);
+    }
+    try {
+      currentAnalyser?.disconnect();
+    } catch (error) {
+      console.warn('⚠️ Failed to disconnect previous analyser node:', error);
+    }
+
     srcNode.connect(analyser);
+    currentSourceNode = srcNode;
+    currentAnalyser = analyser;
+
+    if (options?.connectToDestination) {
+      try {
+        analyser.connect(ctx.destination);
+      } catch (error) {
+        console.error('❌ Failed to connect analyser to destination:', error);
+      }
+    }
     console.log('🎵 Connected source to analyzer, starting tick loop');
 
     // Dynamic gate with hysteresis for natural mouth movement
@@ -143,7 +170,9 @@ export const initializeAudioAnalysis = async (
 
   // If we have a stream, use MediaStreamSource
   if (stream) {
-    await startAnalysisWithNodes((ctx) => ctx.createMediaStreamSource(stream));
+    await startAnalysisWithNodes((ctx) => ctx.createMediaStreamSource(stream), {
+      connectToDestination: false,
+    });
   } else if (audioEl) {
     // Otherwise use MediaElementSource
     // CRITICAL FIX: Reuse cached source node to avoid "already connected" error
@@ -153,13 +182,17 @@ export const initializeAudioAnalysis = async (
       if (audioContextRef) {
         audioContextRef.current = cachedMediaElementSource.context as AudioContext;
       }
-      await startAnalysisWithNodes(() => cachedMediaElementSource!);
+      await startAnalysisWithNodes(() => cachedMediaElementSource!, {
+        connectToDestination: true,
+      });
     } else {
       console.log('🎵 Creating new MediaElementSourceNode (first time)');
       await startAnalysisWithNodes((ctx) => {
         const source = ctx.createMediaElementSource(audioEl);
         cachedMediaElementSource = source;
         return source;
+      }, {
+        connectToDestination: true,
       });
     }
   }
@@ -167,10 +200,24 @@ export const initializeAudioAnalysis = async (
 
 export const stopAudioAnalysis = () => {
   console.log('🎵 Stopping audio analysis...');
-  
+
   // Always clear the flag to allow re-initialization
   analysisStarted = false;
-  
+
+  // Disconnect active audio nodes so playback routes correctly next time
+  try {
+    currentSourceNode?.disconnect();
+  } catch (error) {
+    console.warn('⚠️ Failed to disconnect current audio source node during stop:', error);
+  }
+  try {
+    currentAnalyser?.disconnect();
+  } catch (error) {
+    console.warn('⚠️ Failed to disconnect current analyser node during stop:', error);
+  }
+  currentSourceNode = null;
+  currentAnalyser = null;
+
   // Cancel any running animation frame
   if (analysisRafId !== null) {
     cancelAnimationFrame(analysisRafId);
