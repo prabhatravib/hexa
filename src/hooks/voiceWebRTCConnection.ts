@@ -124,6 +124,9 @@ export const initializeWebRTCConnection = async (
     if (event.track && event.track.kind === 'audio') {
       console.log('dY"? Audio track received, attaching to audio element');
       
+      // CRITICAL FIX: Clear old stream first to release dead track
+      audioEl.srcObject = null;
+      
       const stream = new MediaStream([event.track]);
       audioEl.srcObject = stream;
       audioEl.autoplay = true;

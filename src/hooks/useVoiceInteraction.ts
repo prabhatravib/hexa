@@ -208,10 +208,13 @@ const waitForConversationAck = useCallback(async (session: any, text: string, pr
 const waitForAssistantResponse = useCallback(async (session: any, previousAssistantSnapshot: Map<string, string | null>) => {
   if (!session?.on) return false;
 
+  console.log('🎵 waitForAssistantResponse: Starting to wait for assistant response');
+
   return await new Promise<boolean>(resolve => {
     let settled = false;
     let timeoutId: number | null = null;
     let intervalId: number | null = null;
+    const audioListeners: Array<{ event: string; handler: (...args: any[]) => void }> = [];
 
     const normalize = (value: unknown) =>
       typeof value === 'string' ? value.trim() : undefined;
@@ -265,6 +268,44 @@ const waitForAssistantResponse = useCallback(async (session: any, previousAssist
       return false;
     };
 
+    const hasAudioPayload = (payload: any): boolean => {
+      if (!payload) return false;
+      if (typeof payload !== 'object') return false;
+
+      // Check various audio indicators
+      const type = payload?.type ?? payload?.content_type ?? payload?.modality;
+      if (typeof type === 'string' && type.toLowerCase() === 'audio') {
+        console.log('🎵 hasAudioPayload: Found audio type:', type);
+        return true;
+      }
+
+      // Check for audio-related fields
+      if (payload?.audio || payload?.audio_data || payload?.audio_url) {
+        console.log('🎵 hasAudioPayload: Found audio field');
+        return true;
+      }
+
+      // Check content arrays
+      if (Array.isArray(payload?.content)) {
+        const hasAudioContent = payload.content.some((part: any) => hasAudioPayload(part));
+        if (hasAudioContent) {
+          console.log('🎵 hasAudioPayload: Found audio in content array');
+        }
+        return hasAudioContent;
+      }
+
+      // Check if payload is an array
+      if (Array.isArray(payload)) {
+        const hasAudioInArray = payload.some(part => hasAudioPayload(part));
+        if (hasAudioInArray) {
+          console.log('🎵 hasAudioPayload: Found audio in array');
+        }
+        return hasAudioInArray;
+      }
+
+      return false;
+    };
+
     const checkHistory = () => {
       try {
         const history = Array.isArray(session?.history) ? session.history : [];
@@ -280,6 +321,7 @@ const waitForAssistantResponse = useCallback(async (session: any, previousAssist
 
     const cleanup = (result: boolean) => {
       if (settled) return;
+      console.log(`🎵 waitForAssistantResponse: Cleanup called with result: ${result}`);
       settled = true;
       if (timeoutId !== null) window.clearTimeout(timeoutId);
       if (intervalId !== null) window.clearInterval(intervalId);
@@ -287,7 +329,9 @@ const waitForAssistantResponse = useCallback(async (session: any, previousAssist
       session.off?.('history_updated', onHistoryUpdated);
       session.off?.('response.output_item.added', onOutputItemAdded);
       session.off?.('response.completed', onResponseCompleted);
-      session.off?.('agent_start', onAgentStart);
+      audioListeners.forEach(({ event, handler }) => {
+        session.off?.(event, handler);
+      });
       resolve(result);
     };
 
@@ -316,7 +360,18 @@ const waitForAssistantResponse = useCallback(async (session: any, previousAssist
 
     const onOutputItemAdded = (item: any) => {
       try {
-        markAssistant(item?.item ?? item);
+        const candidate = item?.item ?? item;
+        console.log('🎵 waitForAssistantResponse: onOutputItemAdded called with:', candidate);
+        
+        if (markAssistant(candidate)) return;
+        
+        const hasAudio = hasAudioPayload(candidate);
+        console.log('🎵 waitForAssistantResponse: hasAudioPayload result:', hasAudio);
+        
+        if (hasAudio) {
+          console.log('🎵 waitForAssistantResponse: Audio detected, cleaning up');
+          cleanup(true);
+        }
       } catch (error) {
         console.warn('Failed to inspect response output item:', error);
       }
@@ -324,10 +379,6 @@ const waitForAssistantResponse = useCallback(async (session: any, previousAssist
 
     const onResponseCompleted = () => {
       checkHistory();
-    };
-
-    const onAgentStart = () => {
-      cleanup(true);
     };
 
     timeoutId = window.setTimeout(() => {
@@ -339,7 +390,30 @@ const waitForAssistantResponse = useCallback(async (session: any, previousAssist
     session.on?.('history_updated', onHistoryUpdated);
     session.on?.('response.output_item.added', onOutputItemAdded);
     session.on?.('response.completed', onResponseCompleted);
-    session.on?.('agent_start', onAgentStart);
+
+    const attachAudioListener = (event: string) => {
+      const handler = (...args: any[]) => {
+        console.log(`🎵 waitForAssistantResponse: Audio event ${event} triggered with:`, args);
+        cleanup(true);
+      };
+      audioListeners.push({ event, handler });
+      session.on?.(event as any, handler as any);
+    };
+
+    // Listen for various audio-related events
+    const audioEvents = [
+      'response.audio.delta',
+      'response.audio', 
+      'response.audio.start',
+      'response.audio_transcript.done',
+      'audio',
+      'remote_track',
+      'agent_start'  // This seems to be working based on logs
+    ];
+    
+    audioEvents.forEach(eventName => {
+      attachAudioListener(eventName);
+    });
 
     checkHistory();
     if (!settled) {
