@@ -394,6 +394,26 @@ const waitForAssistantResponse = useCallback(async (session: any, previousAssist
     const attachAudioListener = (event: string) => {
       const handler = (...args: any[]) => {
         console.log(`🎵 waitForAssistantResponse: Audio event ${event} triggered with:`, args);
+        
+        if (event === 'agent_start') {
+          console.log('🎵 waitForAssistantResponse: agent_start detected - waiting for actual content');
+          return; // Don't cleanup yet - wait for actual content
+        }
+        
+        if (event === 'agent_end') {
+          console.log('🎵 waitForAssistantResponse: agent_end detected - checking for content');
+          const hasResponse = args && args.length > 2 && args[2] && args[2].trim() !== '';
+          if (hasResponse) {
+            console.log('🎵 waitForAssistantResponse: Valid response found in agent_end');
+            cleanup(true);
+          } else {
+            console.log('🎵 waitForAssistantResponse: Empty response in agent_end - continuing to wait');
+            // Don't cleanup - let it timeout and fall back to HTTP
+            return;
+          }
+        }
+        
+        // For other audio events (response.audio.delta, etc.), cleanup immediately
         cleanup(true);
       };
       audioListeners.push({ event, handler });
@@ -408,7 +428,8 @@ const waitForAssistantResponse = useCallback(async (session: any, previousAssist
       'response.audio_transcript.done',
       'audio',
       'remote_track',
-      'agent_start'  // This seems to be working based on logs
+      'agent_start',  // Wait for actual content, don't cleanup immediately
+      'agent_end'     // Check for valid response content
     ];
     
     audioEvents.forEach(eventName => {
