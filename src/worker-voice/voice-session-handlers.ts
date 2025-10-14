@@ -87,6 +87,15 @@ export class VoiceSessionHandlers {
             }
           }
           break;
+        case 'keep_alive':
+          console.log('💓 Keep-alive ping received from frontend');
+          // Respond to keep-alive ping to maintain connection health
+          this.core.broadcastToClients({
+            type: 'keep_alive_response',
+            timestamp: Date.now(),
+            sessionId: this.core.getSessionId()
+          });
+          break;
         default:
           console.warn('⚠️ Unknown message type:', data.type);
       }

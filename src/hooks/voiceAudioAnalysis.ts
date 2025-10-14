@@ -150,6 +150,9 @@ export const initializeAudioAnalysis = async (
     // Web Audio API only allows one MediaElementSourceNode per audio element per context
     if (cachedMediaElementSource) {
       console.log('🎵 Reusing cached MediaElementSourceNode');
+      if (audioContextRef) {
+        audioContextRef.current = cachedMediaElementSource.context as AudioContext;
+      }
       await startAnalysisWithNodes(() => cachedMediaElementSource!);
     } else {
       console.log('🎵 Creating new MediaElementSourceNode (first time)');

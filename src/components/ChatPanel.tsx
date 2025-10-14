@@ -35,21 +35,45 @@ export const ChatPanel: React.FC<ChatPanelProps> = ({
   const [isSending, setIsSending] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const pendingTextMessagesRef = useRef<Array<{ text: string; expiresAt: number }>>([]);
   const { voiceState, isVoiceDisabled } = useAnimationStore();
 
   const canSend = Boolean(onSendMessage) && !isVoiceDisabled && isAgentReady;
+  const TEXT_TRANSCRIPT_IGNORE_MS = 3000;
 
   useEffect(() => {
-    if (transcript && transcript.trim()) {
-      const newMessage: Message = {
-        id: `user-${Date.now()}`,
-        role: 'user',
-        text: transcript,
-        timestamp: new Date(),
-        type: 'voice'
-      };
-      setVoiceMessages(prev => [...prev, newMessage]);
+    if (!transcript) {
+      return;
     }
+
+    const normalizedTranscript = transcript.trim();
+    if (!normalizedTranscript) {
+      return;
+    }
+
+    const now = Date.now();
+    pendingTextMessagesRef.current = pendingTextMessagesRef.current.filter(
+      pending => pending.expiresAt > now
+    );
+
+    const pendingMatch = pendingTextMessagesRef.current.find(
+      pending => pending.text === normalizedTranscript
+    );
+
+    if (pendingMatch) {
+      pendingMatch.expiresAt = now + TEXT_TRANSCRIPT_IGNORE_MS;
+      return;
+    }
+
+    const newMessage: Message = {
+      id: `user-${Date.now()}`,
+      role: 'user',
+      text: normalizedTranscript,
+      timestamp: new Date(),
+      type: 'voice'
+    };
+    setVoiceMessages(prev => [...prev, newMessage]);
+    setResponseDestination('voice');
   }, [transcript]);
 
   useEffect(() => {
@@ -74,11 +98,6 @@ export const ChatPanel: React.FC<ChatPanelProps> = ({
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [activeTab === 'voice' ? voiceMessages : textMessages]);
-
-  useEffect(() => {
-    // Update response destination when active tab changes
-    setResponseDestination(activeTab);
-  }, [activeTab]);
 
   useEffect(() => {
     if (errorMessage && draft.length === 0) {
@@ -107,6 +126,11 @@ export const ChatPanel: React.FC<ChatPanelProps> = ({
     try {
       const success = await onSendMessage(trimmed);
       if (success) {
+        pendingTextMessagesRef.current.push({
+          text: trimmed,
+          expiresAt: Date.now() + TEXT_TRANSCRIPT_IGNORE_MS
+        });
+        setResponseDestination('text');
         // Add user message to text messages
         const userMessage: Message = {
           id: `user-${Date.now()}`,
@@ -167,6 +191,23 @@ export const ChatPanel: React.FC<ChatPanelProps> = ({
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.3 }}
     >
+      {/* Minimize/Maximize Button - Positioned above tabs */}
+      {onToggleMinimize && (
+        <div className="flex justify-center -mb-1 relative z-10">
+          <button
+            onClick={onToggleMinimize}
+            className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-600 rounded-t-lg px-3 py-1 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors shadow-sm"
+            aria-label={isMinimized ? 'Expand chat' : 'Minimize chat'}
+          >
+            <div className={`w-0 h-0 border-l-[6px] border-r-[6px] border-l-transparent border-r-transparent ${
+              isMinimized
+                ? 'border-t-[8px] border-t-gray-600 dark:border-t-gray-400'
+                : 'border-b-[8px] border-b-gray-400 dark:border-b-gray-600'
+            }`} />
+          </button>
+        </div>
+      )}
+
       {/* Horizontal Tabs */}
       <div className="flex border-b border-gray-200 dark:border-gray-600 bg-gray-50 dark:bg-gray-700">
         <button
@@ -178,7 +219,7 @@ export const ChatPanel: React.FC<ChatPanelProps> = ({
           }`}
           aria-label="Voice conversations"
         >
-          🎤 Voice
+          🎤 Voice chat
         </button>
         <button
           onClick={() => setActiveTab('text')}
@@ -189,40 +230,11 @@ export const ChatPanel: React.FC<ChatPanelProps> = ({
           }`}
           aria-label="Text conversations"
         >
-          💬 Text
+          💬 Text chat
         </button>
       </div>
 
-      {/* Status Bar with expand button - Always visible */}
-      <div className="flex items-center justify-between px-4 py-2 border-b border-gray-200 dark:border-gray-600 bg-gray-50 dark:bg-gray-700">
-        <div className="flex items-center gap-2">
-          <div className={`w-2 h-2 rounded-full ${
-            voiceState === 'speaking' ? 'bg-green-500 animate-pulse' :
-            voiceState === 'listening' ? 'bg-blue-500 animate-pulse' :
-            'bg-gray-400'
-          }`} />
-          <span className="text-xs text-gray-600 dark:text-gray-400">
-            {activeTab === 'voice' ? 'Voice conversations' : 'Text conversations'}
-          </span>
-        </div>
-        {onToggleMinimize && (
-          <button
-            onClick={onToggleMinimize}
-            className="text-gray-500 hover:text-gray-700 dark:hover:text-gray-300 p-1 rounded transition-colors"
-            aria-label={isMinimized ? 'Expand chat' : 'Minimize chat'}
-          >
-            {isMinimized ? (
-              <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
-                <path fillRule="evenodd" d="M14.707 12.707a1 1 0 01-1.414 0L10 9.414l-3.293 3.293a1 1 0 01-1.414-1.414l4-4a1 1 0 011.414 0l4 4a1 1 0 010 1.414z" clipRule="evenodd" />
-              </svg>
-            ) : (
-              <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
-                <path fillRule="evenodd" d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z" clipRule="evenodd" />
-              </svg>
-            )}
-          </button>
-        )}
-      </div>
+
 
       {/* Content Area - Only show when not minimized */}
       {!isMinimized && (
