@@ -873,15 +873,12 @@ const waitForAssistantResponse = useCallback(async (session: any, previousAssist
             }
           }
 
-          // Clean up all listeners and timeouts (only clear timeout if we're not in waiting phase)
+          // Clean up all listeners and timeouts
           session.off('error', errorHandler);
           session.off('response.failed', responseFailedHandler);
           session.off('response.canceled', responseCanceledHandler);
           session.off('transport_event', transportEventHandler);
           session.off('response.created', responseCreatedHandler);
-          
-          // Only clear timeout if we're leaving the waiting phase (not just cleaning up listeners)
-          // The timeout should continue running to detect missing response.created events
 
           const assistantResponded = await waitForAssistantResponse(session, previousAssistantSnapshot);
           
