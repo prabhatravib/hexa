@@ -385,10 +385,10 @@ const waitForAssistantResponse = useCallback(async (session: any, previousAssist
         console.log('🎵 waitForAssistantResponse: onOutputItemAdded called with:', candidate);
         
         if (markAssistant(candidate)) return;
-
+        
         const hasAudio = hasAudioPayload(candidate);
         console.log('🎵 waitForAssistantResponse: hasAudioPayload result:', hasAudio);
-
+        
         if (hasAudio) {
           console.log('🎵 waitForAssistantResponse: Audio detected, cleaning up');
           audioDetected = true;
@@ -505,7 +505,7 @@ const waitForAssistantResponse = useCallback(async (session: any, previousAssist
     // Listen for various audio-related events
     const audioEvents = [
       'response.audio.delta',
-      'response.audio',
+      'response.audio', 
       'response.audio.start',
       'response.audio_transcript.done',
       'response.output_text.delta',
@@ -644,6 +644,88 @@ const waitForAssistantResponse = useCallback(async (session: any, previousAssist
         try {
           console.log('dY"? Sending text via Realtime session');
 
+          // Add comprehensive session state logging (focused on key properties)
+          console.log('🎵 Session state before response.create:', {
+            state: session?.state,
+            transportReadyState: session?.transport?.readyState,
+            dataChannelState: session?.dataChannel?.readyState,
+            currentResponseId: session?._currentResponseId,
+            responseQueue: session?._responseQueue,
+            historyLength: session?.history?.length,
+            // Additional debugging properties
+            hasDataChannel: !!session?.dataChannel,
+            transportState: session?.transport?.state,
+            sessionId: session?.id || session?.__hexaSessionId
+          });
+
+          // Declare timeout variable above the handler to avoid temporal dead zone
+          let responseCreatedTimeout: ReturnType<typeof setTimeout> | null = null;
+
+          // Add comprehensive error monitoring for silent failures
+          const errorHandler = (error: any) => {
+            console.error('🚨 Session error during text send:', error);
+            if (error?.type === 'response.create' || error?.code === 'response_create_failed') {
+              console.error('❌ Response.create failed:', error);
+            }
+          };
+          
+          const responseFailedHandler = (error: any) => {
+            console.error('❌ Response failed:', error);
+            console.log('🔍 Response failed details:', {
+              error: error,
+              sessionState: session?.state,
+              transportState: session?.transport?.state,
+              dataChannelState: session?.dataChannel?.readyState
+            });
+          };
+
+          const responseCanceledHandler = (error: any) => {
+            console.error('❌ Response canceled:', error);
+            console.log('🔍 Response canceled details:', {
+              error: error,
+              sessionState: session?.state,
+              transportState: session?.transport?.state,
+              dataChannelState: session?.dataChannel?.readyState
+            });
+          };
+
+          const transportEventHandler = (event: any) => {
+            console.log('🚌 Transport event:', event);
+            if (event?.type === 'data_channel_state_change') {
+              console.log('🔌 Data channel state changed:', event.state);
+            }
+            // Log transport events that might indicate channel death
+            if (event?.type === 'error' || event?.type === 'close' || event?.type === 'disconnect') {
+              console.error('🚨 Transport event indicating potential channel death:', event);
+            }
+          };
+
+          // Add listener to monitor response.created events
+          const responseCreatedHandler = (payload: any) => {
+            console.log('🎵 response.created event received:', payload);
+            // Clear the timeout when response.created fires
+            if (responseCreatedTimeout) {
+              clearTimeout(responseCreatedTimeout);
+              responseCreatedTimeout = null;
+              console.log('✅ response.created event received - clearing timeout');
+            }
+          };
+
+          // Add temporary error listeners
+          session.on('error', errorHandler);
+          session.on('response.failed', responseFailedHandler);
+          session.on('response.canceled', responseCanceledHandler);
+          session.on('transport_event', transportEventHandler);
+          session.on('response.created', responseCreatedHandler);
+
+          // Add one-shot dataChannel error listener
+          if (session.dataChannel) {
+            const dataChannelErrorHandler = (error: any) => {
+              console.error('🔌 DataChannel error:', error);
+            };
+            session.dataChannel.onerror = dataChannelErrorHandler;
+          }
+
           // FIXED: Don't call stopSpeaking() before response.create to prevent interrupt race condition
           // The stopSpeaking() call was triggering interrupt commands that cancelled the new response
           // Only set voice state to thinking, let the response.create handle the transition
@@ -651,6 +733,9 @@ const waitForAssistantResponse = useCallback(async (session: any, previousAssist
 
           const previousUserIds = collectUserItemIds(session?.history);
           const previousAssistantSnapshot = collectAssistantSnapshot(session?.history);
+
+          // Keep the working raw API calls but add comprehensive debugging
+          console.log('🎵 Using raw API calls (keeping working implementation)');
 
           const queued = await safeSessionSend(session, {
             type: 'conversation.item.create',
@@ -660,6 +745,8 @@ const waitForAssistantResponse = useCallback(async (session: any, previousAssist
               content: [{ type: 'input_text', text }],
             },
           });
+
+          console.log('🎵 conversation.item.create result:', queued);
 
           if (!queued) {
             throw new Error('Realtime conversation.item.create failed');
@@ -672,7 +759,18 @@ const waitForAssistantResponse = useCallback(async (session: any, previousAssist
             await new Promise(resolve => setTimeout(resolve, 300));
           }
 
-          const triggered = await safeSessionSend(session, {
+          // Add detailed logging before response.create
+          console.log('🎵 About to send response.create command');
+          console.log('🎵 Session state before response.create:', {
+            state: session?.state,
+            readyState: session?.transport?.readyState,
+            currentResponseId: session?._currentResponseId,
+            responseQueue: session?._responseQueue,
+            historyLength: session?.history?.length,
+            dataChannelState: session?.dataChannel?.readyState
+          });
+
+          let triggered = await safeSessionSend(session, {
             type: 'response.create',
             response: {
               modalities: ['audio', 'text'],
@@ -684,11 +782,116 @@ const waitForAssistantResponse = useCallback(async (session: any, previousAssist
             },
           });
 
+          console.log('🎵 response.create result:', triggered);
+
+          // Set the timeout AFTER response.create to detect if response.created never fires
+          responseCreatedTimeout = setTimeout(async () => {
+            console.error('❌ response.created event never fired - session may be stuck');
+            console.log('🎵 Session state after timeout:', {
+              state: session?.state,
+              currentResponseId: session?._currentResponseId,
+              responseQueue: session?._responseQueue,
+              historyLength: session?.history?.length
+            });
+            
+            // If response.create succeeded but no response.created fired, trigger recreation
+            if (triggered) {
+              console.log('🔄 response.create succeeded but no response.created - triggering session recreation');
+              try {
+                const { triggerRecoveryIfNeeded } = await import('../lib/voiceErrorRecovery');
+                await triggerRecoveryIfNeeded();
+              } catch (error) {
+                console.error('❌ Failed to trigger session recreation:', error);
+              }
+            }
+          }, 3000); // 3 second timeout
+
+
           if (!triggered) {
-            throw new Error('Realtime response.create failed');
+            console.error('❌ response.create command failed - session may be in invalid state');
+            
+            // Try session recreation as last resort
+            console.log('🔄 Attempting session recreation due to response.create failure');
+            try {
+              // Remove all listeners and timeouts before recreation
+              session.off('error', errorHandler);
+              session.off('response.failed', responseFailedHandler);
+              session.off('response.canceled', responseCanceledHandler);
+              session.off('transport_event', transportEventHandler);
+              session.off('response.created', responseCreatedHandler);
+              
+              // Clear timeout before recreation
+              if (responseCreatedTimeout) {
+                clearTimeout(responseCreatedTimeout);
+                responseCreatedTimeout = null;
+              }
+              
+              // Check if we've already tried recreation to prevent infinite loops
+              const recreationAttempted = (window as any).__recreationAttempted;
+              if (recreationAttempted) {
+                console.error('❌ Session recreation already attempted, giving up');
+                throw new Error('Session recreation already attempted');
+              }
+              (window as any).__recreationAttempted = true;
+              
+              // Trigger session recreation
+              const { triggerRecoveryIfNeeded } = await import('../lib/voiceErrorRecovery');
+              await triggerRecoveryIfNeeded();
+              
+              // Wait a bit for recreation
+              await new Promise(resolve => setTimeout(resolve, 1000));
+              
+              // Check if we have a new session
+              const newSession: any = (window as any).activeSession;
+              if (newSession && newSession !== session) {
+                console.log('✅ Session recreated, retrying with new session');
+                // Retry with new session
+                const retryTriggered = await safeSessionSend(newSession, {
+                  type: 'response.create',
+                  response: {
+                    modalities: ['audio', 'text'],
+                    instructions:
+                      getBaseInstructions() ||
+                      'You are Hexa, the Hexagon assistant. Respond aloud to the user.',
+                    voice: 'marin',
+                    output_audio_format: 'pcm16',
+                  },
+                });
+                
+                if (retryTriggered) {
+                  console.log('✅ Retry with new session succeeded');
+                  triggered = true;
+                } else {
+                  throw new Error('Session recreation failed to fix response.create');
+                }
+              } else {
+                throw new Error('Session recreation did not create new session');
+              }
+            } catch (recreationError) {
+              console.error('❌ Session recreation failed:', recreationError);
+              throw new Error('Realtime response.create failed after recreation');
+            }
           }
 
+          // Clean up all listeners and timeouts (only clear timeout if we're not in waiting phase)
+          session.off('error', errorHandler);
+          session.off('response.failed', responseFailedHandler);
+          session.off('response.canceled', responseCanceledHandler);
+          session.off('transport_event', transportEventHandler);
+          session.off('response.created', responseCreatedHandler);
+          
+          // Only clear timeout if we're leaving the waiting phase (not just cleaning up listeners)
+          // The timeout should continue running to detect missing response.created events
+
           const assistantResponded = await waitForAssistantResponse(session, previousAssistantSnapshot);
+          
+          // Clear timeout when we get a response (success or failure)
+          if (responseCreatedTimeout) {
+            clearTimeout(responseCreatedTimeout);
+            responseCreatedTimeout = null;
+            console.log('✅ Clearing timeout - response received');
+          }
+          
           if (!assistantResponded) {
             console.warn('dY"? Assistant response detection failed, falling back to HTTP');
             const fallbackSuccess = await sendTextControl(text);
