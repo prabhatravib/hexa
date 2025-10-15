@@ -115,6 +115,12 @@ export const registerVoiceSessionTranscriptHandlers = (
       if (typeof current === 'string') {
         const trimmed = current.trim();
         if (!trimmed) return null;
+
+        const ignorePatterns = [/^item_[A-Za-z0-9-]+$/i, /^resp_[A-Za-z0-9-]+$/i, /^response_[A-Za-z0-9-]+$/i];
+        if (ignorePatterns.some(pattern => pattern.test(trimmed))) {
+          return null;
+        }
+
         const looksLikeSentence = trimmed.includes(' ') || /[.,!?]/.test(trimmed);
         if (!looksLikeSentence && trimmed.length < 4) {
           return null;

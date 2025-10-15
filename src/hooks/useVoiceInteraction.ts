@@ -277,6 +277,18 @@ const waitForAssistantResponse = useCallback(async (session: any, previousAssist
       return false;
     };
 
+    const resolveResponseId = (payload: any): string | null => {
+      if (!payload || typeof payload !== 'object') return null;
+      const candidate =
+        payload?.id ??
+        payload?.response_id ??
+        payload?.responseId ??
+        (typeof payload?.response === 'object'
+          ? (payload.response as any)?.id ?? (payload.response as any)?.response_id
+          : undefined);
+      return candidate ? String(candidate) : null;
+    };
+
     const hasAudioPayload = (payload: any): boolean => {
       if (!payload) return false;
       if (typeof payload !== 'object') return false;
@@ -387,7 +399,26 @@ const waitForAssistantResponse = useCallback(async (session: any, previousAssist
       }
     };
 
-    const onResponseCompleted = () => {
+    const onResponseCompleted = (payload: any) => {
+      try {
+        const completedId = resolveResponseId(payload);
+        if (
+          completedId &&
+          currentResponseIdRef.current &&
+          completedId === currentResponseIdRef.current
+        ) {
+          console.log(
+            '🎵 waitForAssistantResponse: response.completed matched active response - marking success'
+          );
+          currentResponseIdRef.current = null;
+          (window as any).__currentResponseId = null;
+          cleanup(true);
+          return;
+        }
+      } catch (error) {
+        console.warn('Failed to evaluate response.completed payload:', error);
+      }
+
       checkHistory();
     };
 
