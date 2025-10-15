@@ -218,6 +218,8 @@ const waitForAssistantResponse = useCallback(async (session: any, previousAssist
     let timeoutId: number | null = null;
     let intervalId: number | null = null;
     const audioListeners: Array<{ event: string; handler: (...args: any[]) => void }> = [];
+    let audioDetected = false;
+    let textDetected = false;
 
     const normalize = (value: unknown) =>
       typeof value === 'string' ? value.trim() : undefined;
@@ -242,6 +244,7 @@ const waitForAssistantResponse = useCallback(async (session: any, previousAssist
         if (previous === undefined) {
           previousAssistantSnapshot.set(id, text ?? null);
           if (text) {
+            textDetected = true;
             cleanup(true);
             return true;
           }
@@ -250,12 +253,14 @@ const waitForAssistantResponse = useCallback(async (session: any, previousAssist
 
         if (previous === null && text) {
           previousAssistantSnapshot.set(id, text);
+          textDetected = true;
           cleanup(true);
           return true;
         }
 
         if (previous !== null && text && previous !== text) {
           previousAssistantSnapshot.set(id, text);
+          textDetected = true;
           cleanup(true);
           return true;
         }
@@ -264,6 +269,7 @@ const waitForAssistantResponse = useCallback(async (session: any, previousAssist
       }
 
       if (text) {
+        textDetected = true;
         cleanup(true);
         return true;
       }
@@ -367,12 +373,13 @@ const waitForAssistantResponse = useCallback(async (session: any, previousAssist
         console.log('🎵 waitForAssistantResponse: onOutputItemAdded called with:', candidate);
         
         if (markAssistant(candidate)) return;
-        
+
         const hasAudio = hasAudioPayload(candidate);
         console.log('🎵 waitForAssistantResponse: hasAudioPayload result:', hasAudio);
-        
+
         if (hasAudio) {
           console.log('🎵 waitForAssistantResponse: Audio detected, cleaning up');
+          audioDetected = true;
           cleanup(true);
         }
       } catch (error) {
@@ -414,10 +421,38 @@ const waitForAssistantResponse = useCallback(async (session: any, previousAssist
             cleanup(true);
           } else {
             console.log('🎵 waitForAssistantResponse: Empty response in agent_end - continuing to wait');
+            if (audioDetected || textDetected) {
+              console.log(
+                '🎵 waitForAssistantResponse: Treating agent_end with empty payload as success due to prior audio/text'
+              );
+              currentResponseIdRef.current = null;
+              (window as any).__currentResponseId = null;
+              cleanup(true);
+              return;
+            }
             // Don't cleanup - let it timeout and fall back to HTTP
             return;
           }
         }
+
+        if (event.startsWith('response.output_text')) {
+          const payload = args?.[0];
+          const deltaText =
+            typeof payload === 'string'
+              ? payload.trim()
+              : typeof payload?.delta === 'string'
+                ? payload.delta.trim()
+                : typeof payload?.text === 'string'
+                  ? payload.text.trim()
+                  : '';
+          if (deltaText) {
+            textDetected = true;
+          }
+          cleanup(true);
+          return;
+        }
+
+        audioDetected = true;
         
         // For other audio events (response.audio.delta, etc.), cleanup immediately
         cleanup(true);
@@ -439,9 +474,11 @@ const waitForAssistantResponse = useCallback(async (session: any, previousAssist
     // Listen for various audio-related events
     const audioEvents = [
       'response.audio.delta',
-      'response.audio', 
+      'response.audio',
       'response.audio.start',
       'response.audio_transcript.done',
+      'response.output_text.delta',
+      'response.output_text.done',
       'audio',
       'remote_track',
       'agent_start',  // Wait for actual content, don't cleanup immediately

@@ -95,7 +95,7 @@ export const registerVoiceSessionTranscriptHandlers = (
     return true;
   };
 
-  const scheduleHistorySync = (reason: string) => {
+  const scheduleHistorySync = (reason: string, delayMs = 60) => {
     setTimeout(() => {
       const history = getHistory();
       const assistantText = findLatestAssistantText(history);
@@ -106,7 +106,7 @@ export const registerVoiceSessionTranscriptHandlers = (
       if (userText) {
         commitTranscriptText(userText, `${reason} history user`);
       }
-    }, 30);
+    }, delayMs);
   };
 
   const extractFirstString = (value: any): string | null => {
@@ -142,18 +142,133 @@ export const registerVoiceSessionTranscriptHandlers = (
       return null;
     };
 
-    return visit(value, 30);
+    return visit(value, 0);
   };
+
+  const responseTextBuffers = new Map<string, { text: string; sawDelta: boolean }>();
+  let activeResponseId: string | null = null;
+
+  const resolveResponseId = (payload: any): string | null => {
+    if (!payload || typeof payload !== 'object') return null;
+    const candidate =
+      payload.response_id ||
+      payload.responseId ||
+      payload.id ||
+      payload.response?.id ||
+      (typeof payload.response === 'object' ? (payload.response as any).response_id : undefined);
+    return candidate ? String(candidate) : null;
+  };
+
+  const ensureBuffer = (id: string | null) => {
+    if (!id) return null;
+    let buffer = responseTextBuffers.get(id);
+    if (!buffer) {
+      buffer = { text: '', sawDelta: false };
+      responseTextBuffers.set(id, buffer);
+    }
+    return buffer;
+  };
+
+  const clearBuffer = (id: string | null) => {
+    if (!id) return;
+    responseTextBuffers.delete(id);
+    if (activeResponseId === id) {
+      activeResponseId = null;
+    }
+  };
+
+  const flushBuffer = (id: string | null, source: string): boolean => {
+    if (!id) return false;
+    const buffer = responseTextBuffers.get(id);
+    if (!buffer) return false;
+    const text = buffer.text.trim();
+    clearBuffer(id);
+    if (!text) return false;
+    return commitResponseText(text, source);
+  };
+
+  const readDeltaText = (payload: any): string => {
+    if (typeof payload === 'string') return payload;
+    if (!payload || typeof payload !== 'object') return '';
+    if (typeof payload.delta === 'string') return payload.delta;
+    if (typeof payload.text === 'string') return payload.text;
+    if (Array.isArray(payload.delta)) {
+      return payload.delta.map((part: any) => readDeltaText(part)).join('');
+    }
+    if (Array.isArray(payload.text)) {
+      return payload.text.map((part: any) => readDeltaText(part)).join('');
+    }
+    return '';
+  };
+
+  const noteActiveResponse = (id: string | null) => {
+    if (!id) return;
+    activeResponseId = id;
+    ensureBuffer(id);
+  };
+
+  session.on('response.created' as any, (payload: any) => {
+    const id = resolveResponseId(payload);
+    if (id) {
+      console.log('dYO? response.created detected for', id);
+    }
+    noteActiveResponse(id);
+  });
+
+  session.on('response.output_item.added' as any, (event: any) => {
+    const id = resolveResponseId(event) ?? activeResponseId;
+    const candidate = extractFirstString(event?.item ?? event);
+    if (candidate && commitResponseText(candidate, 'response.output_item.added')) {
+      clearBuffer(id ?? activeResponseId);
+    }
+  });
+
+  session.on('response.output_text.delta' as any, (payload: any) => {
+    const id = resolveResponseId(payload) ?? activeResponseId;
+    const delta = readDeltaText(payload);
+    if (!id || !delta) return;
+    const buffer = ensureBuffer(id);
+    if (!buffer) return;
+    buffer.text += delta;
+    buffer.sawDelta = true;
+  });
+
+  session.on('response.output_text.done' as any, (payload: any) => {
+    const id = resolveResponseId(payload) ?? activeResponseId;
+    if (flushBuffer(id, 'response.output_text stream')) {
+      return;
+    }
+    scheduleHistorySync('response.output_text.done', 90);
+  });
+
+  session.on('response.completed' as any, (payload: any) => {
+    const id = resolveResponseId(payload) ?? activeResponseId;
+    if (flushBuffer(id, 'response.completed stream')) {
+      return;
+    }
+
+    const textFromPayload = extractFirstString(payload);
+    if (commitResponseText(textFromPayload, 'response.completed payload')) {
+      clearBuffer(id);
+      return;
+    }
+
+    scheduleHistorySync('response.completed', 120);
+  });
 
   session.on('agent_end' as any, (...args: any[]) => {
     console.log('dYO? agent_end received with args:', args);
+
+    if (flushBuffer(activeResponseId, 'agent_end stream flush')) {
+      return;
+    }
 
     const textFromArgs = extractFirstString(args);
     if (!commitResponseText(textFromArgs, 'agent_end args')) {
       console.log('dYO? agent_end args did not contain response text, will rely on history.');
     }
 
-    scheduleHistorySync('agent_end');
+    scheduleHistorySync('agent_end', 120);
   });
 
   session.on('*' as any, (eventName: string, data: any) => {
