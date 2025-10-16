@@ -67,6 +67,11 @@ export const registerVoiceSessionTranscriptHandlers = (
     if (typeof text !== 'string') return false;
     const trimmed = text.trim();
     if (!trimmed) return false;
+    const normalized = trimmed.toLowerCase();
+    if (normalized === 'message') {
+      console.log(`dYO? Ignoring placeholder response from ${source}:`, trimmed);
+      return false;
+    }
     if (runtimeState.lastResponseText === trimmed) {
       console.log(`dYO? Duplicate response ignored from ${source}:`, trimmed);
       return true;

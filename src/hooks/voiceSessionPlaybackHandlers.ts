@@ -21,13 +21,24 @@ export const registerVoiceSessionPlaybackHandlers = (
     startSpeaking,
     stopSpeaking,
     audioEl,
+    audioContextRef,
     debugSetVoiceState,
     runtimeState,
   } = context;
 
-  const ensureAudioPlaying = () => {
+  const ensureAudioPlaying = async () => {
     if (!audioEl) return;
     try {
+      const ctx = audioContextRef?.current;
+      if (ctx && ctx.state === 'suspended') {
+        try {
+          await ctx.resume();
+          console.log('🎵 Resumed shared AudioContext in ensureAudioPlaying');
+        } catch (error) {
+          console.warn('Failed to resume AudioContext in ensureAudioPlaying:', error);
+        }
+      }
+
       if (audioEl.muted) audioEl.muted = false;
       if (audioEl.volume === 0) audioEl.volume = 1;
       if (audioEl.paused) {
@@ -45,7 +56,7 @@ export const registerVoiceSessionPlaybackHandlers = (
   };
 
   const markSpeaking = () => {
-    ensureAudioPlaying();
+    void ensureAudioPlaying();
     if (!runtimeState.isCurrentlySpeaking) {
       runtimeState.isCurrentlySpeaking = true;
       if (startSpeaking) {

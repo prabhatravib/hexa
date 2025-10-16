@@ -87,7 +87,6 @@ export class OpenAIConnection {
     // Use the standard Realtime API endpoint with optimal configuration
     const requestBody = {
       model: this.env.OPENAI_VOICE_MODEL || 'gpt-realtime', // Read from environment variable with fallback
-      voice: 'marin', // or 'cedar' - both are new GA voices
       input_audio_format: 'pcm16',
       output_audio_format: 'pcm16',
       // Enable server-side transcription of input audio

@@ -14,7 +14,7 @@ This repository defines AI agents used by the Hexa voice application. This docum
 ### `hexa-voice`
 **Purpose**: Conversational voice agent for real-time speech-to-speech interactions  
 **Model**: `gpt-realtime` (configurable via `OPENAI_VOICE_MODEL` env var)  
-**Voice**: `marin` (OpenAI's GA voice)  
+**Voice**: Default male voice (OpenAI's default voice setting)  
 **Interface**: WebRTC with fallback to WebSocket  
 **Inputs**: Microphone audio (PCM16), optional text messages  
 **Outputs**: Streamed audio responses, interim transcripts  

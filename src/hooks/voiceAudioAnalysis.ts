@@ -231,6 +231,16 @@ export const stopAudioAnalysis = () => {
 
   // Disconnect active audio nodes so playback routes correctly next time
   try {
+    if (
+      typeof MediaElementAudioSourceNode !== 'undefined' &&
+      currentSourceNode instanceof MediaElementAudioSourceNode
+    ) {
+      try {
+        (currentSourceNode as any).__hexaConnectedToDestination = false;
+      } catch (error) {
+        console.warn('⚠️ Failed to reset destination flag on media element source:', error);
+      }
+    }
     currentSourceNode?.disconnect();
   } catch (error) {
     console.warn('⚠️ Failed to disconnect current audio source node during stop:', error);

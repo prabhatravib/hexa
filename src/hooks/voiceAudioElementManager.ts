@@ -103,7 +103,13 @@ export const setupAudioElementHandlers = (
   audioEl: HTMLAudioElement,
   handlers: AudioElementHandlersOptions
 ) => {
-  const { setVoiceState, startSpeaking, stopSpeaking, setSpeechIntensity } = handlers;
+  const {
+    setVoiceState,
+    startSpeaking,
+    stopSpeaking,
+    setSpeechIntensity,
+    audioContextRef,
+  } = handlers;
 
   // Track audio element state for mouth animation
   let audioPlaying = false;
@@ -185,13 +191,17 @@ export const setupAudioElementHandlers = (
     }
 
     if (!analysisStarted) {
-      console.log('🎵 Starting analysis with MediaElementSource');
-      await initializeAudioAnalysis(null, audioEl, {
-        audioContextRef: undefined,
+      const stream =
+        audioEl.srcObject instanceof MediaStream ? (audioEl.srcObject as MediaStream) : null;
+      console.log(
+        `🎵 Starting analysis with ${stream ? 'MediaStream source' : 'MediaElementSource'}`
+      );
+      await initializeAudioAnalysis(stream, audioEl, {
+        audioContextRef,
         setSpeechIntensity,
         startSpeaking,
         stopSpeaking,
-        setVoiceState
+        setVoiceState,
       });
     } else {
       console.log('🎵 Analysis already started, skipping');

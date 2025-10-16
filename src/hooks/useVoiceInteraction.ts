@@ -211,8 +211,16 @@ export const useVoiceInteraction = (options: UseVoiceInteractionOptions = {}) =>
         setTranscript,
         onError,
         currentResponseIdRef,
+        audioContextRef,
       }),
-    [isVoiceDisabled, setVoiceState, sendTextControl, setTranscript, onError]
+    [
+      isVoiceDisabled,
+      setVoiceState,
+      sendTextControl,
+      setTranscript,
+      onError,
+      audioContextRef,
+    ]
   );
 
   // Switch agent
