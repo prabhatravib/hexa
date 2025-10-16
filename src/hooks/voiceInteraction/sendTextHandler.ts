@@ -80,6 +80,19 @@ export const createSendTextHandler = ({
 
         const transportEventHandler = (event: any) => {
           console.log('🚌 Transport event:', event);
+
+          if (event?.type === 'response.created' && responseCreatedTimeout) {
+            clearTimeout(responseCreatedTimeout);
+            responseCreatedTimeout = null;
+            console.log('✅ Watchdog cleared - response.created via transport');
+          }
+
+          if (event?.type === 'agent_start' && responseCreatedTimeout) {
+            clearTimeout(responseCreatedTimeout);
+            responseCreatedTimeout = null;
+            console.log('✅ Watchdog cleared - agent started responding');
+          }
+
           if (event?.type === 'data_channel_state_change') {
             console.log('🔌 Data channel state changed:', event.state);
           }
@@ -180,7 +193,7 @@ export const createSendTextHandler = ({
               console.error('❌ Failed to trigger session recreation:', error);
             }
           }
-        }, 3000);
+        }, 8000);
 
         if (!triggered) {
           console.error('❌ response.create command failed - session may be in invalid state');
