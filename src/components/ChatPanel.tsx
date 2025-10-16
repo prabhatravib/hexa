@@ -8,6 +8,7 @@ interface Message {
   text: string;
   timestamp: Date;
   type: 'voice' | 'text';
+  source: 'voice' | 'text'; // Add source tracking
 }
 
 interface ChatPanelProps {
@@ -41,6 +42,9 @@ export const ChatPanel: React.FC<ChatPanelProps> = ({
   const canSend = Boolean(onSendMessage) && !isVoiceDisabled && isAgentReady;
   const TEXT_TRANSCRIPT_IGNORE_MS = 3000;
 
+  // Add state to track if we're currently processing a text message
+  const [isProcessingTextMessage, setIsProcessingTextMessage] = useState(false);
+
   useEffect(() => {
     if (!transcript) {
       return;
@@ -65,16 +69,20 @@ export const ChatPanel: React.FC<ChatPanelProps> = ({
       return;
     }
 
-    const newMessage: Message = {
-      id: `user-${Date.now()}`,
-      role: 'user',
-      text: normalizedTranscript,
-      timestamp: new Date(),
-      type: 'voice'
-    };
-    setVoiceMessages(prev => [...prev, newMessage]);
-    setResponseDestination('voice');
-  }, [transcript]);
+    // Only add to voice messages if this is NOT from a text message we just sent
+    if (!isProcessingTextMessage) {
+      const newMessage: Message = {
+        id: `user-${Date.now()}`,
+        role: 'user',
+        text: normalizedTranscript,
+        timestamp: new Date(),
+        type: 'voice',
+        source: 'voice'
+      };
+      setVoiceMessages(prev => [...prev, newMessage]);
+      setResponseDestination('voice');
+    }
+  }, [transcript, isProcessingTextMessage]);
 
   useEffect(() => {
     if (response && response.trim()) {
@@ -84,7 +92,8 @@ export const ChatPanel: React.FC<ChatPanelProps> = ({
         role: 'assistant',
         text: response,
         timestamp: new Date(),
-        type: destination
+        type: destination,
+        source: destination // Assistant messages inherit the source from their destination
       };
 
       if (destination === 'voice') {
@@ -123,6 +132,8 @@ export const ChatPanel: React.FC<ChatPanelProps> = ({
 
     setIsSending(true);
     setErrorMessage(null);
+    setIsProcessingTextMessage(true); // Mark that we're processing a text message
+
     try {
       const success = await onSendMessage(trimmed);
       if (success) {
@@ -131,13 +142,15 @@ export const ChatPanel: React.FC<ChatPanelProps> = ({
           expiresAt: Date.now() + TEXT_TRANSCRIPT_IGNORE_MS
         });
         setResponseDestination('text');
-        // Add user message to text messages
+
+        // Add user message to text messages with source tracking
         const userMessage: Message = {
           id: `user-${Date.now()}`,
           role: 'user',
           text: trimmed,
           timestamp: new Date(),
-          type: 'text'
+          type: 'text',
+          source: 'text'
         };
         setTextMessages(prev => [...prev, userMessage]);
         setDraft('');
@@ -149,8 +162,10 @@ export const ChatPanel: React.FC<ChatPanelProps> = ({
       setErrorMessage('Message could not be delivered');
     } finally {
       setIsSending(false);
+      // Reset the flag after a short delay to ensure transcript processing is complete
+      setTimeout(() => setIsProcessingTextMessage(false), 100);
     }
-  }, [draft, onSendMessage, canSend]);
+  }, [draft, onSendMessage, canSend, isProcessingTextMessage]);
 
   const handleSubmit = useCallback((event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
