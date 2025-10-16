@@ -1,0 +1,156 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>PostMessage Test for Hexa Enhanced Mode</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+            background-color: #f5f5f5;
+        }
+        .container {
+            background: white;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        .controls {
+            margin-bottom: 20px;
+            padding: 15px;
+            background: #f8f9fa;
+            border-radius: 5px;
+        }
+        button {
+            background: #007bff;
+            color: white;
+            border: none;
+            padding: 10px 15px;
+            margin: 5px;
+            border-radius: 4px;
+            cursor: pointer;
+        }
+        button:hover {
+            background: #0056b3;
+        }
+        .iframe-container {
+            border: 2px solid #ddd;
+            border-radius: 8px;
+            overflow: hidden;
+            margin-top: 20px;
+        }
+        iframe {
+            width: 100%;
+            height: 600px;
+            border: none;
+        }
+        .status {
+            margin-top: 10px;
+            padding: 10px;
+            background: #e9ecef;
+            border-radius: 4px;
+        }
+        .log {
+            background: #f8f9fa;
+            border: 1px solid #dee2e6;
+            border-radius: 4px;
+            padding: 10px;
+            margin-top: 10px;
+            max-height: 200px;
+            overflow-y: auto;
+            font-family: monospace;
+            font-size: 12px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🧪 PostMessage Test for Hexa Enhanced Mode</h1>
+        <p>This page tests the dynamic aspect count feature using PostMessage communication.</p>
+        
+        <div class="controls">
+            <h3>🎛️ Aspect Count Controls</h3>
+            <p>Click buttons to send different aspect counts to the iframe:</p>
+            
+            <button onclick="sendAspectCount(2)">Set 2 Buttons</button>
+            <button onclick="sendAspectCount(3)">Set 3 Buttons</button>
+            <button onclick="sendAspectCount(5)">Set 5 Buttons</button>
+            <button onclick="sendAspectCount(7)">Set 7 Buttons (Default)</button>
+            <button onclick="sendAspectCount(8)">Set 8 Buttons</button>
+            <button onclick="sendAspectCount(10)">Set 10 Buttons</button>
+            
+            <br><br>
+            
+            <button onclick="sendAspectCount(1)" style="background: #dc3545;">Test Invalid: 1</button>
+            <button onclick="sendAspectCount(15)" style="background: #dc3545;">Test Invalid: 15</button>
+            
+            <div class="status">
+                <strong>Current Aspect Count:</strong> <span id="currentCount">7 (default)</span>
+            </div>
+        </div>
+        
+        <div class="iframe-container">
+            <iframe 
+                id="hexa-iframe" 
+                src="https://hexa-worker.prabhatravib.workers.dev/enhancedMode"
+                title="Hexa Enhanced Mode">
+            </iframe>
+        </div>
+        
+        <div class="log">
+            <h4>📝 Message Log:</h4>
+            <div id="messageLog"></div>
+        </div>
+    </div>
+
+    <script>
+        const iframe = document.getElementById('hexa-iframe');
+        const currentCountSpan = document.getElementById('currentCount');
+        const messageLog = document.getElementById('messageLog');
+        
+        function logMessage(message, type = 'info') {
+            const timestamp = new Date().toLocaleTimeString();
+            const logEntry = document.createElement('div');
+            logEntry.style.color = type === 'error' ? '#dc3545' : type === 'success' ? '#28a745' : '#333';
+            logEntry.textContent = `[${timestamp}] ${message}`;
+            messageLog.appendChild(logEntry);
+            messageLog.scrollTop = messageLog.scrollHeight;
+        }
+        
+        function sendAspectCount(count) {
+            const message = {
+                type: 'SET_ASPECT_COUNT',
+                aspectCount: count
+            };
+            
+            logMessage(`📤 Sending aspect count: ${count}`, 'info');
+            
+            try {
+                iframe.contentWindow.postMessage(message, 'https://hexa-worker.prabhatravib.workers.dev');
+                currentCountSpan.textContent = count;
+                logMessage(`✅ Message sent successfully`, 'success');
+            } catch (error) {
+                logMessage(`❌ Error sending message: ${error.message}`, 'error');
+            }
+        }
+        
+        // Listen for messages from iframe (if any)
+        window.addEventListener('message', (event) => {
+            if (event.origin === 'https://hexa-worker.prabhatravib.workers.dev') {
+                logMessage(`📨 Received from iframe: ${JSON.stringify(event.data)}`, 'info');
+            }
+        });
+        
+        // Log when iframe loads
+        iframe.addEventListener('load', () => {
+            logMessage('🔄 Iframe loaded successfully', 'success');
+        });
+        
+        // Initial log
+        logMessage('🚀 PostMessage test page loaded', 'success');
+    </script>
+</body>
+</html>

@@ -43,7 +43,7 @@ export default {
       return durableObject.fetch(request);
     }
 
-    // For SPA routing: serve the React app directly for all non-API routes
+    // For SPA routing: serve the React app for all non-API routes
     // This handles routes like /enhancedMode, /any-other-route
     return new Response(`
       <!DOCTYPE html>
@@ -56,7 +56,7 @@ export default {
         </head>
         <body>
           <div id="root"></div>
-          <script type="module" src="/assets/index-BxuuT1Jk.js"></script>
+          <script type="module" src="/assets/index-DxeCJKFF.js"></script>
           <link rel="stylesheet" href="/assets/index-D9zaSw7u.css">
         </body>
       </html>

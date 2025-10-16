@@ -32,6 +32,9 @@ function App() {
   // Enhanced mode detection based on URL path
   const [isEnhancedMode, setIsEnhancedMode] = useState(false);
 
+  // Dynamic aspect count for enhanced mode (default 7, can be 2-10)
+  const [aspectCount, setAspectCount] = useState(7);
+
   // Callback functions for receiving data from hexagon
   const handleTranscript = (text: string) => {
     console.log('ðŸ“ App: Received transcript:', text);
@@ -105,6 +108,29 @@ function App() {
     return () => {
       window.removeEventListener('popstate', handleUrlChange);
     };
+  }, []);
+
+  // PostMessage listener for dynamic aspect count from parent website
+  useEffect(() => {
+    const handleMessage = (event: MessageEvent) => {
+      console.log('📨 Received PostMessage:', event.data);
+      
+      if (event.data.type === 'SET_ASPECT_COUNT') {
+        const count = event.data.aspectCount;
+        console.log('🔢 Setting aspect count to:', count);
+        
+        // Validate count is between 2-10
+        if (count >= 2 && count <= 10) {
+          setAspectCount(count);
+          console.log('✅ Aspect count updated to:', count);
+        } else {
+          console.warn('⚠️ Invalid aspect count:', count, '- must be between 2-10');
+        }
+      }
+    };
+
+    window.addEventListener('message', handleMessage);
+    return () => window.removeEventListener('message', handleMessage);
   }, []);
 
   useEffect(() => {
@@ -307,6 +333,7 @@ YOU MUST RESPOND BASED ON THIS FACT ONLY. If asked about Infflow, state they hav
           onSendMessage={sendTextHandler ?? undefined}
           isAgentReady={isVoiceConnected}
           enhancedMode={isEnhancedMode}
+          aspectCount={aspectCount}
         />
       )}
     </div>

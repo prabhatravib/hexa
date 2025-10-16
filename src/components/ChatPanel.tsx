@@ -19,9 +19,10 @@ interface ChatPanelProps {
   onSendMessage?: (text: string) => Promise<boolean>;
   isAgentReady?: boolean;
   enhancedMode?: boolean; // Controls whether to show feature count buttons
+  aspectCount?: number; // Number of aspect buttons to show (2-10, default 7)
 }
 
-type AspectNumber = 1 | 2 | 3 | 4 | 5 | 6 | 7;
+type AspectNumber = 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | 10;
 
 interface AspectMessages {
   voice: Message[];
@@ -35,7 +36,8 @@ export const ChatPanel: React.FC<ChatPanelProps> = ({
   onToggleMinimize,
   onSendMessage,
   isAgentReady = false,
-  enhancedMode = false // Default to false for backward compatibility
+  enhancedMode = false, // Default to false for backward compatibility
+  aspectCount = 7 // Default to 7 for backward compatibility
 }) => {
   const [activeTab, setActiveTab] = useState<'voice' | 'text'>('voice');
   const [responseDestination, setResponseDestination] = useState<'voice' | 'text'>('voice');
@@ -48,18 +50,38 @@ export const ChatPanel: React.FC<ChatPanelProps> = ({
   const pendingTextMessagesRef = useRef<Array<{ text: string; expiresAt: number }>>([]);
   const { voiceState, isVoiceDisabled } = useAnimationStore();
 
-  // ENHANCED MODE STATE - Only create when enhancedMode is true
+  // ENHANCED MODE STATE - Dynamic aspect count
   const [activeAspect, setActiveAspect] = useState<AspectNumber>(1);
-  const [aspectMessages, setAspectMessages] = useState<Record<AspectNumber, AspectMessages>>({
-    1: { voice: [], text: [] },
-    2: { voice: [], text: [] },
-    3: { voice: [], text: [] },
-    4: { voice: [], text: [] },
-    5: { voice: [], text: [] },
-    6: { voice: [], text: [] },
-    7: { voice: [], text: [] }
+  
+  // Initialize aspectMessages dynamically based on aspectCount
+  const [aspectMessages, setAspectMessages] = useState<Record<AspectNumber, AspectMessages>>(() => {
+    const messages: Record<AspectNumber, AspectMessages> = {} as Record<AspectNumber, AspectMessages>;
+    for (let i = 1; i <= aspectCount; i++) {
+      messages[i as AspectNumber] = { voice: [], text: [] };
+    }
+    return messages;
   });
+  
   const [isProcessingTextMessage, setIsProcessingTextMessage] = useState(false);
+
+  // Update aspectMessages when aspectCount changes
+  useEffect(() => {
+    setAspectMessages(prev => {
+      const newMessages: Record<AspectNumber, AspectMessages> = {} as Record<AspectNumber, AspectMessages>;
+      
+      // Preserve existing messages for aspects that still exist
+      for (let i = 1; i <= aspectCount; i++) {
+        newMessages[i as AspectNumber] = prev[i as AspectNumber] || { voice: [], text: [] };
+      }
+      
+      return newMessages;
+    });
+    
+    // Reset activeAspect if it's beyond the new count
+    if (activeAspect > aspectCount) {
+      setActiveAspect(1);
+    }
+  }, [aspectCount, activeAspect]);
 
   const canSend = Boolean(onSendMessage) && !isVoiceDisabled && isAgentReady;
   const TEXT_TRANSCRIPT_IGNORE_MS = 3000;
@@ -237,20 +259,16 @@ export const ChatPanel: React.FC<ChatPanelProps> = ({
 
   const clearAllAspects = useCallback(() => {
     if (enhancedMode) {
-      setAspectMessages({
-        1: { voice: [], text: [] },
-        2: { voice: [], text: [] },
-        3: { voice: [], text: [] },
-        4: { voice: [], text: [] },
-        5: { voice: [], text: [] },
-        6: { voice: [], text: [] },
-        7: { voice: [], text: [] }
-      });
+      const newMessages: Record<AspectNumber, AspectMessages> = {} as Record<AspectNumber, AspectMessages>;
+      for (let i = 1; i <= aspectCount; i++) {
+        newMessages[i as AspectNumber] = { voice: [], text: [] };
+      }
+      setAspectMessages(newMessages);
     } else {
       setVoiceMessages([]);
       setTextMessages([]);
     }
-  }, [enhancedMode]);
+  }, [enhancedMode, aspectCount]);
 
   // Legacy clear functions for backward compatibility
   const clearVoiceMessages = useCallback(() => {
@@ -344,10 +362,10 @@ export const ChatPanel: React.FC<ChatPanelProps> = ({
       {/* Aspect Selection Buttons - Only show in enhanced mode */}
       {enhancedMode && (
         <div className="flex border-b border-gray-200 dark:border-gray-600 bg-gray-100 dark:bg-gray-750 px-2 py-2 gap-1 overflow-x-auto">
-          {([1, 2, 3, 4, 5, 6, 7] as AspectNumber[]).map(aspectNum => (
+          {Array.from({ length: aspectCount }, (_, i) => i + 1).map(aspectNum => (
             <button
               key={aspectNum}
-              onClick={() => setActiveAspect(aspectNum)}
+              onClick={() => setActiveAspect(aspectNum as AspectNumber)}
               className={`flex-shrink-0 w-10 h-10 rounded-md text-sm font-semibold transition-all ${
                 activeAspect === aspectNum
                   ? 'bg-blue-500 text-white shadow-md scale-105'
@@ -369,7 +387,7 @@ export const ChatPanel: React.FC<ChatPanelProps> = ({
               <>
                 {currentVoiceMessages.length === 0 && (
                   <div className="text-center text-gray-400 text-sm mt-8">
-                    Click the hexagon to start talking
+                    Start talking to the hexagon
                   </div>
                 )}
 
