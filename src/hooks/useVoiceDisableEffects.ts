@@ -15,6 +15,35 @@ interface UseVoiceDisableEffectsOptions {
 let micStream: MediaStream | null = null;
 let ac: AudioContext | null = null;
 let silentStream: MediaStream | null = null;
+let silentTrack: MediaStreamTrack | null = null;
+
+const isPeerConnection = (value: unknown): value is RTCPeerConnection => {
+  return !!value && typeof (value as RTCPeerConnection).getSenders === 'function';
+};
+
+const getActivePeerConnection = (): RTCPeerConnection | null => {
+  const session: any = (window as any).activeSession;
+  if (!session) return null;
+
+  const transport = session.transport as any;
+  const candidates = [
+    session._pc,
+    transport?.connectionState?.peerConnection,
+    transport?.peerConnection,
+    transport?._pc,
+  ];
+
+  for (const candidate of candidates) {
+    if (isPeerConnection(candidate)) {
+      if (!session._pc) {
+        (session as any)._pc = candidate;
+      }
+      return candidate;
+    }
+  }
+
+  return null;
+};
 
 function getSilentStream(): MediaStream {
   if (!ac) ac = new AudioContext();
@@ -27,29 +56,69 @@ function getSilentStream(): MediaStream {
     osc.start();
     silentStream = dst.stream;
   }
-  if (ac.state === "suspended") ac.resume();
+  if (ac.state === "suspended") void ac.resume();
   return silentStream;
 }
 
 async function swapToSilentAndRelease(pc: RTCPeerConnection) {
-  const sender = pc.getSenders().find(s => s.track?.kind === "audio");
-  if (!sender) return;
-  const prev = sender.track || null;
-  const silentTrack = getSilentStream().getAudioTracks()[0];
-  await sender.replaceTrack(silentTrack);   // no renegotiation
-  // releasing the device is what clears the red dot
-  if (prev && prev.readyState === "live") prev.stop();
-  console.log('🔇 Swapped to silent track and released microphone');
+  const sender = pc.getSenders().find(s => s.track?.kind === 'audio');
+  if (!sender) {
+    console.warn('[red-dot] No audio sender found on peer connection');
+    return;
+  }
+
+  if (!silentTrack || silentTrack.readyState !== 'live') {
+    const track = getSilentStream().getAudioTracks()[0];
+    if (!track) {
+      console.warn('[red-dot] Unable to obtain silent audio track');
+      return;
+    }
+    silentTrack = track;
+  }
+
+  const previousTrack = sender.track ?? null;
+  await sender.replaceTrack(silentTrack);
+
+  if (previousTrack && previousTrack.readyState === 'live') {
+    previousTrack.stop();
+  }
+
+  if (micStream) {
+    micStream.getTracks().forEach(track => track.stop());
+    micStream = null;
+  }
+
+  console.log('[red-dot] Swapped to silent track and released microphone');
 }
 
 async function swapBackToMic(pc: RTCPeerConnection) {
-  const sender = pc.getSenders().find(s => s.track?.kind === "audio");
-  if (!sender) return;
-  const mic = await navigator.mediaDevices.getUserMedia({ audio: true });
-  await sender.replaceTrack(mic.getAudioTracks()[0]);
-  // keep a ref to mic so you can stop it when toggling off again
-  micStream = mic;
-  console.log('🔊 Swapped to microphone track');
+  const sender = pc.getSenders().find(s => s.track?.kind === 'audio');
+  if (!sender) {
+    console.warn('[red-dot] No audio sender found when restoring microphone');
+    return;
+  }
+
+  if (!navigator.mediaDevices?.getUserMedia) {
+    throw new Error('navigator.mediaDevices.getUserMedia is not available');
+  }
+
+  const liveMicTrack = micStream?.getAudioTracks().find(track => track.readyState === 'live');
+  if (!liveMicTrack) {
+    if (micStream) {
+      micStream.getTracks().forEach(track => track.stop());
+      micStream = null;
+    }
+
+    micStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+  }
+
+  const micTrack = micStream?.getAudioTracks()[0];
+  if (!micTrack) {
+    throw new Error('Failed to acquire microphone track');
+  }
+
+  await sender.replaceTrack(micTrack);
+  console.log('[red-dot] Swapped back to microphone track');
 }
 
 /**
@@ -97,9 +166,15 @@ export function useVoiceDisableEffects({
         // Red dot hiding functionality (if enabled)
         if (RED_DOT_HIDING_ENABLED) {
           try {
-            const pc = (window as any).activeSession?._pc;
+            const pc = getActivePeerConnection();
             if (pc) {
               await swapToSilentAndRelease(pc);
+            } else {
+              if (micStream) {
+                micStream.getTracks().forEach(track => track.stop());
+                micStream = null;
+              }
+              console.warn('[red-dot] No peer connection found while disabling voice');
             }
           } catch (error) {
             console.warn('Failed to swap to silent track:', error);
@@ -168,26 +243,29 @@ export function useVoiceDisableEffects({
 
         muteAllAudio(true);
       } else {
-        // Red dot hiding functionality (if enabled)
-        if (RED_DOT_HIDING_ENABLED) {
-          try {
-            const pc = (window as any).activeSession?._pc;
-            if (pc) {
-              await swapBackToMic(pc);
-            }
-          } catch (error) {
-            console.warn('Failed to swap back to microphone track:', error);
-          }
-        }
-
         try {
           const original = (window as any).__originalGetUserMedia;
 
           if (original && navigator.mediaDevices) {
             navigator.mediaDevices.getUserMedia = original;
+            delete (window as any).__originalGetUserMedia;
           }
         } catch (error) {
           console.error('Failed to restore microphone access:', error);
+        }
+
+        // Red dot hiding functionality (if enabled)
+        if (RED_DOT_HIDING_ENABLED) {
+          try {
+            const pc = getActivePeerConnection();
+            if (pc) {
+              await swapBackToMic(pc);
+            } else {
+              console.warn('[red-dot] No peer connection found while enabling voice');
+            }
+          } catch (error) {
+            console.warn('Failed to swap back to microphone track:', error);
+          }
         }
 
         // When re-enabling voice, restore audio processing

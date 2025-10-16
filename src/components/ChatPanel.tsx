@@ -86,23 +86,24 @@ export const ChatPanel: React.FC<ChatPanelProps> = ({
 
   useEffect(() => {
     if (response && response.trim()) {
-      const destination = responseDestination;
+      // Capture responseDestination at the time response arrives to prevent re-runs
+      const currentDestination = responseDestination;
       const newMessage: Message = {
         id: `assistant-${Date.now()}`,
         role: 'assistant',
         text: response,
         timestamp: new Date(),
-        type: destination,
-        source: destination // Assistant messages inherit the source from their destination
+        type: currentDestination,
+        source: currentDestination // Assistant messages inherit the source from their destination
       };
 
-      if (destination === 'voice') {
+      if (currentDestination === 'voice') {
         setVoiceMessages(prev => [...prev, newMessage]);
       } else {
         setTextMessages(prev => [...prev, newMessage]);
       }
     }
-  }, [response, responseDestination]);
+  }, [response]); // Remove responseDestination from dependencies
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -276,7 +277,7 @@ export const ChatPanel: React.FC<ChatPanelProps> = ({
                         : 'bg-gray-100 dark:bg-gray-700 text-gray-800 dark:text-gray-200'
                     }`}>
                       <p className="text-sm whitespace-pre-wrap">{message.text}</p>
-                      <p className={`text-xs mt-1 ${
+                      <p className={`text-[8px] mt-1 font-normal leading-tight ${
                         message.role === 'user' ? 'text-blue-100' : 'text-gray-500 dark:text-gray-400'
                       }`}>
                         {message.timestamp.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: true })}
@@ -306,7 +307,7 @@ export const ChatPanel: React.FC<ChatPanelProps> = ({
                         : 'bg-gray-100 dark:bg-gray-700 text-gray-800 dark:text-gray-200'
                     }`}>
                       <p className="text-sm whitespace-pre-wrap">{message.text}</p>
-                      <p className={`text-xs mt-1 ${
+                      <p className={`text-[8px] mt-1 font-normal leading-tight ${
                         message.role === 'user' ? 'text-blue-100' : 'text-gray-500 dark:text-gray-400'
                       }`}>
                         {message.timestamp.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: true })}
