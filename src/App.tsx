@@ -29,6 +29,9 @@ function App() {
   // Iframe detection
   const [isInIframe, setIsInIframe] = useState(false);
 
+  // Enhanced mode detection based on URL path
+  const [isEnhancedMode, setIsEnhancedMode] = useState(false);
+
   // Callback functions for receiving data from hexagon
   const handleTranscript = (text: string) => {
     console.log('ðŸ“ App: Received transcript:', text);
@@ -67,7 +70,44 @@ function App() {
     const iframeStatus = isRunningInIframe();
     setIsInIframe(iframeStatus);
     console.log('ðŸ” Iframe detection:', iframeStatus ? 'Running in iframe' : 'Accessed directly');
-    
+
+    // Check URL path for enhanced mode
+    const checkEnhancedMode = () => {
+      const currentPath = window.location.pathname;
+      const pathSegments = currentPath.split('/').filter(Boolean);
+      const enhancedModeDetected = pathSegments.includes('enhancedMode');
+
+      console.log('🔍 URL Analysis:', {
+        fullPath: currentPath,
+        segments: pathSegments,
+        containsEnhancedMode: enhancedModeDetected
+      });
+
+      setIsEnhancedMode(enhancedModeDetected);
+      console.log('🎛️ Enhanced mode:', enhancedModeDetected ? 'ENABLED' : 'DISABLED', '(URL path contains "enhancedMode")');
+    };
+
+    checkEnhancedMode();
+  }, []);
+
+  // Watch for URL changes to update enhanced mode
+  useEffect(() => {
+    const handleUrlChange = () => {
+      const pathSegments = window.location.pathname.split('/').filter(Boolean);
+      const enhancedModeDetected = pathSegments.includes('enhancedMode');
+      setIsEnhancedMode(enhancedModeDetected);
+      console.log('🎛️ Enhanced mode updated:', enhancedModeDetected ? 'ENABLED' : 'DISABLED');
+    };
+
+    // Listen for popstate events (browser back/forward)
+    window.addEventListener('popstate', handleUrlChange);
+
+    return () => {
+      window.removeEventListener('popstate', handleUrlChange);
+    };
+  }, []);
+
+  useEffect(() => {
     const loadExternalContent = async () => {
       try {
         console.log('ðŸ“„ Loading infflow.md...');
@@ -76,10 +116,10 @@ function App() {
           const text = await response.text();
           console.log('âœ… Successfully loaded external content');
           console.log('ðŸ“„ Content preview:', text.substring(0, 100) + '...');
-          
+
           // Store in voice context manager
           voiceContextManager.setStaticContext(text);
-          
+
           // Also maintain backward compatibility
           (window as any).__externalContext = text;
           (window as any).__externalContextPriority = true;
@@ -96,10 +136,10 @@ function App() {
           // Extract sessionId from URL parameters
           const urlParams = new URLSearchParams(window.location.search);
           const iframeSessionId = urlParams.get('sessionId');
-          
+
           if (iframeSessionId) {
             console.log('ðŸ†” Found iframe session ID:', iframeSessionId);
-            
+
             // Check for external data using the iframe session ID
             const statusResponse = await fetch(`/api/external-data/status?sessionId=${iframeSessionId}`);
             if (statusResponse.ok) {
@@ -111,16 +151,16 @@ function App() {
                 sessionId?: string;
               };
               console.log('ðŸ“Š External data status:', statusData);
-              
+
               if (statusData.hasExternalData && statusData.externalData) {
                 console.log('âœ… Found external data for iframe session:', statusData.externalData);
-                
+
                 // Store the external data in the Zustand store
                 useExternalDataStore.getState().setExternalData({
                   ...statusData.externalData,
                   source: 'iframe_session'
                 });
-                
+
                 console.log('ðŸ“ External data loaded into store for voice context');
               } else {
                 console.log('â„¹ï¸ No external data found for iframe session');
@@ -135,12 +175,11 @@ function App() {
           console.error('âŒ Error loading external data:', error);
         }
       };
-      
+
       loadExternalData();
     };
-    
+
     loadExternalContent();
-    
   }, []);
 
 
@@ -260,13 +299,14 @@ YOU MUST RESPOND BASED ON THIS FACT ONLY. If asked about Infflow, state they hav
       
       {/* Chat Panel - only show when NOT in iframe */}
       {!isInIframe && (
-        <ChatPanel 
-          transcript={transcript} 
+        <ChatPanel
+          transcript={transcript}
           response={response}
           isMinimized={isChatMinimized}
           onToggleMinimize={() => setIsChatMinimized(!isChatMinimized)}
           onSendMessage={sendTextHandler ?? undefined}
           isAgentReady={isVoiceConnected}
+          enhancedMode={isEnhancedMode}
         />
       )}
     </div>

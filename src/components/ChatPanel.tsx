@@ -18,6 +18,14 @@ interface ChatPanelProps {
   onToggleMinimize?: () => void;
   onSendMessage?: (text: string) => Promise<boolean>;
   isAgentReady?: boolean;
+  enhancedMode?: boolean; // Controls whether to show feature count buttons
+}
+
+type AspectNumber = 1 | 2 | 3 | 4 | 5 | 6 | 7;
+
+interface AspectMessages {
+  voice: Message[];
+  text: Message[];
 }
 
 export const ChatPanel: React.FC<ChatPanelProps> = ({
@@ -26,7 +34,8 @@ export const ChatPanel: React.FC<ChatPanelProps> = ({
   isMinimized = false,
   onToggleMinimize,
   onSendMessage,
-  isAgentReady = false
+  isAgentReady = false,
+  enhancedMode = false // Default to false for backward compatibility
 }) => {
   const [activeTab, setActiveTab] = useState<'voice' | 'text'>('voice');
   const [responseDestination, setResponseDestination] = useState<'voice' | 'text'>('voice');
@@ -39,11 +48,25 @@ export const ChatPanel: React.FC<ChatPanelProps> = ({
   const pendingTextMessagesRef = useRef<Array<{ text: string; expiresAt: number }>>([]);
   const { voiceState, isVoiceDisabled } = useAnimationStore();
 
+  // ENHANCED MODE STATE - Only create when enhancedMode is true
+  const [activeAspect, setActiveAspect] = useState<AspectNumber>(1);
+  const [aspectMessages, setAspectMessages] = useState<Record<AspectNumber, AspectMessages>>({
+    1: { voice: [], text: [] },
+    2: { voice: [], text: [] },
+    3: { voice: [], text: [] },
+    4: { voice: [], text: [] },
+    5: { voice: [], text: [] },
+    6: { voice: [], text: [] },
+    7: { voice: [], text: [] }
+  });
+  const [isProcessingTextMessage, setIsProcessingTextMessage] = useState(false);
+
   const canSend = Boolean(onSendMessage) && !isVoiceDisabled && isAgentReady;
   const TEXT_TRANSCRIPT_IGNORE_MS = 3000;
 
-  // Add state to track if we're currently processing a text message
-  const [isProcessingTextMessage, setIsProcessingTextMessage] = useState(false);
+  // Choose message handling based on mode
+  const currentVoiceMessages = enhancedMode ? aspectMessages[activeAspect]?.voice || [] : voiceMessages;
+  const currentTextMessages = enhancedMode ? aspectMessages[activeAspect]?.text || [] : textMessages;
 
   useEffect(() => {
     if (!transcript) {
@@ -79,10 +102,21 @@ export const ChatPanel: React.FC<ChatPanelProps> = ({
         type: 'voice',
         source: 'voice'
       };
-      setVoiceMessages(prev => [...prev, newMessage]);
+
+      if (enhancedMode) {
+        setAspectMessages(prev => ({
+          ...prev,
+          [activeAspect]: {
+            ...prev[activeAspect],
+            voice: [...prev[activeAspect].voice, newMessage]
+          }
+        }));
+      } else {
+        setVoiceMessages(prev => [...prev, newMessage]);
+      }
       setResponseDestination('voice');
     }
-  }, [transcript, isProcessingTextMessage]);
+  }, [transcript, isProcessingTextMessage, enhancedMode, activeAspect]);
 
   useEffect(() => {
     if (response && response.trim()) {
@@ -97,17 +131,27 @@ export const ChatPanel: React.FC<ChatPanelProps> = ({
         source: currentDestination // Assistant messages inherit the source from their destination
       };
 
-      if (currentDestination === 'voice') {
-        setVoiceMessages(prev => [...prev, newMessage]);
+      if (enhancedMode) {
+        setAspectMessages(prev => ({
+          ...prev,
+          [activeAspect]: {
+            ...prev[activeAspect],
+            [currentDestination]: [...prev[activeAspect][currentDestination], newMessage]
+          }
+        }));
       } else {
-        setTextMessages(prev => [...prev, newMessage]);
+        if (currentDestination === 'voice') {
+          setVoiceMessages(prev => [...prev, newMessage]);
+        } else {
+          setTextMessages(prev => [...prev, newMessage]);
+        }
       }
     }
-  }, [response]); // Remove responseDestination from dependencies
+  }, [response, responseDestination, enhancedMode, activeAspect]);
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [activeTab === 'voice' ? voiceMessages : textMessages]);
+  }, [activeTab === 'voice' ? currentVoiceMessages : currentTextMessages]);
 
   useEffect(() => {
     if (errorMessage && draft.length === 0) {
@@ -153,7 +197,18 @@ export const ChatPanel: React.FC<ChatPanelProps> = ({
           type: 'text',
           source: 'text'
         };
-        setTextMessages(prev => [...prev, userMessage]);
+
+        if (enhancedMode) {
+          setAspectMessages(prev => ({
+            ...prev,
+            [activeAspect]: {
+              ...prev[activeAspect],
+              text: [...prev[activeAspect].text, userMessage]
+            }
+          }));
+        } else {
+          setTextMessages(prev => [...prev, userMessage]);
+        }
         setDraft('');
       } else {
         setErrorMessage('Message could not be delivered');
@@ -166,7 +221,7 @@ export const ChatPanel: React.FC<ChatPanelProps> = ({
       // Reset the flag after a short delay to ensure transcript processing is complete
       setTimeout(() => setIsProcessingTextMessage(false), 100);
     }
-  }, [draft, onSendMessage, canSend, isProcessingTextMessage]);
+  }, [draft, onSendMessage, canSend, isProcessingTextMessage, enhancedMode, activeAspect]);
 
   const handleSubmit = useCallback((event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -179,6 +234,40 @@ export const ChatPanel: React.FC<ChatPanelProps> = ({
       void sendMessage();
     }
   }, [sendMessage]);
+
+  const clearAllAspects = useCallback(() => {
+    if (enhancedMode) {
+      setAspectMessages({
+        1: { voice: [], text: [] },
+        2: { voice: [], text: [] },
+        3: { voice: [], text: [] },
+        4: { voice: [], text: [] },
+        5: { voice: [], text: [] },
+        6: { voice: [], text: [] },
+        7: { voice: [], text: [] }
+      });
+    } else {
+      setVoiceMessages([]);
+      setTextMessages([]);
+    }
+  }, [enhancedMode]);
+
+  // Legacy clear functions for backward compatibility
+  const clearVoiceMessages = useCallback(() => {
+    if (enhancedMode) {
+      clearAllAspects();
+    } else {
+      setVoiceMessages([]);
+    }
+  }, [enhancedMode, clearAllAspects]);
+
+  const clearTextMessages = useCallback(() => {
+    if (enhancedMode) {
+      clearAllAspects();
+    } else {
+      setTextMessages([]);
+    }
+  }, [enhancedMode, clearAllAspects]);
 
   const statusText = errorMessage
     ? errorMessage
@@ -194,14 +283,16 @@ export const ChatPanel: React.FC<ChatPanelProps> = ({
               ? 'Speaking...'
               : voiceState === 'error'
                 ? 'Error'
-                : 'Ready';
+                : enhancedMode
+                  ? 'Enhanced Mode - Ready'
+                  : 'Ready';
 
   const computedRows = Math.min(4, Math.max(2, draft.split(/\r?\n/).length));
 
   return (
     <motion.div
       className={`fixed bottom-4 right-4 bg-white dark:bg-gray-800 rounded-lg shadow-2xl border border-gray-200 dark:border-gray-600 transition-all duration-300 flex flex-col ${
-        isMinimized ? 'w-80' : 'w-96 h-[500px]'
+        isMinimized ? 'w-80' : `w-96 ${enhancedMode ? 'h-[580px]' : 'h-[500px]'}`
       }`}
       initial={{ opacity: 0, y: 20 }}
       animate={{ opacity: 1, y: 0 }}
@@ -250,7 +341,25 @@ export const ChatPanel: React.FC<ChatPanelProps> = ({
         </button>
       </div>
 
-
+      {/* Aspect Selection Buttons - Only show in enhanced mode */}
+      {enhancedMode && (
+        <div className="flex border-b border-gray-200 dark:border-gray-600 bg-gray-100 dark:bg-gray-750 px-2 py-2 gap-1 overflow-x-auto">
+          {([1, 2, 3, 4, 5, 6, 7] as AspectNumber[]).map(aspectNum => (
+            <button
+              key={aspectNum}
+              onClick={() => setActiveAspect(aspectNum)}
+              className={`flex-shrink-0 w-10 h-10 rounded-md text-sm font-semibold transition-all ${
+                activeAspect === aspectNum
+                  ? 'bg-blue-500 text-white shadow-md scale-105'
+                  : 'bg-white dark:bg-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600 border border-gray-300 dark:border-gray-600'
+              }`}
+              aria-label={`Aspect ${aspectNum}`}
+            >
+              {aspectNum}
+            </button>
+          ))}
+        </div>
+      )}
 
       {/* Content Area - Only show when not minimized */}
       {!isMinimized && (
@@ -258,63 +367,105 @@ export const ChatPanel: React.FC<ChatPanelProps> = ({
           <div className="flex-1 overflow-y-auto p-4 space-y-3">
             {activeTab === 'voice' ? (
               <>
-                {voiceMessages.length === 0 && (
+                {currentVoiceMessages.length === 0 && (
                   <div className="text-center text-gray-400 text-sm mt-8">
                     Click the hexagon to start talking
                   </div>
                 )}
 
-                {voiceMessages.map((message) => (
-                  <motion.div
-                    key={message.id}
-                    initial={{ opacity: 0, x: message.role === 'user' ? 20 : -20 }}
-                    animate={{ opacity: 1, x: 0 }}
-                    className={`flex ${message.role === 'user' ? 'justify-end' : 'justify-start'}`}
-                  >
-                    <div className={`max-w-[80%] px-4 py-2 rounded-lg ${
-                      message.role === 'user'
-                        ? 'bg-blue-500 text-white'
-                        : 'bg-gray-100 dark:bg-gray-700 text-gray-800 dark:text-gray-200'
-                    }`}>
-                      <p className="text-sm whitespace-pre-wrap">{message.text}</p>
-                      <p className={`text-[8px] mt-1 font-normal leading-tight ${
-                        message.role === 'user' ? 'text-blue-100' : 'text-gray-500 dark:text-gray-400'
-                      }`}>
-                        {message.timestamp.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: true })}
-                      </p>
-                    </div>
-                  </motion.div>
-                ))}
+                {currentVoiceMessages.map((message) => {
+                  const isUserMessage = message.role === 'user';
+                  const isVoiceInput = message.type === 'voice' && message.source === 'voice';
+                  const isTextInput = message.type === 'text' && message.source === 'text';
+
+                  let bubbleClasses = '';
+                  let timestampClasses = '';
+
+                  if (isUserMessage) {
+                    // User messages: green for text input, blue for voice input
+                    if (isTextInput) {
+                      bubbleClasses = 'bg-green-500 text-white';
+                      timestampClasses = 'text-green-100';
+                    } else if (isVoiceInput) {
+                      bubbleClasses = 'bg-blue-500 text-white';
+                      timestampClasses = 'text-blue-100';
+                    } else {
+                      bubbleClasses = 'bg-blue-500 text-white';
+                      timestampClasses = 'text-blue-100';
+                    }
+                  } else {
+                    // Assistant messages: gray
+                    bubbleClasses = 'bg-gray-100 dark:bg-gray-700 text-gray-800 dark:text-gray-200';
+                    timestampClasses = 'text-gray-500 dark:text-gray-400';
+                  }
+
+                  return (
+                    <motion.div
+                      key={message.id}
+                      initial={{ opacity: 0, x: isUserMessage ? 20 : -20 }}
+                      animate={{ opacity: 1, x: 0 }}
+                      className={`flex ${isUserMessage ? 'justify-end' : 'justify-start'}`}
+                    >
+                      <div className={`max-w-[80%] px-4 py-2 rounded-lg ${bubbleClasses}`}>
+                        <p className="text-sm whitespace-pre-wrap">{message.text}</p>
+                        <p className={`text-[8px] mt-1 font-normal leading-tight ${timestampClasses}`}>
+                          {message.timestamp.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: true })}
+                        </p>
+                      </div>
+                    </motion.div>
+                  );
+                })}
               </>
             ) : (
               <>
-                {textMessages.length === 0 && (
+                {currentTextMessages.length === 0 && (
                   <div className="text-center text-gray-400 text-sm mt-8">
                     Start typing to begin text conversation
                   </div>
                 )}
 
-                {textMessages.map((message) => (
-                  <motion.div
-                    key={message.id}
-                    initial={{ opacity: 0, x: message.role === 'user' ? 20 : -20 }}
-                    animate={{ opacity: 1, x: 0 }}
-                    className={`flex ${message.role === 'user' ? 'justify-end' : 'justify-start'}`}
-                  >
-                    <div className={`max-w-[80%] px-4 py-2 rounded-lg ${
-                      message.role === 'user'
-                        ? 'bg-blue-500 text-white'
-                        : 'bg-gray-100 dark:bg-gray-700 text-gray-800 dark:text-gray-200'
-                    }`}>
-                      <p className="text-sm whitespace-pre-wrap">{message.text}</p>
-                      <p className={`text-[8px] mt-1 font-normal leading-tight ${
-                        message.role === 'user' ? 'text-blue-100' : 'text-gray-500 dark:text-gray-400'
-                      }`}>
-                        {message.timestamp.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: true })}
-                      </p>
-                    </div>
-                  </motion.div>
-                ))}
+                {currentTextMessages.map((message) => {
+                  const isUserMessage = message.role === 'user';
+                  const isVoiceInput = message.type === 'voice' && message.source === 'voice';
+                  const isTextInput = message.type === 'text' && message.source === 'text';
+
+                  let bubbleClasses = '';
+                  let timestampClasses = '';
+
+                  if (isUserMessage) {
+                    // User messages: green for text input, blue for voice input
+                    if (isTextInput) {
+                      bubbleClasses = 'bg-green-500 text-white';
+                      timestampClasses = 'text-green-100';
+                    } else if (isVoiceInput) {
+                      bubbleClasses = 'bg-blue-500 text-white';
+                      timestampClasses = 'text-blue-100';
+                    } else {
+                      bubbleClasses = 'bg-blue-500 text-white';
+                      timestampClasses = 'text-blue-100';
+                    }
+                  } else {
+                    // Assistant messages: gray
+                    bubbleClasses = 'bg-gray-100 dark:bg-gray-700 text-gray-800 dark:text-gray-200';
+                    timestampClasses = 'text-gray-500 dark:text-gray-400';
+                  }
+
+                  return (
+                    <motion.div
+                      key={message.id}
+                      initial={{ opacity: 0, x: isUserMessage ? 20 : -20 }}
+                      animate={{ opacity: 1, x: 0 }}
+                      className={`flex ${isUserMessage ? 'justify-end' : 'justify-start'}`}
+                    >
+                      <div className={`max-w-[80%] px-4 py-2 rounded-lg ${bubbleClasses}`}>
+                        <p className="text-sm whitespace-pre-wrap">{message.text}</p>
+                        <p className={`text-[8px] mt-1 font-normal leading-tight ${timestampClasses}`}>
+                          {message.timestamp.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: true })}
+                        </p>
+                      </div>
+                    </motion.div>
+                  );
+                })}
               </>
             )}
 
@@ -354,7 +505,7 @@ export const ChatPanel: React.FC<ChatPanelProps> = ({
                 </span>
                 <button
                   type="button"
-                  onClick={() => setTextMessages([])}
+                  onClick={() => enhancedMode ? clearAllAspects() : setTextMessages([])}
                   className="text-xs text-gray-500 hover:text-gray-700 dark:hover:text-gray-300"
                 >
                   Clear
@@ -372,7 +523,7 @@ export const ChatPanel: React.FC<ChatPanelProps> = ({
                 </span>
                 <button
                   type="button"
-                  onClick={() => setVoiceMessages([])}
+                  onClick={() => enhancedMode ? clearAllAspects() : setVoiceMessages([])}
                   className="text-xs text-gray-500 hover:text-gray-700 dark:hover:text-gray-300"
                 >
                   Clear

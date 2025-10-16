@@ -4,7 +4,6 @@ export interface Env {
   OPENAI_API_KEY: string;
   OPENAI_VOICE_MODEL: string;
   VOICE_SESSION: DurableObjectNamespace;
-  ASSETS: Fetcher;
 }
 
 export class OpenAIConnection {

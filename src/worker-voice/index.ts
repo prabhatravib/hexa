@@ -34,30 +34,38 @@ export default {
       return durableObject.fetch(request);
     }
     
-    // Serve static assets
-    try {
-      const asset = await env.ASSETS.fetch(request);
-      if (asset.status !== 404) {
-        return asset;
+    // Handle API routes first
+    if (url.pathname.startsWith('/voice/') ||
+        url.pathname.startsWith('/api/') ||
+        url.pathname.startsWith('/external-data.md')) {
+      const durableObjectId = env.VOICE_SESSION.idFromName('global');
+      const durableObject = env.VOICE_SESSION.get(durableObjectId);
+      return durableObject.fetch(request);
+    }
+
+    // For SPA routing: serve the React app directly for all non-API routes
+    // This handles routes like /enhancedMode, /any-other-route
+    return new Response(`
+      <!DOCTYPE html>
+      <html lang="en">
+        <head>
+          <meta charset="UTF-8" />
+          <link rel="icon" type="image/svg+xml" href="/favicon.ico" />
+          <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+          <title>Hexa Voice Agent</title>
+        </head>
+        <body>
+          <div id="root"></div>
+          <script type="module" src="/assets/index-BxuuT1Jk.js"></script>
+          <link rel="stylesheet" href="/assets/index-D9zaSw7u.css">
+        </body>
+      </html>
+    `, {
+      status: 200,
+      headers: {
+        'Content-Type': 'text/html',
+        'Cache-Control': 'public, max-age=0, must-revalidate'
       }
-    } catch (e) {
-      // Asset not found
-    }
-    
-    // SPA fallback
-    try {
-      const indexUrl = new URL('/index.html', request.url);
-      const indexRequest = new Request(indexUrl.toString());
-      const indexResponse = await env.ASSETS.fetch(indexRequest);
-      return new Response(indexResponse.body, {
-        status: 200,
-        headers: {
-          'Content-Type': 'text/html',
-          'Cache-Control': 'public, max-age=0, must-revalidate'
-        }
-      });
-    } catch (e) {
-      return new Response('Not Found', { status: 404 });
-    }
+    });
   }
 };
