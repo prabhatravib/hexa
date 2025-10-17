@@ -1,0 +1,238 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Aspect Configuration Test</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
+            background-color: #f5f5f5;
+        }
+        .container {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 20px;
+        }
+        .controls {
+            background: white;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        .iframe-container {
+            background: white;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        iframe {
+            width: 100%;
+            height: 600px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+        }
+        button {
+            background: #007bff;
+            color: white;
+            border: none;
+            padding: 10px 15px;
+            margin: 5px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 14px;
+        }
+        button:hover {
+            background: #0056b3;
+        }
+        .section {
+            margin: 20px 0;
+            padding: 15px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+        }
+        .section h3 {
+            margin-top: 0;
+            color: #333;
+        }
+        .log {
+            background: #f8f9fa;
+            border: 1px solid #dee2e6;
+            border-radius: 4px;
+            padding: 10px;
+            height: 200px;
+            overflow-y: auto;
+            font-family: monospace;
+            font-size: 12px;
+        }
+        .config-example {
+            background: #e9ecef;
+            padding: 10px;
+            border-radius: 4px;
+            font-family: monospace;
+            font-size: 12px;
+            margin: 10px 0;
+        }
+    </style>
+</head>
+<body>
+    <h1>Aspect Configuration Test</h1>
+    <p>This page tests the new aspect configuration feature for the Enhanced Mode chat panel.</p>
+    
+    <div class="container">
+        <div class="controls">
+            <h2>Test Controls</h2>
+            
+            <div class="section">
+                <h3>Simple Aspect Count (Backward Compatible)</h3>
+                <button onclick="sendAspectCount(2)">Set 2 Buttons</button>
+                <button onclick="sendAspectCount(5)">Set 5 Buttons</button>
+                <button onclick="sendAspectCount(7)">Set 7 Buttons</button>
+                <button onclick="sendAspectCount(10)">Set 10 Buttons</button>
+                <br>
+                <button onclick="sendAspectCount(1)" style="background: #dc3545;">Test Invalid: 1</button>
+                <button onclick="sendAspectCount(15)" style="background: #dc3545;">Test Invalid: 15</button>
+            </div>
+
+            <div class="section">
+                <h3>Advanced Aspect Configuration</h3>
+                <button onclick="sendTechSupportConfig()">Tech Support Config</button>
+                <button onclick="sendEcommerceConfig()">E-commerce Config</button>
+                <button onclick="sendHealthcareConfig()">Healthcare Config</button>
+                <button onclick="sendInvalidConfig()" style="background: #dc3545;">Test Invalid Config</button>
+            </div>
+
+            <div class="section">
+                <h3>Test Instructions</h3>
+                <ol>
+                    <li>Click any configuration button above</li>
+                    <li>Observe the aspect buttons in the iframe</li>
+                    <li>Hover over the aspect buttons to see tooltips</li>
+                    <li>Click different aspect buttons to test context injection</li>
+                    <li>Check the browser console for injection logs</li>
+                </ol>
+            </div>
+
+            <div class="section">
+                <h3>Console Log</h3>
+                <div id="log" class="log">Waiting for messages...</div>
+                <button onclick="clearLog()">Clear Log</button>
+            </div>
+        </div>
+
+        <div class="iframe-container">
+            <h2>Enhanced Mode Chat Panel</h2>
+            <iframe id="hexa-iframe" src="https://hexa-worker.prabhatravib.workers.dev/enhancedMode"></iframe>
+        </div>
+    </div>
+
+    <script>
+        const iframe = document.getElementById('hexa-iframe');
+        const log = document.getElementById('log');
+
+        function logMessage(message) {
+            const timestamp = new Date().toLocaleTimeString();
+            log.innerHTML += `[${timestamp}] ${message}\n`;
+            log.scrollTop = log.scrollHeight;
+        }
+
+        function clearLog() {
+            log.innerHTML = '';
+        }
+
+        function sendAspectCount(count) {
+            const message = {
+                type: 'SET_ASPECT_COUNT',
+                aspectCount: count
+            };
+            
+            iframe.contentWindow.postMessage(message, 'https://hexa-worker.prabhatravib.workers.dev');
+            logMessage(`Sent SET_ASPECT_COUNT: ${count}`);
+        }
+
+        function sendTechSupportConfig() {
+            const message = {
+                type: 'SET_ASPECT_CONFIG',
+                aspectCount: 4,
+                aspects: [
+                    { id: 1, description: "Technical support - help with bugs and issues" },
+                    { id: 2, description: "Sales inquiries - pricing and features" },
+                    { id: 3, description: "Billing questions - payments and accounts" },
+                    { id: 4, description: "General information - company and products" }
+                ]
+            };
+            
+            iframe.contentWindow.postMessage(message, 'https://hexa-worker.prabhatravib.workers.dev');
+            logMessage('Sent Tech Support Configuration');
+        }
+
+        function sendEcommerceConfig() {
+            const message = {
+                type: 'SET_ASPECT_CONFIG',
+                aspectCount: 6,
+                aspects: [
+                    { id: 1, description: "Product information - specifications and features" },
+                    { id: 2, description: "Order support - tracking and delivery" },
+                    { id: 3, description: "Returns and refunds - policy and process" },
+                    { id: 4, description: "Account management - profile and settings" },
+                    { id: 5, description: "Payment issues - billing and transactions" },
+                    { id: 6, description: "General questions - store policies and FAQ" }
+                ]
+            };
+            
+            iframe.contentWindow.postMessage(message, 'https://hexa-worker.prabhatravib.workers.dev');
+            logMessage('Sent E-commerce Configuration');
+        }
+
+        function sendHealthcareConfig() {
+            const message = {
+                type: 'SET_ASPECT_CONFIG',
+                aspectCount: 5,
+                aspects: [
+                    { id: 1, description: "Appointment scheduling - book and manage visits" },
+                    { id: 2, description: "Medical records - access and update information" },
+                    { id: 3, description: "Insurance and billing - coverage and payments" },
+                    { id: 4, description: "Prescription refills - medication requests" },
+                    { id: 5, description: "General health questions - symptoms and advice" }
+                ]
+            };
+            
+            iframe.contentWindow.postMessage(message, 'https://hexa-worker.prabhatravib.workers.dev');
+            logMessage('Sent Healthcare Configuration');
+        }
+
+        function sendInvalidConfig() {
+            const message = {
+                type: 'SET_ASPECT_CONFIG',
+                aspectCount: 3,
+                aspects: [
+                    { id: 1, description: "Valid aspect" },
+                    { id: 3, description: "Invalid - missing ID 2" }, // This should fail validation
+                    { id: 4, description: "Invalid - wrong ID" }
+                ]
+            };
+            
+            iframe.contentWindow.postMessage(message, 'https://hexa-worker.prabhatravib.workers.dev');
+            logMessage('Sent Invalid Configuration (should be rejected)');
+        }
+
+        // Listen for messages from the iframe
+        window.addEventListener('message', function(event) {
+            if (event.origin === 'https://hexa-worker.prabhatravib.workers.dev') {
+                logMessage(`Received from iframe: ${JSON.stringify(event.data)}`);
+            }
+        });
+
+        // Log when iframe loads
+        iframe.onload = function() {
+            logMessage('Iframe loaded successfully');
+        };
+
+        // Initial log message
+        logMessage('Test page loaded. Ready to test aspect configurations.');
+    </script>
+</body>
+</html>

@@ -1,0 +1,181 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Hexa Iframe Embedding Test</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 20px;
+            background-color: #f5f5f5;
+        }
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+        .test-section {
+            background: white;
+            padding: 20px;
+            margin: 20px 0;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        .iframe-container {
+            border: 2px solid #ddd;
+            border-radius: 8px;
+            overflow: hidden;
+            margin: 10px 0;
+        }
+        iframe {
+            display: block;
+            border: none;
+        }
+        .controls {
+            margin: 10px 0;
+        }
+        button {
+            background: #007bff;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 4px;
+            cursor: pointer;
+            margin: 5px;
+        }
+        button:hover {
+            background: #0056b3;
+        }
+        .status {
+            background: #e9ecef;
+            padding: 10px;
+            border-radius: 4px;
+            margin: 10px 0;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🧪 Hexa Iframe Embedding Test</h1>
+        <p>This page tests the new iframe embedding functionality with vertical split layout.</p>
+        
+        <div class="test-section">
+            <h2>1. Voice-Only Mode (Default Iframe Behavior)</h2>
+            <p>Shows only the hexagon, chat panel is hidden.</p>
+            <div class="iframe-container">
+                <iframe 
+                    id="voice-only-iframe"
+                    src="https://hexa-worker.prabhatravib.workers.dev/enhancedMode"
+                    width="400" 
+                    height="400">
+                </iframe>
+            </div>
+            <div class="status">
+                <strong>Expected:</strong> Hexagon only, no chat panel visible
+            </div>
+        </div>
+
+        <div class="test-section">
+            <h2>2. Vertical Split Mode (Chat Visible)</h2>
+            <p>Shows hexagon in top half and chat panel in bottom half.</p>
+            <div class="iframe-container">
+                <iframe 
+                    id="split-mode-iframe"
+                    src="https://hexa-worker.prabhatravib.workers.dev/enhancedMode?showChat=true"
+                    width="600" 
+                    height="800">
+                </iframe>
+            </div>
+            <div class="status">
+                <strong>Expected:</strong> Vertical split layout with hexagon (top) and chat panel (bottom)
+            </div>
+        </div>
+
+        <div class="test-section">
+            <h2>3. Dynamic Control Test</h2>
+            <p>Test switching between modes dynamically.</p>
+            <div class="controls">
+                <button onclick="switchToVoiceOnly()">Switch to Voice-Only</button>
+                <button onclick="switchToSplitMode()">Switch to Split Mode</button>
+                <button onclick="testAspectCount()">Test Aspect Count (5)</button>
+            </div>
+            <div class="iframe-container">
+                <iframe 
+                    id="dynamic-iframe"
+                    src="https://hexa-worker.prabhatravib.workers.dev/enhancedMode"
+                    width="600" 
+                    height="800">
+                </iframe>
+            </div>
+            <div class="status">
+                <strong>Current Mode:</strong> <span id="current-mode">Voice-Only</span>
+            </div>
+        </div>
+
+        <div class="test-section">
+            <h2>4. URL Parameter Test</h2>
+            <p>Test various URL parameter combinations.</p>
+            <div class="controls">
+                <button onclick="testWithSessionId()">With SessionId</button>
+                <button onclick="testWithEmbedFlag()">With Embed Flag</button>
+                <button onclick="testWithWidgetFlag()">With Widget Flag</button>
+            </div>
+            <div class="iframe-container">
+                <iframe 
+                    id="param-test-iframe"
+                    src="https://hexa-worker.prabhatravib.workers.dev/enhancedMode?showChat=true"
+                    width="500" 
+                    height="700">
+                </iframe>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const dynamicIframe = document.getElementById('dynamic-iframe');
+        const currentModeSpan = document.getElementById('current-mode');
+
+        function switchToVoiceOnly() {
+            dynamicIframe.src = 'https://hexa-worker.prabhatravib.workers.dev/enhancedMode';
+            currentModeSpan.textContent = 'Voice-Only';
+        }
+
+        function switchToSplitMode() {
+            dynamicIframe.src = 'https://hexa-worker.prabhatravib.workers.dev/enhancedMode?showChat=true';
+            currentModeSpan.textContent = 'Split Mode';
+        }
+
+        function testAspectCount() {
+            // Wait for iframe to load, then send PostMessage
+            setTimeout(() => {
+                dynamicIframe.contentWindow.postMessage({
+                    type: 'SET_ASPECT_COUNT',
+                    aspectCount: 5
+                }, 'https://hexa-worker.prabhatravib.workers.dev');
+            }, 1000);
+        }
+
+        function testWithSessionId() {
+            const iframe = document.getElementById('param-test-iframe');
+            iframe.src = 'https://hexa-worker.prabhatravib.workers.dev/enhancedMode?showChat=true&sessionId=test123';
+        }
+
+        function testWithEmbedFlag() {
+            const iframe = document.getElementById('param-test-iframe');
+            iframe.src = 'https://hexa-worker.prabhatravib.workers.dev/enhancedMode?showChat=true&embed=true';
+        }
+
+        function testWithWidgetFlag() {
+            const iframe = document.getElementById('param-test-iframe');
+            iframe.src = 'https://hexa-worker.prabhatravib.workers.dev/enhancedMode?showChat=true&widget=true';
+        }
+
+        // Listen for messages from iframes
+        window.addEventListener('message', (event) => {
+            if (event.origin === 'https://hexa-worker.prabhatravib.workers.dev') {
+                console.log('Received message from iframe:', event.data);
+            }
+        });
+    </script>
+</body>
+</html>

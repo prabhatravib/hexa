@@ -3,7 +3,9 @@
     "allow": [
       "Bash(npx tsc:*)",
       "Bash(cat:*)",
-      "Bash(npm run build:*)"
+      "Bash(npm run build:*)",
+      "Bash(yarn build:worker:*)",
+      "Read(//c/Users/prabh/OneDrive/Documents/GitHub/Infflow-root/**)"
     ],
     "deny": [],
     "ask": []

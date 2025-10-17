@@ -1,0 +1,147 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Chat-Only Mode Test</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 20px;
+            background-color: #f5f5f5;
+        }
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+        .test-section {
+            background: white;
+            padding: 20px;
+            margin: 20px 0;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        .iframe-container {
+            border: 2px solid #ddd;
+            border-radius: 8px;
+            overflow: hidden;
+            margin: 10px 0;
+        }
+        .status {
+            background: #e8f5e8;
+            padding: 10px;
+            border-radius: 4px;
+            margin: 10px 0;
+        }
+        h1 {
+            color: #333;
+            text-align: center;
+        }
+        h2 {
+            color: #555;
+            border-bottom: 2px solid #007bff;
+            padding-bottom: 5px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🧪 Chat-Only Mode Test</h1>
+        <p>This page tests the new chat-only functionality with the <code>chatOnly=true</code> parameter.</p>
+        
+        <div class="test-section">
+            <h2>1. Chat-Only Mode (NEW)</h2>
+            <p>Shows only the chat panel without the hexagon voice interface.</p>
+            <div class="iframe-container">
+                <iframe 
+                    id="chat-only-iframe"
+                    src="https://hexa-worker.prabhatravib.workers.dev/enhancedMode?chatOnly=true"
+                    width="600" 
+                    height="500">
+                </iframe>
+            </div>
+            <div class="status">
+                <strong>Expected:</strong> Chat panel only, no hexagon visible. All enhanced mode features (aspect buttons, context injection) should be available.
+            </div>
+        </div>
+
+        <div class="test-section">
+            <h2>2. Comparison: Voice-Only Mode</h2>
+            <p>For comparison, this shows the default iframe behavior (hexagon only).</p>
+            <div class="iframe-container">
+                <iframe 
+                    id="voice-only-iframe"
+                    src="https://hexa-worker.prabhatravib.workers.dev/enhancedMode"
+                    width="400" 
+                    height="400">
+                </iframe>
+            </div>
+            <div class="status">
+                <strong>Expected:</strong> Hexagon only, no chat panel visible.
+            </div>
+        </div>
+
+        <div class="test-section">
+            <h2>3. Comparison: Vertical Split Mode</h2>
+            <p>For comparison, this shows both components in vertical split.</p>
+            <div class="iframe-container">
+                <iframe 
+                    id="split-mode-iframe"
+                    src="https://hexa-worker.prabhatravib.workers.dev/enhancedMode?showChat=true"
+                    width="600" 
+                    height="600">
+                </iframe>
+            </div>
+            <div class="status">
+                <strong>Expected:</strong> Vertical split layout with hexagon (top) and chat panel (bottom).
+            </div>
+        </div>
+
+        <div class="test-section">
+            <h2>4. Dynamic Control Test</h2>
+            <p>Test switching between different modes dynamically.</p>
+            <div class="iframe-container">
+                <iframe 
+                    id="dynamic-iframe"
+                    src="https://hexa-worker.prabhatravib.workers.dev/enhancedMode"
+                    width="600" 
+                    height="500">
+                </iframe>
+            </div>
+            <div style="margin: 10px 0;">
+                <button onclick="switchToChatOnly()">Switch to Chat-Only</button>
+                <button onclick="switchToVoiceOnly()">Switch to Voice-Only</button>
+                <button onclick="switchToSplit()">Switch to Split Mode</button>
+            </div>
+            <div class="status">
+                <strong>Test:</strong> Click buttons to dynamically switch between modes. The iframe should reload with different layouts.
+            </div>
+        </div>
+
+        <div class="test-section">
+            <h2>5. URL Parameters Summary</h2>
+            <p>Available URL parameters for iframe control:</p>
+            <ul>
+                <li><strong>No parameters:</strong> <code>enhancedMode</code> - Voice-only (hexagon)</li>
+                <li><strong>showChat=true:</strong> <code>enhancedMode?showChat=true</code> - Vertical split</li>
+                <li><strong>chatOnly=true:</strong> <code>enhancedMode?chatOnly=true</code> - Chat-only (NEW)</li>
+            </ul>
+        </div>
+    </div>
+
+    <script>
+        function switchToChatOnly() {
+            document.getElementById('dynamic-iframe').src = 'https://hexa-worker.prabhatravib.workers.dev/enhancedMode?chatOnly=true';
+        }
+        
+        function switchToVoiceOnly() {
+            document.getElementById('dynamic-iframe').src = 'https://hexa-worker.prabhatravib.workers.dev/enhancedMode';
+        }
+        
+        function switchToSplit() {
+            document.getElementById('dynamic-iframe').src = 'https://hexa-worker.prabhatravib.workers.dev/enhancedMode?showChat=true';
+        }
+    </script>
+</body>
+</html>
+

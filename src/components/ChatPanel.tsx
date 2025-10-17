@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useAnimationStore } from '@/store/animationStore';
+import { injectExternalContext } from '@/lib/externalContext';
 
 interface Message {
   id: string;
@@ -20,9 +21,16 @@ interface ChatPanelProps {
   isAgentReady?: boolean;
   enhancedMode?: boolean; // Controls whether to show feature count buttons
   aspectCount?: number; // Number of aspect buttons to show (2-10, default 7)
+  aspectConfigs?: AspectConfig[]; // Configuration for aspect buttons with descriptions
+  isEmbedded?: boolean; // NEW: indicates if chat should use embedded layout
 }
 
 type AspectNumber = 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | 10;
+
+interface AspectConfig {
+  id: number;
+  description: string;
+}
 
 interface AspectMessages {
   voice: Message[];
@@ -37,7 +45,9 @@ export const ChatPanel: React.FC<ChatPanelProps> = ({
   onSendMessage,
   isAgentReady = false,
   enhancedMode = false, // Default to false for backward compatibility
-  aspectCount = 7 // Default to 7 for backward compatibility
+  aspectCount = 7, // Default to 7 for backward compatibility
+  aspectConfigs = [], // Default to empty array for backward compatibility
+  isEmbedded = false // NEW: Default to false for backward compatibility
 }) => {
   const [activeTab, setActiveTab] = useState<'voice' | 'text'>('voice');
   const [responseDestination, setResponseDestination] = useState<'voice' | 'text'>('voice');
@@ -52,6 +62,7 @@ export const ChatPanel: React.FC<ChatPanelProps> = ({
 
   // ENHANCED MODE STATE - Dynamic aspect count
   const [activeAspect, setActiveAspect] = useState<AspectNumber>(1);
+  const [hoveredAspect, setHoveredAspect] = useState<AspectNumber | null>(null);
   
   // Initialize aspectMessages dynamically based on aspectCount
   const [aspectMessages, setAspectMessages] = useState<Record<AspectNumber, AspectMessages>>(() => {
@@ -85,6 +96,31 @@ export const ChatPanel: React.FC<ChatPanelProps> = ({
 
   const canSend = Boolean(onSendMessage) && !isVoiceDisabled && isAgentReady;
   const TEXT_TRANSCRIPT_IGNORE_MS = 3000;
+
+  // Helper function to get aspect description
+  const getAspectDescription = (aspectNum: number): string => {
+    const config = aspectConfigs.find(config => config.id === aspectNum);
+    return config?.description || `Aspect ${aspectNum}`;
+  };
+
+  // Function to handle aspect switching with context injection
+  const handleAspectSwitch = useCallback(async (aspectNum: AspectNumber) => {
+    setActiveAspect(aspectNum);
+    
+    // Inject context for the new aspect
+    const description = getAspectDescription(aspectNum);
+    const contextMessage = `=== CONVERSATION CONTEXT ===
+You are now in a conversation focused on: ${description}
+Please tailor your responses to this specific context.
+===========================`;
+    
+    try {
+      await injectExternalContext({ text: contextMessage });
+      console.log(`✅ Context injected for aspect ${aspectNum}:`, description);
+    } catch (error) {
+      console.warn(`⚠️ Failed to inject context for aspect ${aspectNum}:`, error);
+    }
+  }, [aspectConfigs]);
 
   // Choose message handling based on mode
   const currentVoiceMessages = enhancedMode ? aspectMessages[activeAspect]?.voice || [] : voiceMessages;
@@ -307,17 +343,22 @@ export const ChatPanel: React.FC<ChatPanelProps> = ({
 
   const computedRows = Math.min(4, Math.max(2, draft.split(/\r?\n/).length));
 
+  // Determine container classes based on embedded mode
+  const containerClasses = isEmbedded
+    ? 'w-full h-full flex flex-col bg-white dark:bg-gray-800 min-h-0'
+    : `fixed bottom-4 right-4 bg-white dark:bg-gray-800 rounded-lg shadow-2xl border border-gray-200 dark:border-gray-600 transition-all duration-300 flex flex-col ${
+        isMinimized ? 'w-80' : `w-96 ${enhancedMode ? 'h-[580px]' : 'h-[500px]'}`
+      }`;
+
   return (
     <motion.div
-      className={`fixed bottom-4 right-4 bg-white dark:bg-gray-800 rounded-lg shadow-2xl border border-gray-200 dark:border-gray-600 transition-all duration-300 flex flex-col ${
-        isMinimized ? 'w-80' : `w-96 ${enhancedMode ? 'h-[580px]' : 'h-[500px]'}`
-      }`}
-      initial={{ opacity: 0, y: 20 }}
+      className={containerClasses}
+      initial={{ opacity: 0, y: isEmbedded ? 0 : 20 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.3 }}
     >
       {/* Minimize/Maximize Button - Positioned above tabs */}
-      {onToggleMinimize && (
+      {onToggleMinimize && !isEmbedded && (
         <div className="flex justify-center -mb-1 relative z-10">
           <button
             onClick={onToggleMinimize}
@@ -361,28 +402,40 @@ export const ChatPanel: React.FC<ChatPanelProps> = ({
 
       {/* Aspect Selection Buttons - Only show in enhanced mode */}
       {enhancedMode && (
-        <div className="flex border-b border-gray-200 dark:border-gray-600 bg-gray-100 dark:bg-gray-750 px-2 py-2 gap-1 overflow-x-auto">
+        <div className="flex border-b border-gray-200 dark:border-gray-600 bg-gray-100 dark:bg-gray-750 px-2 py-2 gap-1 overflow-x-auto relative">
           {Array.from({ length: aspectCount }, (_, i) => i + 1).map(aspectNum => (
-            <button
-              key={aspectNum}
-              onClick={() => setActiveAspect(aspectNum as AspectNumber)}
-              className={`flex-shrink-0 w-10 h-10 rounded-md text-sm font-semibold transition-all ${
-                activeAspect === aspectNum
-                  ? 'bg-blue-500 text-white shadow-md scale-105'
-                  : 'bg-white dark:bg-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600 border border-gray-300 dark:border-gray-600'
-              }`}
-              aria-label={`Aspect ${aspectNum}`}
-            >
-              {aspectNum}
-            </button>
+            <div key={aspectNum} className="relative">
+              <button
+                onClick={() => handleAspectSwitch(aspectNum as AspectNumber)}
+                onMouseEnter={() => setHoveredAspect(aspectNum as AspectNumber)}
+                onMouseLeave={() => setHoveredAspect(null)}
+                className={`flex-shrink-0 w-10 h-10 rounded-md text-sm font-semibold transition-all ${
+                  activeAspect === aspectNum
+                    ? 'bg-blue-500 text-white shadow-md scale-105'
+                    : 'bg-white dark:bg-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600 border border-gray-300 dark:border-gray-600'
+                }`}
+                aria-label={`Aspect ${aspectNum}`}
+              >
+                {aspectNum}
+              </button>
+              
+              {/* Tooltip */}
+              {hoveredAspect === aspectNum && (
+                <div className="absolute bottom-full left-1/2 transform -translate-x-1/2 mb-2 px-3 py-2 bg-gray-900 dark:bg-gray-700 text-white text-xs rounded-md shadow-lg z-50 whitespace-nowrap max-w-xs">
+                  {getAspectDescription(aspectNum)}
+                  {/* Tooltip arrow */}
+                  <div className="absolute top-full left-1/2 transform -translate-x-1/2 w-0 h-0 border-l-4 border-r-4 border-t-4 border-l-transparent border-r-transparent border-t-gray-900 dark:border-t-gray-700"></div>
+                </div>
+              )}
+            </div>
           ))}
         </div>
       )}
 
-      {/* Content Area - Only show when not minimized */}
-      {!isMinimized && (
+      {/* Content Area - Only show when not minimized or when embedded */}
+      {(!isMinimized || isEmbedded) && (
         <>
-          <div className="flex-1 overflow-y-auto p-4 space-y-3">
+          <div className="flex-1 overflow-y-auto p-4 space-y-3 min-h-0">
             {activeTab === 'voice' ? (
               <>
                 {currentVoiceMessages.length === 0 && (

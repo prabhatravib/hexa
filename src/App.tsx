@@ -5,7 +5,7 @@ import { ChatPanel } from './components/ChatPanel';
 import { voiceContextManager } from './hooks/voiceContextManager';
 import { useExternalDataStore } from './store/externalDataStore';
 import { injectExternalDataFromStore, setGlobalExternalData, getGlobalExternalData, injectGlobalExternalData, injectExternalContext } from './lib/externalContext';
-import { isRunningInIframe } from './lib/iframeDetection';
+import { getIframeContext, isRunningInIframe } from './lib/iframeDetection';
 import { registerToastNotification } from './lib/voiceErrorRecovery';
 import { startTabVisibilityMonitoring } from './lib/voiceTabVisibilityMonitor';
 import { logRedDotHidingStatus } from './lib/redDotHidingConfig';
@@ -26,14 +26,17 @@ function App() {
     setIsVoiceConnected(connected);
   }, []);
   
-  // Iframe detection
-  const [isInIframe, setIsInIframe] = useState(false);
+  // Iframe detection and context
+  const [iframeContext, setIframeContext] = useState(() => getIframeContext());
 
   // Enhanced mode detection based on URL path
   const [isEnhancedMode, setIsEnhancedMode] = useState(false);
 
   // Dynamic aspect count for enhanced mode (default 7, can be 2-10)
   const [aspectCount, setAspectCount] = useState(7);
+  
+  // Aspect configurations with descriptions
+  const [aspectConfigs, setAspectConfigs] = useState<Array<{id: number; description: string}>>([]);
 
   // Callback functions for receiving data from hexagon
   const handleTranscript = (text: string) => {
@@ -70,9 +73,9 @@ function App() {
     startTabVisibilityMonitoring();
 
     // Detect if running in iframe
-    const iframeStatus = isRunningInIframe();
-    setIsInIframe(iframeStatus);
-    console.log('ðŸ” Iframe detection:', iframeStatus ? 'Running in iframe' : 'Accessed directly');
+    const context = getIframeContext();
+    setIframeContext(context);
+    console.log('ðŸ” Iframe detection:', context.isIframe ? 'Running in iframe' : 'Accessed directly');
 
     // Check URL path for enhanced mode
     const checkEnhancedMode = () => {
@@ -123,6 +126,36 @@ function App() {
         if (count >= 2 && count <= 10) {
           setAspectCount(count);
           console.log('✅ Aspect count updated to:', count);
+        } else {
+          console.warn('⚠️ Invalid aspect count:', count, '- must be between 2-10');
+        }
+      } else if (event.data.type === 'SET_ASPECT_CONFIG') {
+        const { aspectCount: count, aspects } = event.data;
+        console.log('🔧 Setting aspect configuration:', { count, aspects });
+        
+        // Validate count is between 2-10
+        if (count >= 2 && count <= 10) {
+          // Validate aspects array
+          if (Array.isArray(aspects) && aspects.length === count) {
+            // Validate each aspect has required fields and sequential IDs
+            const isValid = aspects.every((aspect: any, index: number) => 
+              aspect && 
+              typeof aspect.id === 'number' && 
+              aspect.id === index + 1 &&
+              typeof aspect.description === 'string' &&
+              aspect.description.trim().length > 0
+            );
+            
+            if (isValid) {
+              setAspectCount(count);
+              setAspectConfigs(aspects);
+              console.log('✅ Aspect configuration updated:', aspects);
+            } else {
+              console.warn('⚠️ Invalid aspect configuration - aspects must have sequential IDs and non-empty descriptions');
+            }
+          } else {
+            console.warn('⚠️ Invalid aspect configuration - aspects array length must match aspectCount');
+          }
         } else {
           console.warn('⚠️ Invalid aspect count:', count, '- must be between 2-10');
         }
@@ -303,14 +336,74 @@ YOU MUST RESPOND BASED ON THIS FACT ONLY. If asked about Infflow, state they hav
     
     // Add iframe detection debugging
     (window as any).__checkIframeStatus = () => {
-      const iframeStatus = isRunningInIframe();
-      console.log('ðŸ” Current iframe status:', iframeStatus ? 'In iframe' : 'Direct access');
-      console.log('ðŸ” Chat panel should be:', iframeStatus ? 'HIDDEN' : 'VISIBLE');
-      return iframeStatus;
+      const isIframe = isRunningInIframe();
+      console.log('ðŸ” Current iframe status:', isIframe ? 'In iframe' : 'Direct access');
+      console.log('ðŸ” Chat panel should be:', isIframe ? 'HIDDEN' : 'VISIBLE');
+      return isIframe;
     };
   }, []);
 
 
+  // Determine layout mode
+  const shouldShowChat = !iframeContext.isIframe || iframeContext.showChat;
+  const isVerticalSplit = iframeContext.isIframe && iframeContext.showChat;
+  const isChatOnly = iframeContext.chatOnly; // NEW: Add chat-only mode detection
+
+  if (isChatOnly) {
+    // Chat-only layout - show only the chat panel
+    return (
+      <div className="h-full w-full">
+        <ChatPanel
+          transcript={transcript}
+          response={response}
+          isMinimized={false}
+          onToggleMinimize={undefined}
+          onSendMessage={sendTextHandler ?? undefined}
+          isAgentReady={isVoiceConnected}
+          enhancedMode={isEnhancedMode}
+          aspectCount={aspectCount}
+          aspectConfigs={aspectConfigs}
+          isEmbedded={true}
+        />
+      </div>
+    );
+  }
+
+  if (isVerticalSplit) {
+    // Vertical split layout for iframe with chat
+      return (
+        <div className="h-full w-full flex flex-col">
+          {/* Top Section - Hexagon (FIXED 50% height) */}
+          <div className="h-1/2 min-h-0 flex-shrink-0 flex items-center justify-center overflow-hidden">
+            <HexagonContainer 
+              size={300} 
+              onTranscript={handleTranscript}
+              onResponse={handleResponse}
+              onSendTextAvailable={handleSendTextAvailable}
+              onConnectionChange={handleVoiceConnectionChange}
+            />
+          </div>
+          
+          {/* Bottom Section - Chat Panel (FIXED 50% height) */}
+          <div className="h-1/2 min-h-0 flex-shrink-0 border-t border-gray-200 dark:border-gray-700 overflow-hidden flex flex-col">
+            <ChatPanel
+              transcript={transcript}
+              response={response}
+              isMinimized={false}
+              onToggleMinimize={undefined}
+              onSendMessage={sendTextHandler ?? undefined}
+              isAgentReady={isVoiceConnected}
+              enhancedMode={isEnhancedMode}
+              aspectCount={aspectCount}
+              aspectConfigs={aspectConfigs}
+              isEmbedded={true}
+            />
+          </div>
+        </div>
+      );
+  }
+
+  // Default layout (centered with floating chat)
   return (
     <div className="h-full w-full flex flex-col items-center justify-center">
       <div className="flex flex-col items-center gap-6 -mt-32">
@@ -324,7 +417,7 @@ YOU MUST RESPOND BASED ON THIS FACT ONLY. If asked about Infflow, state they hav
       </div>
       
       {/* Chat Panel - only show when NOT in iframe */}
-      {!isInIframe && (
+      {shouldShowChat && (
         <ChatPanel
           transcript={transcript}
           response={response}
@@ -334,6 +427,8 @@ YOU MUST RESPOND BASED ON THIS FACT ONLY. If asked about Infflow, state they hav
           isAgentReady={isVoiceConnected}
           enhancedMode={isEnhancedMode}
           aspectCount={aspectCount}
+          aspectConfigs={aspectConfigs}
+          isEmbedded={false}
         />
       )}
     </div>

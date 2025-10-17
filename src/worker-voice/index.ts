@@ -1,6 +1,7 @@
 /// <reference types="@cloudflare/workers-types" />
 
 import { VoiceSession, Env } from './voice-session';
+import { indexHtml } from './generated-index';
 
 // Export Durable Objects
 export { VoiceSession };
@@ -45,22 +46,8 @@ export default {
 
     // For SPA routing: serve the React app for all non-API routes
     // This handles routes like /enhancedMode, /any-other-route
-    return new Response(`
-      <!DOCTYPE html>
-      <html lang="en">
-        <head>
-          <meta charset="UTF-8" />
-          <link rel="icon" type="image/svg+xml" href="/favicon.ico" />
-          <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-          <title>Hexa Voice Agent</title>
-        </head>
-        <body>
-          <div id="root"></div>
-          <script type="module" src="/assets/index-DxeCJKFF.js"></script>
-          <link rel="stylesheet" href="/assets/index-D9zaSw7u.css">
-        </body>
-      </html>
-    `, {
+    // Serve the built index.html with correct asset references (injected at build time)
+    return new Response(indexHtml, {
       status: 200,
       headers: {
         'Content-Type': 'text/html',

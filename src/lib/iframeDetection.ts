@@ -62,6 +62,8 @@ export const getIframeContext = () => {
     sessionId: urlParams.get('sessionId'),
     embedMode: urlParams.get('embed') === 'true',
     widgetMode: urlParams.get('widget') === 'true',
+    showChat: urlParams.get('showChat') === 'true',
+    chatOnly: urlParams.get('chatOnly') === 'true', // NEW: Add chatOnly parameter
     allParams: Object.fromEntries(urlParams.entries())
   };
 };

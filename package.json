@@ -7,8 +7,8 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc -b && vite build",
-    "build:worker": "tsc -p tsconfig.worker.json && vite build",
-    "deploy": "tsc -b && vite build && wrangler deploy",
+    "build:worker": "vite build && node scripts/inject-assets.js && tsc -p tsconfig.worker.json",
+    "deploy": "yarn build:worker && wrangler deploy",
     "lint": "eslint .",
     "preview": "vite preview",
     "format": "prettier --write .",
