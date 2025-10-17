@@ -36,7 +36,15 @@ function App() {
   const [aspectCount, setAspectCount] = useState(7);
   
   // Aspect configurations with descriptions
-  const [aspectConfigs, setAspectConfigs] = useState<Array<{id: number; description: string}>>([]);
+  const [aspectConfigs, setAspectConfigs] = useState<Array<{id: number; description: string}>>([
+    { id: 1, description: "General conversation - general questions and chat" },
+    { id: 2, description: "Technical support - help with bugs and technical issues" },
+    { id: 3, description: "Sales inquiries - pricing, features, and product information" },
+    { id: 4, description: "Billing questions - payments, accounts, and transactions" },
+    { id: 5, description: "Account management - profile, settings, and preferences" },
+    { id: 6, description: "Product information - specifications, features, and details" },
+    { id: 7, description: "General information - company policies and FAQ" }
+  ]);
 
   // Callback functions for receiving data from hexagon
   const handleTranscript = (text: string) => {
